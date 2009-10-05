@@ -300,9 +300,23 @@ static int load_tile (Image* image, Image* tile_image, XCFDocInfo* inDocInfo,
 
   xcfdata = xcfodata = MagickAllocateMemory(XCFPixelPacket *,data_length);
   graydata = (unsigned char *)xcfdata;  /* used by gray and indexed */
+  if (xcfdata == (XCFPixelPacket *) NULL)
+  {
+	  ThrowException(&image->exception,ResourceLimitError,MemoryAllocationFailed,NULL);
+	  return False;
+  }
   nmemb_read_successfully = ReadBlob(image, data_length, xcfdata);
 
+  if (nmemb_read_successfully > (ssize_t) (tile_image->columns*tile_image->rows))
+    ThrowBinaryException(CorruptImageError,CorruptImage,image->filename);
+
   q=SetImagePixels(tile_image,0,0,tile_image->columns,tile_image->rows);
+  if (q == (PixelPacket *) NULL)
+  {
+	  CopyException(&image->exception,&tile_image->exception);
+	  MagickFreeMemory(xcfodata);
+	  return False;
+  }
 
   /* we have to copy the pixels individually since IM uses a different
      format PixelPacket on different platforms - not to mention
@@ -347,6 +361,11 @@ static int load_tile_rle (Image* image, Image* tile_image, XCFDocInfo* inDocInfo
   bpp = (int) inDocInfo->bpp;
  
   xcfdata = xcfodata = MagickAllocateMemory(unsigned char *,data_length);
+  if (xcfdata == (unsigned char *) NULL)
+  {
+	  ThrowException(&image->exception,ResourceLimitError,MemoryAllocationFailed,NULL);
+	  return False;
+  }
 
   nmemb_read_successfully = ReadBlob(image, data_length, xcfdata);
 
@@ -355,6 +374,11 @@ static int load_tile_rle (Image* image, Image* tile_image, XCFDocInfo* inDocInfo
   for (i = 0; i < bpp; i++)
     {
     q=SetImagePixels(tile_image,0,0,tile_image->columns,tile_image->rows);
+    if (q == (PixelPacket *) NULL)
+    {
+	    CopyException(&image->exception,&tile_image->exception);
+	    goto bogus_rle;
+    }
       size = tile_image->rows * tile_image->columns;
       count = 0;
 
@@ -561,6 +585,9 @@ static int load_level (Image* image, XCFDocInfo* inDocInfo, XCFLayerInfo*
       offset2 = (unsigned long) (offset + TILE_WIDTH * TILE_WIDTH * 4* 1.5); 
                       /* 1.5 is probably more
                          than we need to allow */
+
+      if (offset2-offset >  (unsigned long) (TILE_WIDTH * TILE_WIDTH * 4* 1.5))
+	ThrowBinaryException(CorruptImageError,CorruptImage,image->filename);
 
       /* seek to the tile offset */
       SeekBlob(image, offset, SEEK_SET);

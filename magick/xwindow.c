@@ -5384,6 +5384,9 @@ MagickExport unsigned int XMakeImage(Display *display,
   const XResourceInfo *resource_info,XWindowInfo *window,Image *image,
   unsigned int width,unsigned int height)
 {
+#define CheckOverflowException(length,width,height) \
+  (((height) != 0) && ((length)/((size_t) height) != ((size_t) width)))
+
   int
     depth,
     format;
@@ -5485,9 +5488,12 @@ MagickExport unsigned int XMakeImage(Display *display,
         &segment_info[1],width,height);
       window->shared_memory&=(ximage != (XImage *) NULL);
 
+      length=(size_t) ximage->bytes_per_line*ximage->height;
+      if (CheckOverflowException(length,ximage->bytes_per_line,ximage->height))
+        window->shared_memory=MagickFalse;
+
       if (window->shared_memory)
-        segment_info[1].shmid=shmget(IPC_PRIVATE,(size_t)
-          (ximage->bytes_per_line*ximage->height),IPC_CREAT | 0777);
+        segment_info[1].shmid=shmget(IPC_PRIVATE,length,IPC_CREAT | 0777);
       window->shared_memory&=(segment_info[1].shmid >= 0);
 
       if (window->shared_memory)
@@ -5596,12 +5602,12 @@ MagickExport unsigned int XMakeImage(Display *display,
     }
   if (!window->shared_memory)
     {
-      if (ximage->format == XYBitmap)
-        ximage->data=MagickAllocateMemory(char *,
-          ximage->bytes_per_line*ximage->height*ximage->depth);
+      if (ximage->format != XYBitmap)
+        ximage->data=(char *) AcquireQuantumMemory((size_t)
+          ximage->bytes_per_line,(size_t) ximage->height);
       else
-        ximage->data=MagickAllocateMemory(char *,
-          ximage->bytes_per_line*ximage->height);
+        ximage->data=(char *) AcquireQuantumMemory((size_t)
+          ximage->bytes_per_line*ximage->depth,(size_t) ximage->height);
     }
   if (ximage->data == (char *) NULL)
     {
@@ -5677,9 +5683,9 @@ MagickExport unsigned int XMakeImage(Display *display,
             /*
               Allocate matte image pixel data.
             */
-            length=matte_image->bytes_per_line*
-              matte_image->height*matte_image->depth;
-            matte_image->data=MagickAllocateMemory(char *,length);
+            matte_image->data=(char *) AcquireQuantumMemory((size_t)
+              matte_image->bytes_per_line*matte_image->depth,
+              (size_t) matte_image->height);
             if (matte_image->data == (char *) NULL)
               {
                 XDestroyImage(matte_image);

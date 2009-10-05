@@ -93,13 +93,13 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
       window,
       active_window;
 
-    short
+    magick_uint16_t
       frame,
       storage_type,
       number_channels,
       number_matte_channels,
       number_auxiliary_channels,
-      revision;
+      revision; /* aux_mask in RLB */
 
     char
       gamma[16],
@@ -108,7 +108,7 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
       blue_primary[24],
       white_point[24];
 
-    long
+    magick_uint32_t
       job_number;
 
     char
@@ -122,14 +122,20 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
       aspect_ratio[8],
       chan[32];
 
-    short
+    magick_uint16_t
       field;
 
+    /* RLB varies after this point */
+
+  } RLAInfo;
+
+  typedef struct _RLA3ExtraInfo
+  {
     char
       time[12],
       filter[32];
 
-    short
+    magick_uint16_t
       bits_per_channel,
       matte_type,
       matte_bits,
@@ -140,9 +146,30 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
       auxiliary[32],
       space[36];
 
-    long
+    magick_uint32_t
       next;
-  } RLAInfo;
+  } RLA3ExtraInfo;
+
+  typedef struct _RLBExtraInfo
+  {
+    magick_uint16_t
+      filter_type;
+
+    magick_uint32_t
+      magic_number,
+      lut_size,
+      user_space_size,
+      wf_space_size;
+
+    magick_uint16_t
+      lut_type,
+      mix_type,
+      encode_type,
+      padding;
+
+    char
+      space[100];
+  } RLBExtraInfo;
 
   Image
     *image;
@@ -150,16 +177,14 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   int
     channel,
     length,
+    number_channels,
     runlength;
 
   long
     y;
 
-  long
+  magick_uint32_t
     *scanlines;
-
-  register IndexPacket
-    *indexes;
 
   register long
     i,
@@ -171,10 +196,19 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   RLAInfo
     rla_info;
 
-  unsigned char
+  RLA3ExtraInfo
+    rla3_extra_info;
+
+  RLBExtraInfo
+    rlb_extra_info;
+
+  MagickBool
+    is_rla3;
+
+  int
     byte;
 
-  unsigned int
+  MagickPassFail
     status;
 
   /*
@@ -186,8 +220,12 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   assert(exception->signature == MagickSignature);
   image=AllocateImage(image_info);
   status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
-  if (status == False)
+  if (status == MagickFail)
     ThrowReaderException(FileOpenError,UnableToOpenFile,image);
+  is_rla3=MagickFalse;
+  memset(&rla_info,0,sizeof(rla_info));
+  memset(&rla3_extra_info,0,sizeof(rla3_extra_info));
+  memset(&rlb_extra_info,0,sizeof(rlb_extra_info));
   rla_info.window.left=ReadBlobMSBShort(image);
   rla_info.window.right=ReadBlobMSBShort(image);
   rla_info.window.bottom=ReadBlobMSBShort(image);
@@ -202,9 +240,10 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   rla_info.number_matte_channels=ReadBlobMSBShort(image);
   if (rla_info.number_channels == 0)
     rla_info.number_channels=3;
-  rla_info.number_channels+=rla_info.number_matte_channels;
   rla_info.number_auxiliary_channels=ReadBlobMSBShort(image);
   rla_info.revision=ReadBlobMSBShort(image);
+  if (rla_info.revision == 0xFFFE)
+    is_rla3=MagickTrue;
   (void) ReadBlob(image,16,(char *) rla_info.gamma);
   (void) ReadBlob(image,24,(char *) rla_info.red_primary);
   (void) ReadBlob(image,24,(char *) rla_info.green_primary);
@@ -221,29 +260,72 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) ReadBlob(image,8,(char *) rla_info.aspect_ratio);
   (void) ReadBlob(image,32,(char *) rla_info.chan);
   rla_info.field=ReadBlobMSBShort(image);
-  (void) ReadBlob(image,12,(char *) rla_info.time);
-  (void) ReadBlob(image,32,(char *) rla_info.filter);
-  rla_info.bits_per_channel=ReadBlobMSBShort(image);
-  rla_info.matte_type=ReadBlobMSBShort(image);
-  rla_info.matte_bits=ReadBlobMSBShort(image);
-  rla_info.auxiliary_type=ReadBlobMSBShort(image);
-  rla_info.auxiliary_bits=ReadBlobMSBShort(image);
-  (void) ReadBlob(image,32,(char *) rla_info.auxiliary);
-  (void) ReadBlob(image,36,(char *) rla_info.space);
-  rla_info.next=(long) ReadBlobMSBLong(image);
+  if (is_rla3)
+    {
+      (void) ReadBlob(image,12,(char *) rla3_extra_info.time);
+      (void) ReadBlob(image,32,(char *) rla3_extra_info.filter);
+      rla3_extra_info.bits_per_channel=ReadBlobMSBShort(image);
+      rla3_extra_info.matte_type=ReadBlobMSBShort(image);
+      rla3_extra_info.matte_bits=ReadBlobMSBShort(image);
+      rla3_extra_info.auxiliary_type=ReadBlobMSBShort(image);
+      rla3_extra_info.auxiliary_bits=ReadBlobMSBShort(image);
+      (void) ReadBlob(image,32,(char *) rla3_extra_info.auxiliary);
+      (void) ReadBlob(image,36,(char *) rla3_extra_info.space);
+      rla3_extra_info.next=(long) ReadBlobMSBLong(image);
+    }
+  else
+    {
+      rlb_extra_info.filter_type=ReadBlobMSBShort(image);
+      rlb_extra_info.magic_number=ReadBlobMSBLong(image);
+      rlb_extra_info.lut_size=ReadBlobMSBLong(image);
+      rlb_extra_info.user_space_size=ReadBlobMSBLong(image);
+      rlb_extra_info.wf_space_size=ReadBlobMSBLong(image);
+      rlb_extra_info.lut_type=ReadBlobMSBShort(image);
+      rlb_extra_info.mix_type=ReadBlobMSBShort(image);
+      rlb_extra_info.encode_type=ReadBlobMSBShort(image);
+      rlb_extra_info.padding=ReadBlobMSBShort(image);
+      (void) ReadBlob(image,100,(char *) rlb_extra_info.space);
+    }
+  if (EOFBlob(image))
+    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
+
+  /*
+    Verify revision.
+  */
+
+/*   if (rla3_extra_info.revision != 0xFFFE) */
+/*     ThrowReaderException(CorruptImageError,ImproperImageHeader,image); */
+
+  /*
+    Verify dimensions.
+  */
+  if ((((long) rla_info.active_window.right - rla_info.active_window.left) < 0) ||
+      (((long) rla_info.active_window.top-rla_info.active_window.bottom) < 0))
+    ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+
+  if ((rla_info.storage_type != 0) || (rla_info.storage_type > 3))
+    ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+
+  if (rla_info.storage_type != 0)
+    ThrowReaderException(CoderError,DataStorageTypeIsNotSupported,image);
+
+  if (LocaleNCompare(rla_info.chan,"rgb",3) != 0)
+    ThrowReaderException(CoderError,ColorTypeNotSupported,image);
+                          
   /*
     Initialize image structure.
   */
-  image->matte=rla_info.number_matte_channels != 0;
-  image->columns=rla_info.active_window.right-rla_info.active_window.left;
-  image->rows=rla_info.active_window.top-rla_info.active_window.bottom;
+  image->matte=(rla_info.number_matte_channels != 0 ? MagickTrue: MagickFalse);
+  image->columns=rla_info.active_window.right-rla_info.active_window.left+1;
+  image->rows=rla_info.active_window.top-rla_info.active_window.bottom+1;
   if (image_info->ping)
     {
       CloseBlob(image);
       return(image);
     }
-  scanlines=MagickAllocateMemory(long *,image->rows*sizeof(long));
-  if (scanlines == (long *) NULL)
+  number_channels=rla_info.number_channels+rla_info.number_matte_channels;
+  scanlines=MagickAllocateMemoryElements(magick_uint32_t *,image->rows,sizeof(magick_uint32_t));
+  if (scanlines == (magick_uint32_t *) NULL)
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
   if (*rla_info.description != '\0')
     (void) SetImageAttribute(image,"comment",rla_info.description);
@@ -251,21 +333,30 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
     Read offsets to each scanline data.
   */
   for (i=0; i < (long) image->rows; i++)
-    scanlines[i]=(long) ReadBlobMSBLong(image);
+      scanlines[i]=(magick_uint32_t) ReadBlobMSBLong(image);
+  if (EOFBlob(image))
+    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   /*
     Read image data.
   */
   x=0;
-  indexes=(IndexPacket *) NULL;
   for (y=0; y < (long) image->rows; y++)
   {
-    (void) SeekBlob(image,scanlines[image->rows-y-1],SEEK_SET);
-    for (channel=0; channel < (int) rla_info.number_channels; channel++)
+    if (SeekBlob(image,scanlines[image->rows-y-1],SEEK_SET) == -1)
+      {
+        status=MagickFail;
+        break;
+      }
+    for (channel=0; channel < number_channels; channel++)
     {
       length=ReadBlobMSBShort(image);
       while (length > 0)
       {
-        byte=ReadBlobByte(image);
+        if ((byte=ReadBlobByte(image)) == EOF)
+          {
+            status=MagickFail;
+            break;
+          }
         runlength=byte;
         if (byte > 127)
           runlength=byte-256;
@@ -274,21 +365,26 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
           break;
         if (runlength < 0)
           {
-            q=GetImagePixels(image,(long) (x % image->columns),
-              (long) (y/image->columns),1,1);
-            if (q == (PixelPacket *) NULL)
-              break;
-            indexes=GetIndexes(image);
             while (runlength < 0)
             {
-              byte=ReadBlobByte(image);
+              q=GetImagePixels(image,(long) (x % image->columns),
+                               (long) (y % image->columns),1,1);
+              if (q == (PixelPacket *) NULL)
+                {
+                  status=MagickFail;
+                  break;
+                }
+              if ((byte=ReadBlobByte(image)) == EOF)
+                {
+                  status=MagickFail;
+                  break;
+                }
               length--;
               switch (channel)
               {
                 case 0:
                 {
                   q->red=ScaleCharToQuantum(byte);
-                  *indexes=0;
                   break;
                 }
                 case 1:
@@ -302,34 +398,47 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
                   break;
                 }
                 case 3:
-                default:
                 {
                   q->opacity=(Quantum) (MaxRGB-ScaleCharToQuantum(byte));
                   break;
                 }
+                default:
+                {
+                  /* Depth channel ? */
+                  break;
+                }
               }
               if (!SyncImagePixels(image))
-                break;
+                {
+                  status=MagickFail;
+                  break;
+                }
               x++;
               runlength++;
             }
             continue;
           }
-        byte=ReadBlobByte(image);
+        if ((byte=ReadBlobByte(image)) == EOF)
+          {
+            status=MagickFail;
+            break;
+          }
         length--;
         runlength++;
         do
         {
           q=GetImagePixels(image,(long) (x % image->columns),
-            (long) (y/image->columns),1,1);
+            (long) (y % image->columns),1,1);
           if (q == (PixelPacket *) NULL)
-            break;
+            {
+              status=MagickFail;
+              break;
+            }
           switch (channel)
           {
             case 0:
             {
               q->red=ScaleCharToQuantum(byte);
-              *indexes=0;
               break;
             }
             case 1:
@@ -343,27 +452,43 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
               break;
             }
             case 3:
-            default:
             {
               q->opacity=(Quantum) (MaxRGB-ScaleCharToQuantum(byte));
               break;
             }
+          default:
+            {
+              /* Depth channel ? */
+              break;
+            }
           }
           if (!SyncImagePixels(image))
-            break;
+            {
+              status=MagickFail;
+              break;
+            }
           x++;
           runlength--;
         }
         while (runlength > 0);
+
+        if (MagickFail == status)
+          break;
       }
+      if (MagickFail == status)
+        break;
     }
     if (QuantumTick(y,image->rows))
       if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-        break;
+        {
+          status=MagickFail;
+          break;
+        }
+    if (MagickFail == status)
+      break;
   }
   if (EOFBlob(image))
-    ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
-      image->filename);
+    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   CloseBlob(image);
   return(image);
 }

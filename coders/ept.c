@@ -208,14 +208,6 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   if (status == False)
     ThrowReaderException(FileOpenError,UnableToOpenFile,image);
   /*
-    Open temporary output file.
-  */
-  file=AcquireTemporaryFileStream(postscript_filename,BinaryFileIOMode);
-  if (file == (FILE *) NULL)
-      ThrowReaderTemporaryFileException(postscript_filename);
-  FormatString(translate_geometry,"%g %g translate\n              ",0.0,0.0);
-  (void) fputs(translate_geometry,file);
-  /*
     Set the page geometry.
   */
   dx_resolution=72.0;
@@ -239,8 +231,19 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   (void) ReadBlobLSBLong(image);
   count=ReadBlobLSBLong(image);
   filesize=ReadBlobLSBLong(image);
+  if (EOFBlob(image))
+    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   for (i=0; i < (long) (count-12); i++)
-    (void) ReadBlobByte(image);
+    if (ReadBlobByte(image) == EOF)
+      ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
+  /*
+    Open temporary output file.
+  */
+  file=AcquireTemporaryFileStream(postscript_filename,BinaryFileIOMode);
+  if (file == (FILE *) NULL)
+      ThrowReaderTemporaryFileException(postscript_filename);
+  FormatString(translate_geometry,"%g %g translate\n              ",0.0,0.0);
+  (void) fputs(translate_geometry,file);
   /*
     Copy Postscript to temporary file.
   */
@@ -249,8 +252,7 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   p=command;
   for (i=0; i < (long) filesize; i++)
   {
-    c=ReadBlobByte(image);
-    if (c == EOF)
+    if ((c=ReadBlobByte(image)) == EOF)
       break;
     (void) fputc(c,file);
     *p++=c;

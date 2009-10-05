@@ -79,6 +79,8 @@ static unsigned int
 %
 %
 */
+#define AVS_WIDTH_LIMIT 65536  /* Artificially limit width to 64K pixels */
+#define AVS_HEIGHT_LIMIT 65536 /* Artificially limit height to 64K pixels */
 static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
 {
   Image
@@ -95,9 +97,6 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
   register unsigned char
     *p;
-
-  size_t
-    count;
 
   unsigned char
     *pixels;
@@ -118,17 +117,26 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   assert(exception->signature == MagickSignature);
   image=AllocateImage(image_info);
   status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
-  if (status == False)
+  if (status == MagickFail)
     ThrowReaderException(FileOpenError,UnableToOpenFile,image);
   /*
     Read AVS image.
   */
   width=ReadBlobMSBLong(image);
   height=ReadBlobMSBLong(image);
-  if ((width == (unsigned long) ~0) || (height == (unsigned long) ~0))
-    ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+  if (EOFBlob(image))
+    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
+
+  /*
+    Impose a maximum width and height limit in order to avoid
+    incredibly huge allocations.
+  */
+  if ((width > AVS_WIDTH_LIMIT) || (height > AVS_HEIGHT_LIMIT))
+    ThrowReaderException(CoderError,ImageColumnOrRowSizeIsNotSupported,image);
+
   do
   {
+    size_t row_bytes;
     /*
       Convert AVS raster image to pixel packets.
     */
@@ -138,18 +146,25 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (image_info->ping && (image_info->subrange != 0))
       if (image->scene >= (image_info->subimage+image_info->subrange-1))
         break;
-    pixels=MagickAllocateMemory(unsigned char *,4*image->columns);
+    pixels=MagickAllocateMemoryElements(unsigned char *,image->columns,4);
     if (pixels == (unsigned char *) NULL)
       ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+    row_bytes=4*image->columns;
     for (y=0; y < (long) image->rows; y++)
     {
-      count=ReadBlob(image,4*image->columns,pixels);
-      if (count == 0)
-        ThrowReaderException(CorruptImageError,UnableToReadImageData,image);
+      if (ReadBlob(image,4*image->columns,pixels) != row_bytes)
+        {
+          ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                         image->filename);
+          status=MagickFail;
+        }
       p=pixels;
       q=SetImagePixels(image,0,y,image->columns,1);
       if (q == (PixelPacket *) NULL)
-        break;
+        {
+          status=MagickFail;
+          break;
+        }
       for (x=0; x < (long) image->columns; x++)
       {
         q->opacity=(Quantum) (MaxRGB-ScaleCharToQuantum(*p++));
@@ -160,19 +175,25 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
         q++;
       }
       if (!SyncImagePixels(image))
-        break;
+        {
+          status=MagickFail;
+          break;
+        }
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
           if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-            break;
+            {
+              status=MagickFail;
+              break;
+            }
+      if (MagickFail == status)
+        break;
     }
     MagickFreeMemory(pixels);
-    if (EOFBlob(image))
-      {
-        ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
-                       image->filename);
-        break;
-      }
+
+    if (MagickFail == status)
+      break;
+
     /*
       Proceed to next image.
     */
@@ -181,7 +202,8 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
         break;
     width=ReadBlobMSBLong(image);
     height=ReadBlobMSBLong(image);
-    if ((width != (unsigned long) ~0) && (height != (unsigned long) ~0))
+    if (!(EOFBlob(image)) && (width <= AVS_WIDTH_LIMIT) &&
+        (height <= AVS_HEIGHT_LIMIT))
       {
         /*
           Allocate next image structure.
@@ -195,13 +217,20 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
         image=SyncNextImageInList(image);
         status=MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),
           exception);
-        if (status == False)
+        if (status == MagickFail)
           break;
       }
   } while ((width != (unsigned long) ~0) && (height != (unsigned long) ~0));
   while (image->previous != (Image *) NULL)
     image=image->previous;
   CloseBlob(image);
+
+  if (MagickFail == status)
+    {
+      DestroyImageList(image);
+      image=(Image *) NULL;
+    }
+
   return(image);
 }
 

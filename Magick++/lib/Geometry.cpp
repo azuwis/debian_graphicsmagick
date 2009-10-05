@@ -9,6 +9,7 @@
 
 #include "Magick++/Include.h"
 #include <string>
+#include <cstring> // for strcpy
 #include <ctype.h> // for isdigit
 
 using namespace std;

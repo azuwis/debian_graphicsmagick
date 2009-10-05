@@ -188,6 +188,48 @@ MagickExport void LiberateMemory(void **memory)
   MagickFreeMemory(*memory);
 }
 
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   A c q u i r e Q u a n t u m M e m o r y                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  AcquireQuantumMemory() returns a pointer to a block of memory at least
+%  count * quantum bytes suitably aligned for any use.
+%
+%  The format of the AcquireQuantumMemory method is:
+%
+%      void *AcquireQuantumMemory(const size_t count,const size_t quantum)
+%
+%  A description of each parameter follows:
+%
+%    o count: The number of quantum elements to allocate.
+%
+%    o quantum: The number of bytes in each quantum.
+%
+*/
+MagickExport void *AcquireQuantumMemory(const size_t count,const size_t quantum)
+{
+  size_t
+    size;
+
+  size=count*quantum;
+  if ((count == 0) || (quantum != (size/count)))
+    {
+      errno=ENOMEM;
+      return((void *) NULL);
+    }
+  return(AcquireMemory(size));
+}
+
+
+
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %

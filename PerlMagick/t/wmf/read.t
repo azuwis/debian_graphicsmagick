@@ -13,8 +13,8 @@
 # Whenever a new test is added/removed, be sure to update the
 # 1..n ouput.
 #
-BEGIN { $| = 1; $test=1; print "1..4\n"; }
-END {print "not ok $test\n" unless $loaded;}
+BEGIN { $| = 1; $testnr=1; print "1..4\n"; }
+END {print "not ok $testnr\n" unless $loaded;}
 use Graphics::Magick;
 $loaded=1;
 
@@ -22,15 +22,19 @@ require 't/subroutines.pl';
 
 chdir 't/wmf' || die 'Cd failed';
 
+$test="$testnr - wizard test image # TODO Not robust against changes in libwmf";
 testReadCompare('wizard.wmf', '../reference/wmf/wizard.miff',
                 q//, 0.0002, 0.004);
-++$test;
+++$testnr;
+$test="$testnr - clock test image # TODO Not robust against changes in libwmf";
 testReadCompare('clock.wmf', '../reference/wmf/clock.miff',
                 q//, 0.0002, 0.004);
-++$test;
+++$testnr;
+$test="$testnr - ski test image # TODO Not robust against changes in libwmf";
 testReadCompare('ski.wmf', '../reference/wmf/ski.miff',
                 q//, 0.0002, 0.008);
-++$test;
+++$testnr;
+$test="$testnr - fjftest image # TODO Not robust against changes in libwmf";
 testReadCompare('fjftest.wmf', '../reference/wmf/fjftest.miff',
                 q//, 0.0003, 0.13);
 

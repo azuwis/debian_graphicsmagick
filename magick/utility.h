@@ -122,6 +122,7 @@ extern MagickExport unsigned long
 
 extern MagickExport void
   *AcquireMemory(const size_t),
+  *AcquireQuantumMemory(const size_t,const size_t),
   *MagickAcquireMemoryArray(const size_t count,const size_t size),
   AppendImageFormat(const char *,char *),
   *CloneMemory(void *,const void *,const size_t),

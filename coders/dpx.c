@@ -174,17 +174,22 @@ static Image *ReadDPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
   headersize=ReadBlobMSBLong(image); 
   for (i=0; i < 764; i++)
-    (void) ReadBlobByte(image);
+    if (ReadBlobByte(image) == EOF)
+	    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   image->columns= ReadBlobMSBLong(image);
   image->rows= ReadBlobMSBLong(image);
   for (i=0; i < 20; i++)
-    (void) ReadBlobByte(image);
+    if (ReadBlobByte(image) == EOF)
+	    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   colortype=ReadBlobByte(image);
-  (void) ReadBlobByte(image);
-  (void) ReadBlobByte(image);
+  if (ReadBlobByte(image) == EOF)
+	  ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
+  if (ReadBlobByte(image) == EOF)
+	  ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   image->depth=ReadBlobByte(image) > 8 ? 16  : 8;
   for (i=0; i < (long) (headersize-804); i++)
-    (void) ReadBlobByte(image);
+    if (ReadBlobByte(image) == EOF)
+	    ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   if (image_info->ping)
     {
       CloseBlob(image);
