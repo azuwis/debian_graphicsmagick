@@ -34,6 +34,7 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/confirm_access.h"
 #if defined(POSIX)
 /* some of these may have already been included by studio.h */
 #include <stdio.h>
@@ -44,133 +45,45 @@
 #include <sys/wait.h>
 
 #include "magick/utility.h"
-
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   M a g i c k S p a w n V P                                                 %
+%   M a g i c k G e t M M U P a g e S i z e                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  MagickSpawnVP() executes an external command with arguments provided by
-%  an argument vector.  The return status of the executed command is returned
-%  if it is executed, or -1 is returned if the command could not be executed.
-%  Executed commands will normally return zero if they execute without error.
+%  MagickGetMMUPageSize() returns the VM pagesize used by the MMU. The VM
+%  pagesize is the number of bytes retrieved due to one page fault.
 %
-%  The format of the MagickSpawnVP method is:
+%  The format of the MagickGetMMUPageSize method is:
 %
-%      int MagickSpawnVP(const char *file, char *const argv[])
-%
-%  A description of each parameter follows:
-%
-%    o file:  Name of the command to execute.
-%
-%    o argv:  Argument vector. First argument in the vector should be
-%             the name of the command.  The argument vector is terminated
-%             via a NULL pointer.
+%      long MagickGetMMUPageSize()
 %
 */
-MagickExport int MagickSpawnVP(const unsigned int verbose,const char *file, char *const argv[])
+MagickExport long MagickGetMMUPageSize(void)
 {
-  int
-    status;
+  static long
+    pagesize = -1;
 
-  char
-    message[MaxTextExtent];
-
-  pid_t
-    child_pid;
-
-  status = -1;
-  message[0]='\0';
-  errno=0;
-
-  child_pid = fork( );
-  if ( (pid_t)-1 == child_pid)
+  if (pagesize <= 0)
     {
-      /* Failed to fork, errno contains reason */
-      status = -1;
-      FormatString(message,"fork failed: %.1024s", strerror(errno));
-    }
-  else if ( 0 == child_pid )
-    {
-      /* We are the child process, exec program with arguments. */
-      status = execvp(file, argv);
-
-      /* If we get here, then execvp must have failed. */
-      fprintf(stderr, "execvp failed, errno = %d (%s)\n",errno,strerror(errno));
-
-      /* If there is an execvp error, then call _exit() */
-      _exit(1);
-    }
-  else
-    {
-      /* We are the parent process, wait for child. */
-      pid_t waitpid_status;
-      int child_status = 0;
-      waitpid_status = waitpid(child_pid, &child_status, 0);
-      if ( (pid_t)-1 == waitpid_status )
-        {
-          /* Waitpid error */
-          status = -1;
-          FormatString(message, "waitpid failed: %.1024s", strerror(errno));
-        }
-      else if ( waitpid_status == child_pid )
-        {
-          /* Status is available for child process */
-          if ( WIFEXITED( child_status ) )
-            {
-              status =  WEXITSTATUS( child_status );
-            }
-          else if ( WIFSIGNALED( child_status ) )
-            {
-              int sig_num = WTERMSIG( child_status );
-              status = -1;
-              FormatString(message, "child process quit due to signal %d\n", sig_num);
-            }
-        }
+#if defined(HAVE_SYSCONF) && defined(_SC_PAGE_SIZE)
+      pagesize=sysconf(_SC_PAGE_SIZE);
+#endif /* defined(HAVE_SYSCONF) && defined(_SC_PAGE_SIZE) */
+#if defined(HAVE_GETPAGESIZE)
+      if (pagesize <= 0)
+	pagesize=getpagesize();
+#endif /* defined(HAVE_GETPAGESIZE) */
+      if (pagesize <= 0)
+	pagesize=16384;
     }
 
-  /*
-    Provide a verbose/dignostic message in a form which is easy for
-    the user to understand.
-  */
-  if (verbose || (status != 0))
-  {
-    const char
-      *message_p = (const char *) NULL;
-
-    char
-      *command;
-
-    unsigned int
-      i;
-
-    command = AllocateString((const char*) NULL);
-    for (i = 0; argv[i] != (const char*) NULL; i++)
-      {
-        char
-          buffer[MaxTextExtent];
-
-        FormatString(buffer,"\"%.1024s\"", argv[i]);
-
-        if (0 != i)
-          ConcatenateString(&command," ");
-
-        ConcatenateString(&command,buffer);
-      }
-    if (message[0] != '\0')
-      message_p = message;
-    MagickError2(DelegateError,command,message_p);
-    MagickFreeMemory(command);
-  }
-
-  return status;
+  return pagesize;
 }
 
 #endif /* defined(POSIX) */

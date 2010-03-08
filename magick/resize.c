@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -33,9 +33,11 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
+#include "magick/enum_strings.h"
 #include "magick/log.h"
 #include "magick/monitor.h"
+#include "magick/omp_data_view.h"
+#include "magick/pixel_cache.h"
 #include "magick/resize.h"
 #include "magick/utility.h"
 
@@ -271,10 +273,7 @@ static double BesselOrderOne(double x)
 */
 MagickExport Image *MagnifyImage(const Image *image,ExceptionInfo *exception)
 {
-#define MagnifyImageText  "  Magnify image...  "
-
-  const PixelPacket
-    *pixels;
+#define MagnifyImageText "[%s] Magnify...  "
 
   Image
     *magnify_image;
@@ -305,120 +304,125 @@ MagickExport Image *MagnifyImage(const Image *image,ExceptionInfo *exception)
   if (magnify_image == (Image *) NULL)
     return((Image *) NULL);
 
-  LogMagickEvent(TransformEvent,GetMagickModule(),
-    "Magnifying image of size %lux%lu to %lux%lu",
-    image->columns,image->rows,magnify_image->columns,magnify_image->rows);
+  (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                        "Magnifying image of size %lux%lu to %lux%lu",
+                        image->columns,image->rows,magnify_image->columns,magnify_image->rows);
 
   magnify_image->storage_class=DirectClass;
   /*
     Allocate image buffer and scanline buffer for 4 rows of the image.
   */
-  scanline=MagickAllocateMemory(PixelPacket *,
-    magnify_image->columns*sizeof(PixelPacket));
+  scanline=MagickAllocateArray(PixelPacket *,
+                               magnify_image->columns,sizeof(PixelPacket));
   if (scanline == (PixelPacket *) NULL)
     {
       DestroyImage(magnify_image);
       ThrowImageException3(ResourceLimitError,MemoryAllocationFailed,
-        UnableToMagnifyImage)
-    }
+                           UnableToMagnifyImage)
+        }
   /*
     Initialize magnify image pixels.
   */
   for (y=0; y < (long) image->rows; y++)
-  {
-    pixels=AcquireImagePixels(image,0,y,image->columns,1,exception);
-    q=SetImagePixels(magnify_image,0,y,magnify_image->columns,1);
-    if ((pixels == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    (void) memcpy(q,pixels,image->columns*sizeof(PixelPacket));
-    if (!SyncImagePixels(magnify_image))
-      break;
-  }
+    {
+      const PixelPacket
+        *pixels;
+
+      pixels=AcquireImagePixels(image,0,y,image->columns,1,exception);
+      q=SetImagePixels(magnify_image,0,y,magnify_image->columns,1);
+      if ((pixels == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        break;
+      (void) memcpy(q,pixels,image->columns*sizeof(PixelPacket));
+      if (!SyncImagePixels(magnify_image))
+        break;
+    }
   /*
     Magnify each row.
   */
   for (y=0; y < (long) image->rows; y++)
-  {
-    p=GetImagePixels(magnify_image,0,(long) (image->rows-y-1),
-      magnify_image->columns,1);
-    if (p == (PixelPacket *) NULL)
-      break;
-    (void) memcpy(scanline,p,magnify_image->columns*sizeof(PixelPacket));
-    q=GetImagePixels(magnify_image,0,(long) (2*(image->rows-y-1)),
-      magnify_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    p=scanline+image->columns-1;
-    q+=2*(image->columns-1);
-    *q=(*p);
-    *(q+1)=(*(p));
-    for (x=1; x < (long) image->columns; x++)
     {
-      p--;
-      q-=2;
-      *q=(*p);
-      (q+1)->red=(Quantum) (((double) p->red+(double) (p+1)->red)/2+0.5);
-      (q+1)->green=(Quantum) (((double) p->green+(double) (p+1)->green)/2+0.5);
-      (q+1)->blue=(Quantum) (((double) p->blue+(double) (p+1)->blue)/2+0.5);
-      (q+1)->opacity=(Quantum)
-        (((double) p->opacity+(double) (p+1)->opacity)/2+0.5);
-    }
-    if (!SyncImagePixels(magnify_image))
-      break;
-  }
-  for (y=0; y < (long) image->rows; y++)
-  {
-    rows=(long) Min(image->rows-y,3);
-    p=GetImagePixels(magnify_image,0,2*y,magnify_image->columns,rows);
-    if (p == (PixelPacket *) NULL)
-      break;
-    q=p;
-    if (rows > 1)
-      q=p+magnify_image->columns;
-    r=p;
-    if (rows > 2)
-      r=q+magnify_image->columns;
-    for (x=0; x < (long) (image->columns-1); x++)
-    {
-      q->red=(Quantum) (((double) p->red+(double) r->red)/2+0.5);
-      q->green=(Quantum) (((double) p->green+(double) r->green)/2+0.5);
-      q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2+0.5);
-      q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2+0.5);
-      (q+1)->red=(Quantum) (((double) p->red+(double) (p+2)->red+
-        (double) r->red+(double) (r+2)->red)/4+0.5);
-      (q+1)->green=(Quantum) (((double) p->green+(double) (p+2)->green+
-        (double) r->green+(double) (r+2)->green)/4+0.5);
-      (q+1)->blue=(Quantum) (((double) p->blue+(double) (p+2)->blue+
-        (double) r->blue+(double) (r+2)->blue)/4+0.5);
-      (q+1)->opacity=(Quantum) (((double) p->opacity+(double) (p+2)->opacity+
-        (double) r->opacity+(double) (r+2)->opacity)/4+0.5);
-      q+=2;
-      p+=2;
-      r+=2;
-    }
-    q->red=(Quantum) (((double) p->red+(double) r->red)/2+0.5);
-    q->green=(Quantum) (((double) p->green+(double) r->green)/2+0.5);
-    q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2+0.5);
-    q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2+0.5);
-    p++;
-    q++;
-    r++;
-    q->red=(Quantum) (((double) p->red+(double) r->red)/2+0.5);
-    q->green=(Quantum) (((double) p->green+(double) r->green)/2+0.5);
-    q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2+0.5);
-    q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2+0.5);
-    if (!SyncImagePixels(magnify_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(MagnifyImageText,y,image->rows,exception))
+      p=GetImagePixels(magnify_image,0,(long) (image->rows-y-1),
+                       magnify_image->columns,1);
+      if (p == (PixelPacket *) NULL)
         break;
-  }
+      (void) memcpy(scanline,p,magnify_image->columns*sizeof(PixelPacket));
+      q=GetImagePixels(magnify_image,0,(long) (2*(image->rows-y-1)),
+                       magnify_image->columns,1);
+      if (q == (PixelPacket *) NULL)
+        break;
+      p=scanline+image->columns-1;
+      q+=2*(image->columns-1);
+      *q=(*p);
+      *(q+1)=(*(p));
+      for (x=1; x < (long) image->columns; x++)
+        {
+          p--;
+          q-=2;
+          *q=(*p);
+          (q+1)->red=(Quantum) (((double) p->red+(double) (p+1)->red)/2.0+0.5);
+          (q+1)->green=(Quantum) (((double) p->green+(double) (p+1)->green)/2.0+0.5);
+          (q+1)->blue=(Quantum) (((double) p->blue+(double) (p+1)->blue)/2.0+0.5);
+          (q+1)->opacity=(Quantum)
+            (((double) p->opacity+(double) (p+1)->opacity)/2.0+0.5);
+        }
+      if (!SyncImagePixels(magnify_image))
+        break;
+    }
+
+  for (y=0; y < (long) image->rows; y++)
+    {
+      rows=(long) Min(image->rows-y,3);
+      p=GetImagePixels(magnify_image,0,2*y,magnify_image->columns,rows);
+      if (p == (PixelPacket *) NULL)
+        break;
+      q=p;
+      if (rows > 1)
+        q=p+magnify_image->columns;
+      r=p;
+      if (rows > 2)
+        r=q+magnify_image->columns;
+      for (x=0; x < (long) (image->columns-1); x++)
+        {
+          q->red=(Quantum) (((double) p->red+(double) r->red)/2.0+0.5);
+          q->green=(Quantum) (((double) p->green+(double) r->green)/2.0+0.5);
+          q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2.0+0.5);
+          q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2.0+0.5);
+          (q+1)->red=(Quantum) (((double) p->red+(double) (p+2)->red+
+                                 (double) r->red+(double) (r+2)->red)/4.0+0.5);
+          (q+1)->green=(Quantum) (((double) p->green+(double) (p+2)->green+
+                                   (double) r->green+(double) (r+2)->green)/4.0+0.5);
+          (q+1)->blue=(Quantum) (((double) p->blue+(double) (p+2)->blue+
+                                  (double) r->blue+(double) (r+2)->blue)/4.0+0.5);
+          (q+1)->opacity=(Quantum) (((double) p->opacity+(double) (p+2)->opacity+
+                                     (double) r->opacity+(double) (r+2)->opacity)/4.0+0.5);
+          q+=2;
+          p+=2;
+          r+=2;
+        }
+      q->red=(Quantum) (((double) p->red+(double) r->red)/2.0+0.5);
+      q->green=(Quantum) (((double) p->green+(double) r->green)/2.0+0.5);
+      q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2.0+0.5);
+      q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2.0+0.5);
+      p++;
+      q++;
+      r++;
+      q->red=(Quantum) (((double) p->red+(double) r->red)/2.0+0.5);
+      q->green=(Quantum) (((double) p->green+(double) r->green)/2.0+0.5);
+      q->blue=(Quantum) (((double) p->blue+(double) r->blue)/2.0+0.5);
+      q->opacity=(Quantum) (((double) p->opacity+(double) r->opacity)/2.0+0.5);
+      if (!SyncImagePixels(magnify_image))
+        break;
+      if (QuantumTick(y,image->rows))
+        if (!MagickMonitorFormatted(y,image->rows,exception,
+                                    MagnifyImageText,image->filename))
+          break;
+    }
   p=GetImagePixels(magnify_image,0,(long) (2*image->rows-2),
-    magnify_image->columns,1);
+                   magnify_image->columns,1);
   if (p != (PixelPacket *) NULL)
     (void) memcpy(scanline,p,magnify_image->columns*sizeof(PixelPacket));
   q=GetImagePixels(magnify_image,0,(long) (2*image->rows-1),
-    magnify_image->columns,1);
+                   magnify_image->columns,1);
   if (q != (PixelPacket *) NULL)
     (void) memcpy(q,scanline,magnify_image->columns*sizeof(PixelPacket));
   (void) SyncImagePixels(magnify_image);
@@ -455,34 +459,20 @@ MagickExport Image *MagnifyImage(const Image *image,ExceptionInfo *exception)
 */
 MagickExport Image *MinifyImage(const Image *image,ExceptionInfo *exception)
 {
-#define Minify(weight) \
-  total.red+=(weight)*(r->red); \
-  total.green+=(weight)*(r->green); \
-  total.blue+=(weight)*(r->blue); \
-  total.opacity+=(weight)*(r->opacity); \
+#define Minify(weight)                          \
+  total.red+=(weight)*(r->red);                 \
+  total.green+=(weight)*(r->green);             \
+  total.blue+=(weight)*(r->blue);               \
+  total.opacity+=(weight)*(r->opacity);         \
   r++;
-#define MinifyImageText  "  Minify image...  "
-
-  DoublePixelPacket
-    total,
-    zero;
+#define MinifyImageText "[%s] Minify..."
 
   Image
     *minify_image;
 
   long
     y;
-
-  register const PixelPacket
-    *p,
-    *r;
-
-  register long
-    x;
-
-  register PixelPacket
-    *q;
-
+ 
   /*
     Initialize minified image.
   */
@@ -492,51 +482,99 @@ MagickExport Image *MinifyImage(const Image *image,ExceptionInfo *exception)
   assert(exception->signature == MagickSignature);
 
   minify_image=CloneImage(image,Max(image->columns/2,1),Max(image->rows/2,1),
-    True,exception);
+                          True,exception);
   if (minify_image == (Image *) NULL)
     return((Image *) NULL);
 
-  LogMagickEvent(TransformEvent,GetMagickModule(),
-    "Minifying image of size %lux%lu to %lux%lu",
-    image->columns,image->rows,minify_image->columns,minify_image->rows);
+  (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                        "Minifying image of size %lux%lu to %lux%lu",
+                        image->columns,image->rows,
+                        minify_image->columns,minify_image->rows);
 
   minify_image->storage_class=DirectClass;
   /*
     Reduce each row.
   */
-  memset(&zero,0,sizeof(DoublePixelPacket));
-  for (y=0; y < (long) minify_image->rows; y++)
   {
-    p=AcquireImagePixels(image,-2,2*(y-1),image->columns+4,4,exception);
-    q=SetImagePixels(minify_image,0,y,minify_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    for (x=0; x < (long) minify_image->columns; x++)
-    {
-      /*
-        Compute weighted average of target pixel color components.
-      */
-      total=zero;
-      r=p;
-      Minify(3.0); Minify(7.0);  Minify(7.0);  Minify(3.0);
-      r=p+(image->columns+4);
-      Minify(7.0); Minify(15.0); Minify(15.0); Minify(7.0);
-      r=p+2*(image->columns+4);
-      Minify(7.0); Minify(15.0); Minify(15.0); Minify(7.0);
-      r=p+3*(image->columns+4);
-      Minify(3.0); Minify(7.0);  Minify(7.0);  Minify(3.0);
-      q->red=(Quantum) (total.red/128.0+0.5);
-      q->green=(Quantum) (total.green/128.0+0.5);
-      q->blue=(Quantum) (total.blue/128.0+0.5);
-      q->opacity=(Quantum) (total.opacity/128.0+0.5);
-      p+=2;
-      q++;
-    }
-    if (!SyncImagePixels(minify_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(MinifyImageText,y,minify_image->rows,exception))
-        break;
+    unsigned long
+      row_count=0;
+
+    DoublePixelPacket
+      zero;
+
+    MagickPassFail
+      status=MagickPass;
+
+    (void) memset(&zero,0,sizeof(DoublePixelPacket));
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
+    for (y=0; y < (long) minify_image->rows; y++)
+      {
+        DoublePixelPacket
+          total;
+
+        register const PixelPacket
+          *p,
+          *r;
+
+        register long
+          x;
+
+        register PixelPacket
+          *q;
+
+        MagickBool
+          thread_status;
+
+        thread_status=status;
+        if (thread_status == MagickFail)
+          continue;
+
+        p=AcquireImagePixels(image,-2,2*(y-1),image->columns+4,4,exception);
+        q=SetImagePixelsEx(minify_image,0,y,minify_image->columns,1,exception);
+        if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+          thread_status=MagickFail;
+        if (thread_status != MagickFail)
+          {
+            for (x=0; x < (long) minify_image->columns; x++)
+              {
+                /*
+                  Compute weighted average of target pixel color components.
+                */
+                total=zero;
+                r=p;
+                Minify(3.0); Minify(7.0);  Minify(7.0);  Minify(3.0);
+                r=p+(image->columns+4);
+                Minify(7.0); Minify(15.0); Minify(15.0); Minify(7.0);
+                r=p+2*(image->columns+4);
+                Minify(7.0); Minify(15.0); Minify(15.0); Minify(7.0);
+                r=p+3*(image->columns+4);
+                Minify(3.0); Minify(7.0);  Minify(7.0);  Minify(3.0);
+                q->red=(Quantum) (total.red/128.0+0.5);
+                q->green=(Quantum) (total.green/128.0+0.5);
+                q->blue=(Quantum) (total.blue/128.0+0.5);
+                q->opacity=(Quantum) (total.opacity/128.0+0.5);
+                p+=2;
+                q++;
+              }
+            if (!SyncImagePixelsEx(minify_image,exception))
+              thread_status=MagickFail;
+          }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_MinifyImage)
+#endif
+        {
+          row_count++;
+          if (QuantumTick(row_count,image->rows))
+            if (!MagickMonitorFormatted(row_count,image->rows,exception,
+                                        MinifyImageText,image->filename))
+              thread_status=MagickFail;
+          
+          if (thread_status == MagickFail)
+            status=MagickFail;
+        }
+      }
   }
   minify_image->is_grayscale=image->is_grayscale;
   return(minify_image);
@@ -591,21 +629,21 @@ MagickExport Image *MinifyImage(const Image *image,ExceptionInfo *exception)
 %
 */
 
-static double Bessel(const double x,const double support)
+static double Bessel(const double x,const double ARGUNUSED(support))
 {
   if (x == 0.0)
     return(MagickPI/4.0);
   return(BesselOrderOne(MagickPI*x)/(2.0*x));
 }
 
-static double Sinc(const double x,const double support)
+static double Sinc(const double x,const double ARGUNUSED(support))
 {
   if (x == 0.0)
     return(1.0);
   return(sin(MagickPI*x)/(MagickPI*x));
 }
 
-static double Blackman(const double x,const double support)
+static double Blackman(const double x,const double ARGUNUSED(support))
 {
   return(0.42+0.5*cos(MagickPI*x)+0.08*cos(2*MagickPI*x));
 }
@@ -620,7 +658,7 @@ static double BlackmanSinc(const double x,const double support)
   return(Blackman(x/support,support)*Sinc(x,support));
 }
 
-static double Box(const double x,const double support)
+static double Box(const double x,const double ARGUNUSED(support))
 {
   if (x < -0.5)
     return(0.0);
@@ -629,7 +667,7 @@ static double Box(const double x,const double support)
   return(0.0);
 }
 
-static double Catrom(const double x,const double support)
+static double Catrom(const double x,const double ARGUNUSED(support))
 {
   if (x < -2.0)
     return(0.0);
@@ -644,7 +682,7 @@ static double Catrom(const double x,const double support)
   return(0.0);
 }
 
-static double Cubic(const double x,const double support)
+static double Cubic(const double x,const double ARGUNUSED(support))
 {
   if (x < -2.0)
     return(0.0);
@@ -659,22 +697,22 @@ static double Cubic(const double x,const double support)
   return(0.0);
 }
 
-static double Gaussian(const double x,const double support)
+static double Gaussian(const double x,const double ARGUNUSED(support))
 {
   return(exp(-2.0*x*x)*sqrt(2.0/MagickPI));
 }
 
-static double Hanning(const double x,const double support)
+static double Hanning(const double x,const double ARGUNUSED(support))
 {
   return(0.5+0.5*cos(MagickPI*x));
 }
 
-static double Hamming(const double x,const double support)
+static double Hamming(const double x,const double ARGUNUSED(support))
 {
   return(0.54+0.46*cos(MagickPI*x));
 }
 
-static double Hermite(const double x,const double support)
+static double Hermite(const double x,const double ARGUNUSED(support))
 {
   if (x < -1.0)
     return(0.0);
@@ -696,7 +734,7 @@ static double Lanczos(const double x,const double support)
   return(0.0);
 }
 
-static double Mitchell(const double x,const double support)
+static double Mitchell(const double x,const double ARGUNUSED(support))
 {
 #define B   (1.0/3.0)
 #define C   (1.0/3.0)
@@ -721,7 +759,7 @@ static double Mitchell(const double x,const double support)
   return(0.0);
 }
 
-static double Quadratic(const double x,const double support)
+static double Quadratic(const double x,const double ARGUNUSED(support))
 {
   if (x < -1.5)
     return(0.0);
@@ -734,7 +772,7 @@ static double Quadratic(const double x,const double support)
   return(0.0);
 }
 
-static double Triangle(const double x,const double support)
+static double Triangle(const double x,const double ARGUNUSED(support))
 {
   if (x < -1.0)
     return(0.0);
@@ -745,47 +783,32 @@ static double Triangle(const double x,const double support)
   return(0.0);
 }
 
-static unsigned int HorizontalFilter(const Image *source,Image *destination,
-  const double x_factor,const FilterInfo *filter_info,const double blur,
-  ContributionInfo *contribution,const size_t span,unsigned long *quantum,
-  ExceptionInfo *exception)
+static MagickPassFail
+HorizontalFilter(const Image *source,Image *destination,
+                 const double x_factor,const FilterInfo *filter_info,
+                 const double blur,ThreadViewDataSet *view_data_set,
+                 const size_t span,unsigned long *quantum,
+                 ExceptionInfo *exception)
 {
-#define ResizeImageText  "  Resize image...  "
-
+#define ResizeImageText "[%s] Resize..."
+  
   double
-    center,
-    density,
     scale,
     support;
 
   DoublePixelPacket
-    pixel,
     zero;
 
   long
-    j,
-    n,
-    start,
-    stop,
-    y;
-
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *indexes,
-    *source_indexes;
-
-  register long
-    i,
     x;
 
-  register PixelPacket
-    *q;
+  MagickPassFail
+    status=MagickPass;
 
-  /*
-    Apply filter to resize horizontally from source to destination.
-  */
+  if (IsEventLogging())
+    (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                          "Enter HorizontalFilter() ...");
+
   scale=blur*Max(1.0/x_factor,1.0);
   support=scale*filter_info->support;
   destination->storage_class=source->storage_class;
@@ -800,113 +823,204 @@ static unsigned int HorizontalFilter(const Image *source,Image *destination,
       scale=1.0;
     }
   scale=1.0/scale;
-  memset(&zero,0,sizeof(DoublePixelPacket));
+  (void) memset(&zero,0,sizeof(DoublePixelPacket));
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for shared(status)
+#endif
   for (x=0; x < (long) destination->columns; x++)
-  {
-    center=(double) (x+0.5)/x_factor;
-    start=(long) Max(center-support+0.5,0);
-    stop=(long) Min(center+support+0.5,source->columns);
-    density=0.0;
-    for (n=0; n < (stop-start); n++)
     {
-      contribution[n].pixel=start+n;
-      contribution[n].weight=
-        filter_info->function(scale*(start+n-center+0.5),filter_info->support);
-      density+=contribution[n].weight;
-    }
-    if ((density != 0.0) && (density != 1.0))
-      {
-        /*
-          Normalize.
-        */
-        density=1.0/density;
-        for (i=0; i < n; i++)
-          contribution[i].weight*=density;
-      }
-    p=AcquireImagePixels(source,contribution[0].pixel,0,
-      contribution[n-1].pixel-contribution[0].pixel+1,source->rows,exception);
-    q=SetImagePixels(destination,x,0,1,destination->rows);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    source_indexes=GetIndexes(source);
-    indexes=GetIndexes(destination);
-    for (y=0; y < (long) destination->rows; y++)
-    {
-      pixel=zero;
-      for (i=0; i < n; i++)
-      {
-        j=y*(contribution[n-1].pixel-contribution[0].pixel+1)+
-          (contribution[i].pixel-contribution[0].pixel);
-        pixel.red+=contribution[i].weight*(p+j)->red;
-        pixel.green+=contribution[i].weight*(p+j)->green;
-        pixel.blue+=contribution[i].weight*(p+j)->blue;
-	if ((source->matte) || (source->colorspace == CMYKColorspace))
-          pixel.opacity+=contribution[i].weight*(p+j)->opacity;
-      }
-      if ((indexes != (IndexPacket *) NULL) &&
-          (source_indexes != (IndexPacket *) NULL))
+      double
+        center,
+        density;
+
+      ContributionInfo
+        *contribution;
+
+      register const PixelPacket
+        *p;
+
+      register PixelPacket
+        *q = (PixelPacket *) NULL;
+
+      const IndexPacket
+        *source_indexes;
+
+      IndexPacket
+        *indexes;
+
+      long
+        n,
+        start,
+        stop,
+        y;
+
+      MagickBool
+        thread_status;
+    
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      contribution=AccessThreadViewData(view_data_set);
+      /* fprintf(stderr,"Thread %d contribution %p\n",omp_get_thread_num(),contribution); */
+      center=(double) (x+0.5)/x_factor;
+      start=(long) Max(center-support+0.5,0);
+      stop=(long) Min(center+support+0.5,source->columns);
+      density=0.0;
+      for (n=0; n < (stop-start); n++)
         {
-          i=Min(Max((long) (center+0.5),start),stop-1);
-          j=y*(contribution[n-1].pixel-contribution[0].pixel+1)+
-            (contribution[i-start].pixel-contribution[0].pixel);
-          indexes[y]=source_indexes[j];
+          contribution[n].pixel=start+n;
+          contribution[n].weight=
+            filter_info->function(scale*(start+n-center+0.5),filter_info->support);
+          density+=contribution[n].weight;
         }
-      q->red=(Quantum) ((pixel.red < 0) ? 0 :
-        (pixel.red > MaxRGB) ? MaxRGB : pixel.red+0.5);
-      q->green=(Quantum) ((pixel.green < 0) ? 0 :
-        (pixel.green > MaxRGB) ? MaxRGB : pixel.green+0.5);
-      q->blue=(Quantum) ((pixel.blue < 0) ? 0 :
-        (pixel.blue > MaxRGB) ? MaxRGB : pixel.blue+0.5);
-      if ((destination->matte) || (destination->colorspace == CMYKColorspace))
-        q->opacity=(Quantum) ((pixel.opacity < 0) ? 0 :
-          (pixel.opacity > MaxRGB) ? MaxRGB : pixel.opacity+0.5);
-      q++;
+      if ((density != 0.0) && (density != 1.0))
+        {
+          /*
+            Normalize.
+          */
+          long
+            i;
+
+          density=1.0/density;
+          for (i=0; i < n; i++)
+            contribution[i].weight*=density;
+        }
+
+      p=AcquireImagePixels(source,contribution[0].pixel,0,
+                           contribution[n-1].pixel-contribution[0].pixel+1,
+                           source->rows,exception);
+      if (p == (const PixelPacket *) NULL)
+	thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+	q=SetImagePixelsEx(destination,x,0,1,destination->rows,exception);
+      if (q == (PixelPacket *) NULL)
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+        {
+          source_indexes=AccessImmutableIndexes(source);
+          indexes=AccessMutableIndexes(destination);
+          for (y=0; y < (long) destination->rows; y++)
+            {
+              double
+                weight;
+
+              DoublePixelPacket
+                pixel;
+
+              long
+                j;
+
+              register long
+                i;
+
+              pixel=zero;
+              if ((destination->matte) || (destination->colorspace == CMYKColorspace))
+                {
+		  double
+		    transparency_coeff,
+		    normalize;
+
+		  normalize=0.0;
+                  for (i=0; i < n; i++)
+                    {
+                      j=y*(contribution[n-1].pixel-contribution[0].pixel+1)+
+                        (contribution[i].pixel-contribution[0].pixel);
+                      weight=contribution[i].weight;
+                      transparency_coeff = weight * (1 - ((double) p[j].opacity/TransparentOpacity));
+                      pixel.red+=transparency_coeff*p[j].red;
+                      pixel.green+=transparency_coeff*p[j].green;
+                      pixel.blue+=transparency_coeff*p[j].blue;
+                      pixel.opacity+=weight*p[j].opacity;
+                      normalize += transparency_coeff;
+                    }
+                  normalize = 1.0 / (AbsoluteValue(normalize) <= MagickEpsilon ? 1.0 : normalize);
+		  pixel.red *= normalize;
+		  pixel.green *= normalize;
+		  pixel.blue *= normalize;
+                  q[y].red=RoundDoubleToQuantum(pixel.red);
+                  q[y].green=RoundDoubleToQuantum(pixel.green);
+                  q[y].blue=RoundDoubleToQuantum(pixel.blue);
+                  q[y].opacity=RoundDoubleToQuantum(pixel.opacity);
+                }
+              else
+                {
+                  for (i=0; i < n; i++)
+                    {
+                      j=(long) (y*(contribution[n-1].pixel-contribution[0].pixel+1)+
+                                (contribution[i].pixel-contribution[0].pixel));
+                      weight=contribution[i].weight;
+                      pixel.red+=weight*p[j].red;
+                      pixel.green+=weight*p[j].green;
+                      pixel.blue+=weight*p[j].blue;
+                    }
+                  q[y].red=RoundDoubleToQuantum(pixel.red);
+                  q[y].green=RoundDoubleToQuantum(pixel.green);
+                  q[y].blue=RoundDoubleToQuantum(pixel.blue);
+                  q[y].opacity=OpaqueOpacity;
+                }
+
+              if ((indexes != (IndexPacket *) NULL) &&
+                  (source_indexes != (IndexPacket *) NULL))
+                {
+                  i=Min(Max((long) (center+0.5),start),stop-1);
+                  j=y*(contribution[n-1].pixel-contribution[0].pixel+1)+
+                    (contribution[i-start].pixel-contribution[0].pixel);
+                  indexes[y]=source_indexes[j];
+                }
+            }
+          if (!SyncImagePixelsEx(destination,exception))
+            thread_status=MagickFail;
+        }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_HorizontalFilter)
+#endif
+      {
+        if (QuantumTick(*quantum,span))
+          if (!MagickMonitorFormatted(*quantum,span,exception,
+                                      ResizeImageText,source->filename))
+            thread_status=MagickFail;
+
+        (*quantum)++;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
     }
-    if (!SyncImagePixels(destination))
-      break;
-    if (QuantumTick(*quantum,span))
-      if (!MagickMonitor(ResizeImageText,*quantum,span,exception))
-        break;
-    (*quantum)++;
-  }
-  return(x == (long) destination->columns);
+
+  if (IsEventLogging())
+    (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                          "%s exit HorizontalFilter()",
+			  (status == MagickFail ? "Error" : "Normal"));
+
+  return (status);
 }
 
-static unsigned int VerticalFilter(const Image *source,Image *destination,
-  const double y_factor,const FilterInfo *filter_info,const double blur,
-  ContributionInfo *contribution,const size_t span,unsigned long *quantum,
-  ExceptionInfo *exception)
+static MagickPassFail
+VerticalFilter(const Image *source,Image *destination,
+               const double y_factor,const FilterInfo *filter_info,
+               const double blur,ThreadViewDataSet *view_data_set,
+               const size_t span,unsigned long *quantum,
+               ExceptionInfo *exception)
 {
   double
-    center,
-    density,
     scale,
     support;
 
   DoublePixelPacket
-    pixel,
     zero;
 
   long
-    j,
-    n,
-    start,
-    stop,
-    x;
-
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *indexes,
-    *source_indexes;
-
-  register long
-    i,
     y;
 
-  register PixelPacket
-    *q;
+  MagickPassFail
+    status=MagickPass;
+
+  if (IsEventLogging())
+    (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                          "Enter VerticalFilter() ...");
 
   /*
     Apply filter to resize vertically from source to destination.
@@ -925,144 +1039,188 @@ static unsigned int VerticalFilter(const Image *source,Image *destination,
       scale=1.0;
     }
   scale=1.0/scale;
-  memset(&zero,0,sizeof(DoublePixelPacket));
+  (void) memset(&zero,0,sizeof(DoublePixelPacket));
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for shared(status)
+#endif
   for (y=0; y < (long) destination->rows; y++)
-  {
-    center=(double) (y+0.5)/y_factor;
-    start=(long) Max(center-support+0.5,0);
-    stop=(long) Min(center+support+0.5,source->rows);
-    density=0.0;
-    for (n=0; n < (stop-start); n++)
     {
-      contribution[n].pixel=start+n;
-      contribution[n].weight=
-        filter_info->function(scale*(start+n-center+0.5),filter_info->support);
-      density+=contribution[n].weight;
-    }
-    if ((density != 0.0) && (density != 1.0))
-      {
-        /*
-          Normalize.
-        */
-        density=1.0/density;
-        for (i=0; i < n; i++)
-          contribution[i].weight*=density;
-      }
-    p=AcquireImagePixels(source,0,contribution[0].pixel,source->columns,
-      contribution[n-1].pixel-contribution[0].pixel+1,exception);
-    q=SetImagePixels(destination,0,y,destination->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    source_indexes=GetIndexes(source);
-    indexes=GetIndexes(destination);
-    for (x=0; x < (long) destination->columns; x++)
-    {
-      pixel=zero;
-      for (i=0; i < n; i++)
-      {
-        j=(long) ((contribution[i].pixel-contribution[0].pixel)*
-          source->columns+x);
-        pixel.red+=contribution[i].weight*(p+j)->red;
-        pixel.green+=contribution[i].weight*(p+j)->green;
-        pixel.blue+=contribution[i].weight*(p+j)->blue;
-        if ((source->matte) || (source->colorspace == CMYKColorspace))
-          pixel.opacity+=contribution[i].weight*(p+j)->opacity;
-      }
-      if ((indexes != (IndexPacket *) NULL) &&
-          (source_indexes != (IndexPacket *) NULL))
+      double
+        center,
+        density;
+
+      ContributionInfo
+        *contribution;
+
+      register const PixelPacket
+        *p;
+    
+      register PixelPacket
+        *q = (PixelPacket *) NULL;
+
+      const IndexPacket
+        *source_indexes;
+
+      IndexPacket
+        *indexes;
+
+      long
+        n,
+        start,
+        stop,
+        x;
+
+      MagickBool
+        thread_status;
+    
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      contribution=AccessThreadViewData(view_data_set);
+      center=(double) (y+0.5)/y_factor;
+      start=(long) Max(center-support+0.5,0);
+      stop=(long) Min(center+support+0.5,source->rows);
+      density=0.0;
+      for (n=0; n < (stop-start); n++)
         {
-          i=Min(Max((long) (center+0.5),start),stop-1);
-          j=(long) ((contribution[i-start].pixel-contribution[0].pixel)*
-            source->columns+x);
-          indexes[x]=source_indexes[j];
+          contribution[n].pixel=start+n;
+          contribution[n].weight=
+            filter_info->function(scale*(start+n-center+0.5),filter_info->support);
+          density+=contribution[n].weight;
         }
-      q->red=(Quantum) ((pixel.red < 0) ? 0 :
-        (pixel.red > MaxRGB) ? MaxRGB : pixel.red+0.5);
-      q->green=(Quantum) ((pixel.green < 0) ? 0 :
-        (pixel.green > MaxRGB) ? MaxRGB : pixel.green+0.5);
-      q->blue=(Quantum) ((pixel.blue < 0) ? 0 :
-        (pixel.blue > MaxRGB) ? MaxRGB : pixel.blue+0.5);
-      if ((destination->matte) || (destination->colorspace == CMYKColorspace))
-        q->opacity=(Quantum) ((pixel.opacity < 0) ? 0 :
-          (pixel.opacity > MaxRGB) ? MaxRGB : pixel.opacity+0.5);
-      q++;
+      if ((density != 0.0) && (density != 1.0))
+        {
+          /*
+            Normalize.
+          */
+          long
+            i;
+
+          density=1.0/density;
+          for (i=0; i < n; i++)
+            contribution[i].weight*=density;
+        }
+
+      p=AcquireImagePixels(source,0,contribution[0].pixel,source->columns,
+                           contribution[n-1].pixel-contribution[0].pixel+1,
+                           exception);
+      if (p == (const PixelPacket *) NULL)
+	thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+	q=SetImagePixelsEx(destination,0,y,destination->columns,1,exception);
+      if (q == (PixelPacket *) NULL)
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+        {
+          source_indexes=AccessImmutableIndexes(source);
+          indexes=AccessMutableIndexes(destination);
+          for (x=0; x < (long) destination->columns; x++)
+            {
+              double
+                weight;
+
+              DoublePixelPacket
+                pixel;
+
+              long
+                j;
+
+              register long
+                i;
+
+              pixel=zero;
+              if ((source->matte) || (source->colorspace == CMYKColorspace))
+                {
+		  double
+		    transparency_coeff,
+		    normalize;
+
+		  normalize=0.0;
+                  for (i=0; i < n; i++)
+                    {
+                      j=(long) ((contribution[i].pixel-contribution[0].pixel)*
+                                source->columns+x);
+                      weight=contribution[i].weight;
+                      transparency_coeff = weight * (1 - ((double) p[j].opacity/TransparentOpacity));
+                      pixel.red+=transparency_coeff*p[j].red;
+                      pixel.green+=transparency_coeff*p[j].green;
+                      pixel.blue+=transparency_coeff*p[j].blue;
+                      pixel.opacity+=weight*p[j].opacity;
+                      normalize += transparency_coeff;
+                    }
+
+                  normalize = 1.0 / (AbsoluteValue(normalize) <= MagickEpsilon ? 1.0 : normalize);
+		  pixel.red *= normalize;
+		  pixel.green *= normalize;
+		  pixel.blue *= normalize;
+                  q[x].red=RoundDoubleToQuantum(pixel.red);
+                  q[x].green=RoundDoubleToQuantum(pixel.green);
+                  q[x].blue=RoundDoubleToQuantum(pixel.blue);
+                  q[x].opacity=RoundDoubleToQuantum(pixel.opacity);
+                }
+              else
+                {
+                  for (i=0; i < n; i++)
+                    {
+                      j=(long) ((contribution[i].pixel-contribution[0].pixel)*
+                                source->columns+x);
+                      weight=contribution[i].weight;
+                      pixel.red+=weight*p[j].red;
+                      pixel.green+=weight*p[j].green;
+                      pixel.blue+=weight*p[j].blue;
+                    }
+                  q[x].red=RoundDoubleToQuantum(pixel.red);
+                  q[x].green=RoundDoubleToQuantum(pixel.green);
+                  q[x].blue=RoundDoubleToQuantum(pixel.blue);
+                  q[x].opacity=OpaqueOpacity;
+                }
+
+              if ((indexes != (IndexPacket *) NULL) &&
+                  (source_indexes != (IndexPacket *) NULL))
+                {
+                  i=Min(Max((long) (center+0.5),start),stop-1);
+                  j=(long) ((contribution[i-start].pixel-contribution[0].pixel)*
+                            source->columns+x);
+                  indexes[x]=source_indexes[j];
+                }
+            }
+          if (!SyncImagePixelsEx(destination,exception))
+            thread_status=MagickFail;
+        }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_VerticalFilter)
+#endif
+      {
+        if (QuantumTick(*quantum,span))
+          if (!MagickMonitorFormatted(*quantum,span,exception,
+                                      ResizeImageText,source->filename))
+            thread_status=MagickFail;
+        
+        (*quantum)++;
+        
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
     }
-    if (!SyncImagePixels(destination))
-      break;
-    if (QuantumTick(*quantum,span))
-      if (!MagickMonitor(ResizeImageText,*quantum,span,exception))
-        break;
-    (*quantum)++;
-  }
-  return(y == (long) destination->rows);
-}
 
-static const char *ResizeFilterToString(const FilterTypes filter)
-{
-  const char *
-    filter_string = "Unknown";
+  if (IsEventLogging())
+    (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+			  "%s exit VerticalFilter()",
+			  (status == MagickFail ? "Error" : "Normal"));
 
-  switch (filter)
-    {
-    case UndefinedFilter:
-      filter_string="Undefined";
-      break;
-    case PointFilter:
-      filter_string="Point";
-      break;
-    case BoxFilter:
-      filter_string="Box";
-      break;
-    case TriangleFilter:
-      filter_string="Triangle";
-      break;
-    case HermiteFilter:
-      filter_string="Hermite";
-      break;
-    case HanningFilter:
-      filter_string="Hanning";
-      break;
-    case HammingFilter:
-      filter_string="Hamming";
-      break;
-    case BlackmanFilter:
-      filter_string="Blackman";
-      break;
-    case GaussianFilter:
-      filter_string="Gaussian";
-      break;
-    case QuadraticFilter:
-      filter_string="Quadratic";
-      break;
-    case CubicFilter:
-      filter_string="Cubi";
-      break;
-    case CatromFilter:
-      filter_string="Catrom";
-      break;
-    case MitchellFilter:
-      filter_string="Mitchell";
-      break;
-    case LanczosFilter:
-      filter_string="Lanczos";
-      break;
-    case BesselFilter:
-      filter_string="Bessel";
-      break;
-    case SincFilter:
-      filter_string="Sinc";
-      break;
-    }
-
-  return filter_string;
+  return (status);
 }
 
 MagickExport Image *ResizeImage(const Image *image,const unsigned long columns,
-  const unsigned long rows,const FilterTypes filter,const double blur,
-  ExceptionInfo *exception)
+                                const unsigned long rows,const FilterTypes filter,
+                                const double blur,
+                                ExceptionInfo *exception)
 {
-  ContributionInfo
-    *contribution;
+  ThreadViewDataSet
+    *view_data_set;
 
   double
     support,
@@ -1102,11 +1260,14 @@ MagickExport Image *ResizeImage(const Image *image,const unsigned long columns,
   size_t
     span;
 
-  unsigned int
+  MagickPassFail
     status;
 
   unsigned long
     quantum;
+
+  MagickBool
+    order;
 
   /*
     Initialize resize image attributes.
@@ -1115,15 +1276,27 @@ MagickExport Image *ResizeImage(const Image *image,const unsigned long columns,
   assert(image->signature == MagickSignature);
   assert(exception != (ExceptionInfo *) NULL);
   assert(exception->signature == MagickSignature);
-  assert((filter >= 0) && (filter <= SincFilter));
+  assert(((int) filter >= 0) && ((int) filter <= SincFilter));
   if ((columns == 0) || (rows == 0))
-    ThrowImageException(ImageError,UnableToResizeImage,
-      MagickMsg(OptionError,NonzeroWidthAndHeightRequired));
+    {
+      ThrowImageException(ImageError,UnableToResizeImage,
+                          MagickMsg(OptionError,NonzeroWidthAndHeightRequired));
+    }
   if ((columns == image->columns) && (rows == image->rows) && (blur == 1.0))
-    return(CloneImage(image,0,0,True,exception));
+    return (CloneImage(image,0,0,True,exception));
   resize_image=CloneImage(image,columns,rows,True,exception);
   if (resize_image == (Image *) NULL)
-    return((Image *) NULL);
+    return ((Image *) NULL);
+
+  order=(((double) columns*(image->rows+rows)) >
+         ((double) rows*(image->columns+columns)));
+  if (order)
+    source_image=CloneImage(resize_image,columns,image->rows,True,exception);
+  else
+    source_image=CloneImage(resize_image,image->columns,rows,True,exception);
+  if (source_image == (Image *) NULL)
+    return ((Image *) NULL);
+
   /*
     Allocate filter contribution info.
   */
@@ -1137,70 +1310,63 @@ MagickExport Image *ResizeImage(const Image *image,const unsigned long columns,
         ((x_factor*y_factor) > 1.0))
       i=(long) MitchellFilter;
 
-  LogMagickEvent(TransformEvent,GetMagickModule(),
-    "Resizing image of size %lux%lu to %lux%lu using %s filter",
-    image->columns,image->rows,columns,rows,
-    ResizeFilterToString((FilterTypes)i));
+
+  if (IsEventLogging())
+    (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                          "Resizing image of size %lux%lu to %lux%lu using %s filter",
+                          image->columns,image->rows,columns,rows,
+                          ResizeFilterToString((FilterTypes)i));
 
   x_support=blur*Max(1.0/x_factor,1.0)*filters[i].support;
   y_support=blur*Max(1.0/y_factor,1.0)*filters[i].support;
   support=Max(x_support,y_support);
   if (support < filters[i].support)
     support=filters[i].support;
-  contribution=MagickAllocateMemory(ContributionInfo *,
-    (size_t) (2.0*Max(support,0.5)+3)*sizeof(ContributionInfo));
-  if (contribution == (ContributionInfo *) NULL)
+  /*
+    Allocate view data set.
+  */
+  view_data_set=AllocateThreadViewDataArray(image,exception,
+                                            (size_t) (2.0*Max(support,0.5)+3),
+                                            sizeof(ContributionInfo));
+  if (view_data_set == (ThreadViewDataSet *) NULL)
     {
       DestroyImage(resize_image);
+      DestroyImage(source_image);
       ThrowImageException3(ResourceLimitError,MemoryAllocationFailed,
-        UnableToResizeImage)
+                           UnableToResizeImage);
     }
-
   /*
     Resize image.
   */
+  status=MagickPass;
   quantum=0;
-  if (((double) columns*(image->rows+rows)) >
-      ((double) rows*(image->columns+columns)))
+  if (order)
     {
-      source_image=CloneImage(resize_image,columns,image->rows,True,exception);
-      if (source_image == (Image *) NULL)
-        {
-          MagickFreeMemory(contribution);
-          DestroyImage(resize_image);
-          return((Image *) NULL);
-        }
       span=source_image->columns+resize_image->rows;
       status=HorizontalFilter(image,source_image,x_factor,&filters[i],blur,
-        contribution,span,&quantum,exception);
-      status|=VerticalFilter(source_image,resize_image,y_factor,&filters[i],
-        blur,contribution,span,&quantum,exception);
+			      view_data_set,span,&quantum,exception);
+      if (status != MagickFail)
+	status=VerticalFilter(source_image,resize_image,y_factor,&filters[i],
+			      blur,view_data_set,span,&quantum,exception);
     }
   else
     {
-      source_image=CloneImage(resize_image,image->columns,rows,True,exception);
-      if (source_image == (Image *) NULL)
-        {
-          MagickFreeMemory(contribution);
-          DestroyImage(resize_image);
-          return((Image *) NULL);
-        }
       span=resize_image->columns+source_image->rows;
       status=VerticalFilter(image,source_image,y_factor,&filters[i],blur,
-        contribution,span,&quantum,exception);
-      status|=HorizontalFilter(source_image,resize_image,x_factor,&filters[i],
-        blur,contribution,span,&quantum,exception);
+			    view_data_set,span,&quantum,exception);
+      if (status != MagickFail)
+	status=HorizontalFilter(source_image,resize_image,x_factor,&filters[i],
+				blur,view_data_set,span,&quantum,exception);
     }
   /*
     Free allocated memory.
   */
-  MagickFreeMemory(contribution);
+  DestroyThreadViewDataSet(view_data_set);
   DestroyImage(source_image);
-  if (status == False)
+  if (status == MagickFail)
     {
       DestroyImage(resize_image);
-      ThrowImageException3(ResourceLimitError,MemoryAllocationFailed,
-        UnableToResizeImage)
+      return((Image *) NULL);
     }
   resize_image->is_grayscale=image->is_grayscale;
   return(resize_image);
@@ -1238,11 +1404,10 @@ MagickExport Image *ResizeImage(const Image *image,const unsigned long columns,
 %
 %
 */
-MagickExport Image *SampleImage(const Image *image,const unsigned long columns,
-  const unsigned long rows,ExceptionInfo *exception)
+MagickExport Image *
+SampleImage(const Image *image,const unsigned long columns,
+            const unsigned long rows,ExceptionInfo *exception)
 {
-#define SampleImageText  "  Sample image...  "
-
   double
     *x_offset,
     *y_offset;
@@ -1257,19 +1422,6 @@ MagickExport Image *SampleImage(const Image *image,const unsigned long columns,
   PixelPacket
     *pixels;
 
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *indexes,
-    *sample_indexes;
-
-  register long
-    x;
-
-  register PixelPacket
-    *q;
-
   /*
     Initialize sampled image attributes.
   */
@@ -1279,74 +1431,99 @@ MagickExport Image *SampleImage(const Image *image,const unsigned long columns,
   assert(exception->signature == MagickSignature);
   if ((columns == 0) || (rows == 0))
     ThrowImageException(ImageError,UnableToResizeImage,
-      MagickMsg(CorruptImageError,NegativeOrZeroImageSize));
+                        MagickMsg(CorruptImageError,
+                                  NegativeOrZeroImageSize));
   if ((columns == image->columns) && (rows == image->rows))
     return(CloneImage(image,0,0,True,exception));
   sample_image=CloneImage(image,columns,rows,True,exception);
   if (sample_image == (Image *) NULL)
     return((Image *) NULL);
 
-  LogMagickEvent(TransformEvent,GetMagickModule(),
-    "Sampling image of size %lux%lu to %lux%lu",
-    image->columns,image->rows,sample_image->columns,sample_image->rows);
-
+  (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                        "Sampling image of size %lux%lu to %lux%lu",
+                        image->columns,image->rows,sample_image->columns,
+                        sample_image->rows);
   /*
     Allocate scan line buffer and column offset buffers.
   */
-  pixels=MagickAllocateMemory(PixelPacket *,image->columns*sizeof(PixelPacket));
-  x_offset=MagickAllocateMemory(double *,sample_image->columns*sizeof(double));
-  y_offset=MagickAllocateMemory(double *,sample_image->rows*sizeof(double));
+  pixels=MagickAllocateArray(PixelPacket *,image->columns,sizeof(PixelPacket));
+  x_offset=MagickAllocateArray(double *,sample_image->columns,sizeof(double));
+  y_offset=MagickAllocateArray(double *,sample_image->rows,sizeof(double));
   if ((pixels == (PixelPacket *) NULL) || (x_offset == (double *) NULL) ||
       (y_offset == (double *) NULL))
     {
       DestroyImage(sample_image);
       ThrowImageException3(ResourceLimitError,MemoryAllocationFailed,
-        UnableToSampleImage)
+                           UnableToSampleImage);
     }
   /*
     Initialize pixel offsets.
   */
-  for (x=0; x < (long) sample_image->columns; x++)
-    x_offset[x]=(double) x*image->columns/(double) sample_image->columns;
-  for (y=0; y < (long) sample_image->rows; y++)
-    y_offset[y]=(double) y*image->rows/(double) sample_image->rows;
+  {
+    long
+      x;
+
+    for (x=0; x < (long) sample_image->columns; x++)
+      x_offset[x]=(double) x*image->columns/(double) sample_image->columns;
+    for (y=0; y < (long) sample_image->rows; y++)
+      y_offset[y]=(double) y*image->rows/(double) sample_image->rows;
+  }
   /*
     Sample each row.
+    This algorithm will not benefit from OpenMP.
   */
   j=(-1);
   for (y=0; y < (long) sample_image->rows; y++)
-  {
-    q=SetImagePixels(sample_image,0,y,sample_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    if (j != (long) y_offset[y])
-      {
-        /*
-          Read a scan line.
-        */
-        j=(long) y_offset[y];
-        p=AcquireImagePixels(image,0,j,image->columns,1,exception);
-        if (p == (const PixelPacket *) NULL)
-          break;
-        (void) memcpy(pixels,p,image->columns*sizeof(PixelPacket));
-      }
-    /*
-      Sample each column.
-    */
-    for (x=0; x < (long) sample_image->columns; x++)
-      *q++=pixels[(long) x_offset[x]];
-    indexes=GetIndexes(image);
-    sample_indexes=GetIndexes(sample_image);
-    if ((indexes != (IndexPacket *) NULL) &&
-        (sample_indexes != (IndexPacket *) NULL))
-      for (x=0; x < (long) sample_image->columns; x++)
-        sample_indexes[x]=indexes[(long) x_offset[x]];
-    if (!SyncImagePixels(sample_image))
-      break;
-    if (QuantumTick(y,sample_image->rows))
-      if (!MagickMonitor(SampleImageText,y,sample_image->rows,exception))
+    {
+      register const PixelPacket
+        *p;
+
+      register PixelPacket
+        *q;
+
+      register const IndexPacket
+        *indexes;
+
+      register IndexPacket
+        *sample_indexes;
+
+      register long
+        x;
+
+      q=SetImagePixels(sample_image,0,y,sample_image->columns,1);
+      if (q == (PixelPacket *) NULL)
         break;
-  }
+      if (j != (long) y_offset[y])
+        {
+          /*
+            Read a scan line.
+          */
+          j=(long) y_offset[y];
+          p=AcquireImagePixels(image,0,j,image->columns,1,exception);
+          if (p == (const PixelPacket *) NULL)
+            break;
+          (void) memcpy(pixels,p,image->columns*sizeof(PixelPacket));
+        }
+      /*
+        Sample each column.
+      */
+      for (x=0; x < (long) sample_image->columns; x++)
+        *q++=pixels[(long) x_offset[x]];
+      indexes=AccessImmutableIndexes(image);
+      sample_indexes=AccessMutableIndexes(sample_image);
+      if ((indexes != (IndexPacket *) NULL) &&
+          (sample_indexes != (IndexPacket *) NULL))
+        for (x=0; x < (long) sample_image->columns; x++)
+          sample_indexes[x]=indexes[(long) x_offset[x]];
+      if (!SyncImagePixels(sample_image))
+        break;
+      if (QuantumTick(y,sample_image->rows))
+        if (!MagickMonitorFormatted(y,sample_image->rows,exception,
+                                    "[%s] Sample (%lux%lu --> %lux%lu) image...",
+                                    image->filename,image->columns,image->rows,
+                                    sample_image->columns, sample_image->rows))
+          break;
+    }
   MagickFreeMemory(y_offset);
   MagickFreeMemory(x_offset);
   MagickFreeMemory(pixels);
@@ -1389,9 +1566,9 @@ MagickExport Image *SampleImage(const Image *image,const unsigned long columns,
 %
 */
 MagickExport Image *ScaleImage(const Image *image,const unsigned long columns,
-  const unsigned long rows,ExceptionInfo *exception)
+                               const unsigned long rows,ExceptionInfo *exception)
 {
-#define ScaleImageText  "  Scale image...  "
+#define ScaleImageText "[%s] Scale..."
 
   double
     x_scale,
@@ -1445,24 +1622,25 @@ MagickExport Image *ScaleImage(const Image *image,const unsigned long columns,
   if (scale_image == (Image *) NULL)
     return((Image *) NULL);
 
-  LogMagickEvent(TransformEvent,GetMagickModule(),
-    "Scaling image of size %lux%lu to %lux%lu",
-    image->columns,image->rows,scale_image->columns,scale_image->rows);
+  (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                        "Scaling image of size %lux%lu to %lux%lu",
+                        image->columns,image->rows,scale_image->columns,
+                        scale_image->rows);
 
   scale_image->storage_class=DirectClass;
   /*
     Allocate memory.
   */
   x_vector=MagickAllocateMemory(DoublePixelPacket *,
-    image->columns*sizeof(DoublePixelPacket));
+                                image->columns*sizeof(DoublePixelPacket));
   scanline=x_vector;
   if (image->rows != scale_image->rows)
     scanline=MagickAllocateMemory(DoublePixelPacket *,
-      image->columns*sizeof(DoublePixelPacket));
+                                  image->columns*sizeof(DoublePixelPacket));
   scale_scanline=MagickAllocateMemory(DoublePixelPacket *,
-    scale_image->columns*sizeof(DoublePixelPacket));
+                                      scale_image->columns*sizeof(DoublePixelPacket));
   y_vector=MagickAllocateMemory(DoublePixelPacket *,
-    image->columns*sizeof(DoublePixelPacket));
+                                image->columns*sizeof(DoublePixelPacket));
   if ((scanline == (DoublePixelPacket *) NULL) ||
       (scale_scanline == (DoublePixelPacket *) NULL) ||
       (x_vector == (DoublePixelPacket *) NULL) ||
@@ -1470,7 +1648,7 @@ MagickExport Image *ScaleImage(const Image *image,const unsigned long columns,
     {
       DestroyImage(scale_image);
       ThrowImageException3(ResourceLimitError,MemoryAllocationFailed,
-        UnableToScaleImage)
+                           UnableToScaleImage);
     }
   /*
     Scale image.
@@ -1479,38 +1657,67 @@ MagickExport Image *ScaleImage(const Image *image,const unsigned long columns,
   next_row=True;
   y_span=1.0;
   y_scale=(double) scale_image->rows/image->rows;
-  memset(y_vector,0,image->columns*sizeof(DoublePixelPacket));
-  memset(&zero,0,sizeof(DoublePixelPacket));
+  (void) memset(y_vector,0,image->columns*sizeof(DoublePixelPacket));
+  (void) memset(&zero,0,sizeof(DoublePixelPacket));
   i=0;
   for (y=0; y < (long) scale_image->rows; y++)
-  {
-    q=SetImagePixels(scale_image,0,y,scale_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    if (scale_image->rows == image->rows)
-      {
-        /*
-          Read a new scanline.
-        */
-        p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
-        if (p == (const PixelPacket *) NULL)
-          break;
-        for (x=0; x < (long) image->columns; x++)
+    {
+      q=SetImagePixels(scale_image,0,y,scale_image->columns,1);
+      if (q == (PixelPacket *) NULL)
+        break;
+      if (scale_image->rows == image->rows)
         {
-          x_vector[x].red=p->red;
-          x_vector[x].green=p->green;
-          x_vector[x].blue=p->blue;
-          x_vector[x].opacity=p->opacity;
-          p++;
+          /*
+            Read a new scanline.
+          */
+          p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
+          if (p == (const PixelPacket *) NULL)
+            break;
+          for (x=0; x < (long) image->columns; x++)
+            {
+              x_vector[x].red=p->red;
+              x_vector[x].green=p->green;
+              x_vector[x].blue=p->blue;
+              x_vector[x].opacity=p->opacity;
+              p++;
+            }
         }
-      }
-    else
-      {
-        /*
-          Scale Y direction.
-        */
-        while (y_scale < y_span)
+      else
         {
+          /*
+            Scale Y direction.
+          */
+          while (y_scale < y_span)
+            {
+              if (next_row && (number_rows < (long) image->rows))
+                {
+                  /*
+                    Read a new scanline.
+                  */
+                  p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
+                  if (p == (const PixelPacket *) NULL)
+                    break;
+                  for (x=0; x < (long) image->columns; x++)
+                    {
+                      x_vector[x].red=p->red;
+                      x_vector[x].green=p->green;
+                      x_vector[x].blue=p->blue;
+                      x_vector[x].opacity=p->opacity;
+                      p++;
+                    }
+                  number_rows++;
+                }
+              for (x=0; x < (long) image->columns; x++)
+                {
+                  y_vector[x].red+=y_scale*x_vector[x].red;
+                  y_vector[x].green+=y_scale*x_vector[x].green;
+                  y_vector[x].blue+=y_scale*x_vector[x].blue;
+                  y_vector[x].opacity+=y_scale*x_vector[x].opacity;
+                }
+              y_span-=y_scale;
+              y_scale=(double) scale_image->rows/image->rows;
+              next_row=True;
+            }
           if (next_row && (number_rows < (long) image->rows))
             {
               /*
@@ -1520,169 +1727,141 @@ MagickExport Image *ScaleImage(const Image *image,const unsigned long columns,
               if (p == (const PixelPacket *) NULL)
                 break;
               for (x=0; x < (long) image->columns; x++)
-              {
-                x_vector[x].red=p->red;
-                x_vector[x].green=p->green;
-                x_vector[x].blue=p->blue;
-                x_vector[x].opacity=p->opacity;
-                p++;
-              }
+                {
+                  x_vector[x].red=p->red;
+                  x_vector[x].green=p->green;
+                  x_vector[x].blue=p->blue;
+                  x_vector[x].opacity=p->opacity;
+                  p++;
+                }
               number_rows++;
+              next_row=False;
             }
+          s=scanline;
           for (x=0; x < (long) image->columns; x++)
-          {
-            y_vector[x].red+=y_scale*x_vector[x].red;
-            y_vector[x].green+=y_scale*x_vector[x].green;
-            y_vector[x].blue+=y_scale*x_vector[x].blue;
-            y_vector[x].opacity+=y_scale*x_vector[x].opacity;
-          }
-          y_span-=y_scale;
-          y_scale=(double) scale_image->rows/image->rows;
-          next_row=True;
-        }
-        if (next_row && (number_rows < (long) image->rows))
-          {
-            /*
-              Read a new scanline.
-            */
-            p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
-            if (p == (const PixelPacket *) NULL)
-              break;
-            for (x=0; x < (long) image->columns; x++)
             {
-              x_vector[x].red=p->red;
-              x_vector[x].green=p->green;
-              x_vector[x].blue=p->blue;
-              x_vector[x].opacity=p->opacity;
-              p++;
+              pixel.red=y_vector[x].red+y_span*x_vector[x].red;
+              pixel.green=y_vector[x].green+y_span*x_vector[x].green;
+              pixel.blue=y_vector[x].blue+y_span*x_vector[x].blue;
+              pixel.opacity=y_vector[x].opacity+y_span*x_vector[x].opacity;
+              s->red=pixel.red > MaxRGBDouble ? MaxRGBDouble : pixel.red;
+              s->green=pixel.green > MaxRGBDouble ? MaxRGBDouble : pixel.green;
+              s->blue=pixel.blue > MaxRGBDouble ? MaxRGBDouble : pixel.blue;
+              s->opacity=pixel.opacity > MaxRGBDouble ? MaxRGBDouble : pixel.opacity;
+              s++;
+              y_vector[x].red=0;
+              y_vector[x].green=0;
+              y_vector[x].blue=0;
+              y_vector[x].opacity=0;
             }
-            number_rows++;
-            next_row=False;
-          }
-        s=scanline;
-        for (x=0; x < (long) image->columns; x++)
-        {
-          pixel.red=y_vector[x].red+y_span*x_vector[x].red;
-          pixel.green=y_vector[x].green+y_span*x_vector[x].green;
-          pixel.blue=y_vector[x].blue+y_span*x_vector[x].blue;
-          pixel.opacity=y_vector[x].opacity+y_span*x_vector[x].opacity;
-          s->red=pixel.red > MaxRGB ? MaxRGB : pixel.red;
-          s->green=pixel.green > MaxRGB ? MaxRGB : pixel.green;
-          s->blue=pixel.blue > MaxRGB ? MaxRGB : pixel.blue;
-          s->opacity=pixel.opacity > MaxRGB ? MaxRGB : pixel.opacity;
-          s++;
-          y_vector[x].red=0;
-          y_vector[x].green=0;
-          y_vector[x].blue=0;
-          y_vector[x].opacity=0;
+          y_scale-=y_span;
+          if (y_scale <= 0)
+            {
+              y_scale=(double) scale_image->rows/image->rows;
+              next_row=True;
+            }
+          y_span=1.0;
         }
-        y_scale-=y_span;
-        if (y_scale <= 0)
-          {
-            y_scale=(double) scale_image->rows/image->rows;
-            next_row=True;
-          }
-        y_span=1.0;
-      }
-    if (scale_image->columns == image->columns)
-      {
-        /*
-          Transfer scanline to scaled image.
-        */
-        s=scanline;
-        for (x=0; x < (long) scale_image->columns; x++)
+      if (scale_image->columns == image->columns)
         {
-          q->red=(Quantum) (s->red+0.5);
-          q->green=(Quantum) (s->green+0.5);
-          q->blue=(Quantum) (s->blue+0.5);
-          q->opacity=(Quantum) (s->opacity+0.5);
-          q++;
-          s++;
+          /*
+            Transfer scanline to scaled image.
+          */
+          s=scanline;
+          for (x=0; x < (long) scale_image->columns; x++)
+            {
+              q->red=(Quantum) (s->red+0.5);
+              q->green=(Quantum) (s->green+0.5);
+              q->blue=(Quantum) (s->blue+0.5);
+              q->opacity=(Quantum) (s->opacity+0.5);
+              q++;
+              s++;
+            }
         }
-      }
-    else
-      {
-        /*
-          Scale X direction.
-        */
-        pixel=zero;
-        next_column=False;
-        x_span=1.0;
-        s=scanline;
-        t=scale_scanline;
-        for (x=0; x < (long) image->columns; x++)
+      else
         {
-          x_scale=(double) scale_image->columns/image->columns;
-          while (x_scale >= x_span)
-          {
-            if (next_column)
-              {
-                pixel=zero;
-                t++;
-              }
-            pixel.red+=x_span*s->red;
-            pixel.green+=x_span*s->green;
-            pixel.blue+=x_span*s->blue;
-            pixel.opacity+=x_span*s->opacity;
-            t->red=pixel.red > MaxRGB ? MaxRGB : pixel.red;
-            t->green=pixel.green > MaxRGB ? MaxRGB : pixel.green;
-            t->blue=pixel.blue > MaxRGB ? MaxRGB : pixel.blue;
-            t->opacity=pixel.opacity > MaxRGB ? MaxRGB : pixel.opacity;
-            x_scale-=x_span;
-            x_span=1.0;
-            next_column=True;
-          }
-        if (x_scale > 0)
-          {
-            if (next_column)
-              {
-                pixel=zero;
-                next_column=False;
-                t++;
-              }
-            pixel.red+=x_scale*s->red;
-            pixel.green+=x_scale*s->green;
-            pixel.blue+=x_scale*s->blue;
-            pixel.opacity+=x_scale*s->opacity;
-            x_span-=x_scale;
-          }
-        s++;
-      }
-      if (x_span > 0)
-        {
-          s--;
-          pixel.red+=x_span*s->red;
-          pixel.green+=x_span*s->green;
-          pixel.blue+=x_span*s->blue;
-          pixel.opacity+=x_span*s->opacity;
+          /*
+            Scale X direction.
+          */
+          pixel=zero;
+          next_column=False;
+          x_span=1.0;
+          s=scanline;
+          t=scale_scanline;
+          for (x=0; x < (long) image->columns; x++)
+            {
+              x_scale=(double) scale_image->columns/image->columns;
+              while (x_scale >= x_span)
+                {
+                  if (next_column)
+                    {
+                      pixel=zero;
+                      t++;
+                    }
+                  pixel.red+=x_span*s->red;
+                  pixel.green+=x_span*s->green;
+                  pixel.blue+=x_span*s->blue;
+                  pixel.opacity+=x_span*s->opacity;
+                  t->red=pixel.red > MaxRGBDouble ? MaxRGBDouble : pixel.red;
+                  t->green=pixel.green > MaxRGBDouble ? MaxRGBDouble : pixel.green;
+                  t->blue=pixel.blue > MaxRGBDouble ? MaxRGBDouble : pixel.blue;
+                  t->opacity=pixel.opacity > MaxRGBDouble ? MaxRGBDouble : pixel.opacity;
+                  x_scale-=x_span;
+                  x_span=1.0;
+                  next_column=True;
+                }
+              if (x_scale > 0.0)
+                {
+                  if (next_column)
+                    {
+                      pixel=zero;
+                      next_column=False;
+                      t++;
+                    }
+                  pixel.red+=x_scale*s->red;
+                  pixel.green+=x_scale*s->green;
+                  pixel.blue+=x_scale*s->blue;
+                  pixel.opacity+=x_scale*s->opacity;
+                  x_span-=x_scale;
+                }
+              s++;
+            }
+          if (x_span > 0.0)
+            {
+              s--;
+              pixel.red+=x_span*s->red;
+              pixel.green+=x_span*s->green;
+              pixel.blue+=x_span*s->blue;
+              pixel.opacity+=x_span*s->opacity;
+            }
+          if (!next_column && ((t-scale_scanline) < (long) scale_image->columns))
+            {
+              t->red=pixel.red > MaxRGBDouble ? MaxRGBDouble : pixel.red;
+              t->green=pixel.green > MaxRGBDouble ? MaxRGBDouble : pixel.green;
+              t->blue=pixel.blue > MaxRGBDouble ? MaxRGBDouble : pixel.blue;
+              t->opacity=pixel.opacity > MaxRGBDouble ? MaxRGBDouble : pixel.opacity;
+            }
+          /*
+            Transfer scanline to scaled image.
+          */
+          t=scale_scanline;
+          for (x=0; x < (long) scale_image->columns; x++)
+            {
+              q->red=(Quantum) (t->red+0.5);
+              q->green=(Quantum) (t->green+0.5);
+              q->blue=(Quantum) (t->blue+0.5);
+              q->opacity=(Quantum) (t->opacity+0.5);
+              q++;
+              t++;
+            }
         }
-      if (!next_column && ((t-scale_scanline) < (long) scale_image->columns))
-        {
-          t->red=pixel.red > MaxRGB ? MaxRGB : pixel.red;
-          t->green=pixel.green > MaxRGB ? MaxRGB : pixel.green;
-          t->blue=pixel.blue > MaxRGB ? MaxRGB : pixel.blue;
-          t->opacity=pixel.opacity > MaxRGB ? MaxRGB : pixel.opacity;
-        }
-      /*
-        Transfer scanline to scaled image.
-      */
-      t=scale_scanline;
-      for (x=0; x < (long) scale_image->columns; x++)
-      {
-        q->red=(Quantum) (t->red+0.5);
-        q->green=(Quantum) (t->green+0.5);
-        q->blue=(Quantum) (t->blue+0.5);
-        q->opacity=(Quantum) (t->opacity+0.5);
-        q++;
-        t++;
-      }
-    }
-    if (!SyncImagePixels(scale_image))
-      break;
-    if (QuantumTick(y,scale_image->rows))
-      if (!MagickMonitor(ScaleImageText,y,scale_image->rows,exception))
+      if (!SyncImagePixels(scale_image))
         break;
-  }
+      if (QuantumTick(y,scale_image->rows))
+        if (!MagickMonitorFormatted(y,scale_image->rows,exception,
+                                    ScaleImageText,image->filename))
+          break;
+    }
   /*
     Free allocated memory.
   */

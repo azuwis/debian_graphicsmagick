@@ -37,7 +37,7 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -117,12 +117,21 @@ static Image *ReadUYVYImage(const ImageInfo *image_info,
   image=AllocateImage(image_info);
   if ((image->columns == 0) || (image->rows == 0))
     ThrowReaderException(OptionError,MustSpecifyImageSize,image);
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
   status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
   if (status == False)
-    ThrowReaderException(FileOpenError,UnableToOpenFile,image)
+    ThrowReaderException(FileOpenError,UnableToOpenFile,image);
+  /*
+    When subsampling, image width must be evenly divisible by two.
+  */
+  if (image->columns %2)
+    ThrowReaderException(CorruptImageError,SubsamplingRequiresEvenWidth,image);
   for (i=0; i < image->offset; i++)
-    (void) ReadBlobByte(image);
+    {
+      if (EOF == ReadBlobByte(image))
+        ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                       image->filename);
+    }
   image->depth=8;
   if (image_info->ping)
     {
@@ -155,11 +164,13 @@ static Image *ReadUYVYImage(const ImageInfo *image_info,
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
   }
   image->colorspace=YCbCrColorspace;
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   if (EOFBlob(image))
     ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
       image->filename);
@@ -200,16 +211,17 @@ ModuleExport void RegisterUYVYImage(void)
   entry->encoder=(EncoderHandler) WriteUYVYImage;
   entry->adjoin=False;
   entry->raw=True;
-  entry->description=AcquireString("16bit/pixel interleaved YUV");
-  entry->module=AcquireString("UYVY");
+  entry->description="16bit/pixel interleaved YUV";
+  entry->module="UYVY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("UYVY");
   entry->decoder=(DecoderHandler) ReadUYVYImage;
   entry->encoder=(EncoderHandler) WriteUYVYImage;
   entry->adjoin=False;
   entry->raw=True;
-  entry->description=AcquireString("16bit/pixel interleaved YUV");
-  entry->module=AcquireString("UYVY");
+  entry->description="16bit/pixel interleaved YUV";
+  entry->module="UYVY";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -300,16 +312,23 @@ static unsigned int WriteUYVYImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
+
+  /*
+    When subsampling, image width must be evenly divisible by two.
+  */
+  if (image->columns %2)
+    ThrowWriterException(CoderError,SubsamplingRequiresEvenWidth,image);
+
   /*
     Convert to YUV, at full resolution.
   */
   original_colorspace=image->colorspace;
-  TransformColorspace(image,YCbCrColorspace);
+  (void) TransformColorspace(image,YCbCrColorspace);
   /*
     Accumulate two pixels, then output.
   */
   full=False;
-  memset(&pixel,0,sizeof(DoublePixelPacket));
+  (void) memset(&pixel,0,sizeof(DoublePixelPacket));
   for (y=0; y < (long) image->rows; y++)
   {
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
@@ -333,13 +352,15 @@ static unsigned int WriteUYVYImage(const ImageInfo *image_info,Image *image)
       p++;
     }
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   /*
     Restore colorspace
   */
-  TransformColorspace(image,original_colorspace);
+  (void) TransformColorspace(image,original_colorspace);
   CloseBlob(image);
   return(True);
 }

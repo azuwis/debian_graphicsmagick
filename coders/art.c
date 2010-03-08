@@ -35,60 +35,14 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
+#include "magick/constitute.h"
 #include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
-
-static void InsertRow(unsigned char *p,int y,Image *image)
-{
-int bit; long x;
-register PixelPacket *q;
-IndexPacket index;
-register IndexPacket *indexes;
-
-
- switch (image->depth)
-      {
-      case 1:  /* Convert bitmap scanline. */
-       {
-       q=SetImagePixels(image,0,y,image->columns,1);
-       if (q == (PixelPacket *) NULL)
-       break;
-       indexes=GetIndexes(image);
-       for (x=0; x < ((long) image->columns-7); x+=8)
-    {
-    for (bit=0; bit < 8; bit++)
-       {
-       index=((*p) & (0x80 >> bit) ? 0x01 : 0x00);
-       indexes[x+bit]=index;
-       *q++=image->colormap[index];
-       }
-    p++;
-    }
-       if ((image->columns % 8) != 0)
-     {
-     for (bit=0; bit < (long) (image->columns % 8); bit++)
-         {
-         index=((*p) & (0x80 >> bit) ? 0x01 : 0x00);
-         indexes[x+bit]=index;
-         *q++=image->colormap[index];
-         }
-     p++;
-     }
-        if (!SyncImagePixels(image))
-     break;
-/*            if (image->previous == (Image *) NULL)
-     if (QuantumTick(y,image->rows))
-       ProgressMonitor(LoadImageText,image->rows-y-1,image->rows);*/
-      break;
-      }
-       }
-}
-
-
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -128,8 +82,9 @@ static Image *ReadARTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   unsigned width,height,dummy;
   long ldblk;
   unsigned char *BImgBuff=NULL;
-  unsigned char k;
+  unsigned char Padding;
   unsigned int status;
+  const PixelPacket *q;
 
   /*
     Open image file.
@@ -151,9 +106,9 @@ static Image *ReadARTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   height=ReadBlobLSBShort(image);
 
   ldblk=(long) ((width+7) / 8);
-  k=(unsigned char) ((-ldblk) & 0x01);
+  Padding=(unsigned char) ((-ldblk) & 0x01);
 
-  if(GetBlobSize(image)!=(8+((long)ldblk+k)*height))
+  if(GetBlobSize(image)!=(8+((long)ldblk+Padding)*height))
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
 
   image->columns=width;
@@ -169,16 +124,20 @@ static Image *ReadARTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (image_info->ping) goto DONE_READING;
 
   /* ----- Load RLE compressed raster ----- */
-  BImgBuff=MagickAllocateMemory(unsigned char *,ldblk);  /*Ldblk was set in the check phase*/
+  BImgBuff=MagickAllocateMemory(unsigned char *,((size_t) ldblk));  /*Ldblk was set in the check phase*/
   if(BImgBuff==NULL)
     NoMemory:
   ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
 
-  for(i=0;i< (int) height;i++)
+  for(i=0; i<(int)height; i++)
     {
       (void) ReadBlob(image,(size_t)ldblk,(char *)BImgBuff);
-      (void) ReadBlob(image,k,(char *)&dummy);
-      InsertRow(BImgBuff,i,image);
+      (void) ReadBlob(image,Padding,(char *)&dummy);      
+
+      q=SetImagePixels(image,0,i,image->columns,1);
+      if (q == (PixelPacket *)NULL) break;
+      (void)ImportImagePixelArea(image,GrayQuantum,1,BImgBuff,NULL,0);
+      if (!SyncImagePixels(image)) break;
     }
   if(BImgBuff!=NULL)
     MagickFreeMemory(BImgBuff);
@@ -191,6 +150,94 @@ DONE_READING:
   return(image);
 }
 
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   W r i t e A R T I m a g e                                           %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Function WriteARTImage writes an ART image to a file.  
+%
+%  The format of the WriteARTImage method is:
+%
+%      unsigned int WriteARTImage(const ImageInfo *image_info,Image *image)
+%
+%  A description of each parameter follows.
+%
+%    o status: Function WriteARTImage return True if the image is written.
+%      False is returned is there is a memory shortage or if the image file
+%      fails to write.
+%
+%    o image_info: Specifies a pointer to a ImageInfo structure.
+%
+%    o image:  A pointer to an Image structure.
+%
+*/
+static unsigned int WriteARTImage(const ImageInfo *image_info,Image *image)
+{
+  long y;
+  unsigned dummy = 0;
+  long DataSize;
+  const PixelPacket *q;
+  unsigned int status;
+  unsigned char Padding;
+  int logging;
+  unsigned char *pixels;
+
+  /*
+    Open output image file.
+  */
+  assert(image_info != (const ImageInfo *) NULL);
+  assert(image_info->signature == MagickSignature);
+  assert(image != (Image *) NULL);
+  assert(image->signature == MagickSignature);
+  logging=LogMagickEvent(CoderEvent,GetMagickModule(),"enter ART");
+  status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
+  if (status == False)
+    ThrowWriterException(FileOpenError,UnableToOpenFile,image);
+
+  DataSize = (long)((image->columns+7) / 8);
+  Padding = (unsigned char)((-DataSize) & 0x01);  
+
+  pixels=MagickAllocateMemory(unsigned char *,(size_t) (DataSize));
+  if (pixels == (unsigned char *) NULL)
+    ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
+
+ /*
+    Write ART hader.
+  */
+  (void) WriteBlobLSBShort(image,0);
+  (void) WriteBlobLSBShort(image,image->columns);
+  (void) WriteBlobLSBShort(image,0);
+  (void) WriteBlobLSBShort(image,image->rows);
+
+  /*
+    Store image data.
+  */
+  for(y=0; y<(long)image->rows; y++)
+  {
+    q = AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+    (void)ExportImagePixelArea(image,GrayQuantum,1,pixels,0,0);
+    (void)WriteBlob(image,DataSize,pixels);
+    (void)WriteBlob(image,Padding,(char *)&dummy);
+  }
+
+  status=True;
+
+  CloseBlob(image);
+  MagickFreeMemory(pixels);
+
+  if (logging)
+    (void)LogMagickEvent(CoderEvent,GetMagickModule(),"return ART");
+  
+  return(status);
+}
 
 
 /*
@@ -221,18 +268,11 @@ ModuleExport void RegisterARTImage(void)
   MagickInfo
     *entry;
 
-  static const char
-    *ARTNote=
-    {
-      "Format originally used on the Macintosh (MacPaint?) and later\n"
-      "used for PFS: 1st Publisher clip art.  NOT the AOL ART format."
-    };
-
   entry=SetMagickInfo("ART");
-  entry->decoder=(DecoderHandler) ReadARTImage;
-  entry->description=AcquireString("PFS: 1st Publisher");
-  entry->module=AcquireString("ART");
-  entry->note=AcquireString(ARTNote);
+  entry->decoder = (DecoderHandler)ReadARTImage;
+  entry->encoder = (EncoderHandler)WriteARTImage;
+  entry->description="PFS: 1st Publisher";
+  entry->module="ART";
   (void) RegisterMagickInfo(entry);
 }
 

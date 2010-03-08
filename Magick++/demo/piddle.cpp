@@ -159,7 +159,8 @@ int main( int /*argc*/, char ** argv)
     //     image.write( "piddle.mvg" );
 
     cout << "Writing image \"piddle_out.miff\" ..." << endl;
-    image.compressType( RunlengthEncodedCompression );
+    image.depth( 8 );
+    image.compressType( RLECompression );
     image.write( "piddle_out.miff" );
     cout << "Writing MVG metafile \"piddle_out.mvg\" ..." << endl;
     image.write( "piddle_out.mvg" );

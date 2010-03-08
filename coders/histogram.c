@@ -38,8 +38,9 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
@@ -83,8 +84,10 @@ ModuleExport void RegisterHISTOGRAMImage(void)
   entry=SetMagickInfo("HISTOGRAM");
   entry->encoder=(EncoderHandler) WriteHISTOGRAMImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Histogram of the image");
-  entry->module=AcquireString("HISTOGRAM");
+  entry->description="Histogram of the image";
+  entry->module="HISTOGRAM";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -202,7 +205,7 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
   assert(image_info->signature == MagickSignature);
   assert(image != (Image *) NULL);
   assert(image->signature == MagickSignature);
-  SetImageDepth(image,image->depth);
+  (void) SetImageDepth(image,image->depth);
   SetGeometry(image,&geometry);
   if (image_info->density == (char *) NULL)
     (void) GetMagickGeometry(HistogramDensity,&geometry.x,&geometry.y,
@@ -214,7 +217,7 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
     &image->exception);
   if (histogram_image == (Image *) NULL)
     ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
-  SetImageType(histogram_image,TrueColorType);
+  (void) SetImageType(histogram_image,TrueColorType);
   /*
     Allocate histogram count arrays.
   */
@@ -228,9 +231,9 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
       DestroyImage(histogram_image);
       ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image)
     }
-  memset(red,0,length*sizeof(long));
-  memset(green,0,length*sizeof(long));
-  memset(blue,0,length*sizeof(long));
+  (void) memset(red,0,length*sizeof(long));
+  (void) memset(green,0,length*sizeof(long));
+  (void) memset(blue,0,length*sizeof(long));
   /*
     Initialize histogram count arrays.
   */
@@ -263,7 +266,7 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
   */
   (void) QueryColorDatabase("black",&histogram_image->background_color,
     &image->exception);
-  SetImage(histogram_image,OpaqueOpacity);
+  (void) SetImage(histogram_image,OpaqueOpacity);
   for (x=0; x < (long) histogram_image->columns; x++)
   {
     q=GetImagePixels(histogram_image,x,0,1,histogram_image->rows);
@@ -293,7 +296,9 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
     if (!SyncImagePixels(histogram_image))
       break;
     if (QuantumTick(x,histogram_image->columns))
-      if (!MagickMonitor(SaveImageText,x,histogram_image->columns,&image->exception))
+      if (!MagickMonitorFormatted(x,histogram_image->columns,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   /*
@@ -319,13 +324,14 @@ static unsigned int WriteHISTOGRAMImage(const ImageInfo *image_info,
       (void) fclose(file);
       FormatString(command,"@%.1024s",filename);
       (void) SetImageAttribute(histogram_image,"comment",command);
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
     }
   /*
     Write Histogram image as MIFF.
   */
-  (void) strncpy(filename,histogram_image->filename,MaxTextExtent-1);
-  (void) FormatString(histogram_image->filename,"miff:%.1024s",filename);
+  (void) strlcpy(filename,histogram_image->filename,MaxTextExtent);
+  (void) strlcpy(histogram_image->filename,"miff:",MaxTextExtent);
+  (void) strlcat(histogram_image->filename,filename,MaxTextExtent);
   status=WriteImage(image_info,histogram_image);
   DestroyImage(histogram_image);
   return(status);

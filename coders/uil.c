@@ -37,8 +37,9 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -80,8 +81,8 @@ ModuleExport void RegisterUILImage(void)
   entry=SetMagickInfo("UIL");
   entry->encoder=(EncoderHandler) WriteUILImage;
   entry->adjoin=False;
-  entry->description=AcquireString("X-Motif UIL table");
-  entry->module=AcquireString("UIL");
+  entry->description="X-Motif UIL table";
+  entry->module="UIL";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -163,9 +164,6 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
-    *indexes;
-
   register long
     i,
     x;
@@ -189,7 +187,7 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   transparent=False;
   i=0;
   p=(const PixelPacket *) NULL;
@@ -229,17 +227,20 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
             }
           }
         }
-      SetImageType(image,PaletteType);
+      (void) SetImageType(image,PaletteType);
       colors=image->colors;
       if (transparent)
         {
           colors++;
           for (y=0; y < (long) image->rows; y++)
           {
-            p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+            register IndexPacket
+              *indexes;
+
+            p=GetImagePixelsEx(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessMutableIndexes(image);
             for (x=0; x < (long) image->columns; x++)
             {
               if (matte_image[i])
@@ -304,10 +305,13 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
   (void) WriteBlobString(image,buffer);
   for (y=0; y < (long) image->rows; y++)
   {
+    register const IndexPacket
+      *indexes;
+
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     (void) WriteBlobString(image,"    \"");
     for (x=0; x < (long) image->columns; x++)
     {
@@ -319,7 +323,7 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
         symbol[j]=Cixel[k];
       }
       symbol[j]='\0';
-      (void) strncpy(buffer,symbol,MaxTextExtent-1);
+      (void) strlcpy(buffer,symbol,MaxTextExtent);
       (void) WriteBlobString(image,buffer);
       p++;
     }
@@ -327,7 +331,9 @@ static unsigned int WriteUILImage(const ImageInfo *image_info,Image *image)
       (y == (long) (image->rows-1) ? ");" : ","));
     (void) WriteBlobString(image,buffer);
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   CloseBlob(image);

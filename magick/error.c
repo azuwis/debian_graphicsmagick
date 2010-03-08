@@ -747,9 +747,9 @@ MagickExport void SetExceptionInfo(ExceptionInfo *exception,
 %  SetFatalErrorHandler() sets the fatal error handler to the specified method
 %  and returns the previous fatal error handler.
 %
-%  The format of the SetErrorHandler method is:
+%  The format of the SetFatalErrorHandler method is:
 %
-%      ErrorHandler SetErrorHandler(ErrorHandler handler)
+%      FatalErrorHandler SetFatalErrorHandler(FatalErrorHandler handler)
 %
 %  A description of each parameter follows:
 %
@@ -922,16 +922,16 @@ MagickExport void ThrowLoggedException(ExceptionInfo *exception,
   if (exception->reason)
     {
       if (exception->description)
-        LogMagickEvent(severity,module,function,line,"%.1024s (%.1024s)",
-          exception->reason,exception->description );
+        (void) LogMagickEvent(severity,module,function,line,"%.1024s (%.1024s)",
+                              exception->reason,exception->description );
       else
-        LogMagickEvent(severity,module,function,line,"%.1024s",
-          exception->reason);
+        (void) LogMagickEvent(severity,module,function,line,"%.1024s",
+                              exception->reason);
     }
   else
     {
-      LogMagickEvent(severity,module,function,line,
-        "exception contains no reason!");
+      (void) LogMagickEvent(severity,module,function,line,
+                            "exception contains no reason!");
     }
   return;
 }

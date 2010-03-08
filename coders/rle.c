@@ -38,9 +38,10 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -430,7 +431,9 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
       }
@@ -475,17 +478,19 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=SetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessMutableIndexes(image);
               for (x=0; x < (long) image->columns; x++)
                 indexes[x]=(*p++);
               if (!SyncImagePixels(image))
                 break;
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                  if (!MagickMonitorFormatted(y,image->rows,exception,
+                                              LoadImageText,image->filename,
+					      image->columns,image->rows))
                     break;
             }
-            SyncImage(image);
+            (void) SyncImage(image);
           }
         else
           {
@@ -509,7 +514,10 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 break;
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                  if (!MagickMonitorFormatted(y,image->rows,exception,
+                                              LoadImageText,
+                                              image->filename,
+					      image->columns,image->rows))
                     break;
             }
             MagickFreeMemory(image->colormap);
@@ -547,7 +555,9 @@ static Image *ReadRLEImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                    exception,LoadImagesText,
+                                    image->filename))
           break;
       }
   } while ((count != 0) && (memcmp(magick,"\122\314",2) == 0));
@@ -589,8 +599,8 @@ ModuleExport void RegisterRLEImage(void)
   entry->decoder=(DecoderHandler) ReadRLEImage;
   entry->magick=(MagickHandler) IsRLE;
   entry->adjoin=False;
-  entry->description=AcquireString("Utah Run length encoded image");
-  entry->module=AcquireString("RLE");
+  entry->description="Utah Run length encoded image";
+  entry->module="RLE";
   (void) RegisterMagickInfo(entry);
 }
 

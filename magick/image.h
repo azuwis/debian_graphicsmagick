@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003 - 2009 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
   Copyright 1991-1999 E. I. du Pont de Nemours and Company
  
@@ -19,6 +19,8 @@ extern "C" {
 /*
   Include declarations.
 */
+#include "magick/forward.h"
+#include "magick/colorspace.h"
 #include "magick/error.h"
 #include "magick/timer.h"
 
@@ -26,168 +28,154 @@ extern "C" {
   Define declarations.
 */
 #if !defined(QuantumDepth)
-#define QuantumDepth  16
-#define QuantumLeap
+#  define QuantumDepth  16
 #endif
+
+/*
+  Maximum unsigned RGB value which fits in the specified bits
+*/
+#define MaxValueGivenBits(bits) ((unsigned long) (0x01UL << (bits-1)) +((0x01UL << (bits-1))-1))
 
 #if (QuantumDepth == 8)
-#define MaxColormapSize  256UL
-#define MaxMap  255UL
-#define MaxRGB  255UL
-#define ScaleCharToMap(value)        ((unsigned char) (value))
-#define ScaleCharToQuantum(value)    ((Quantum) (value))
-#define ScaleLongToQuantum(value)    ((Quantum) ((value)/16843009UL))
-#define ScaleMapToChar(value)        ((unsigned int) (value))
-#define ScaleMapToQuantum(value)     ((Quantum) (value))
-#define ScaleQuantum(quantum)        ((unsigned long) (quantum))
-#define ScaleQuantumToChar(quantum)  ((unsigned char) (quantum))
-#define ScaleQuantumToLong(quantum)  ((unsigned long) (16843009UL*(quantum)))
-#define ScaleQuantumToMap(quantum)   ((unsigned char) (quantum))
-#define ScaleQuantumToShort(quantum) ((unsigned short) (257UL*(quantum)))
-#define ScaleShortToQuantum(value)   ((Quantum) ((value)/257UL))
-#define ScaleToQuantum(value)        ((unsigned long) (value))
-#define ScaleQuantumToIndex(value)   ((unsigned char) (value))
-/*
-  intensity=0.299*red+0.587*green+0.114*blue.
-  Premultiply by 1024 to obtain integral values, and then divide
-  result by 1024 by shifting to the right by 10 bits.
-*/
-#define PixelIntensity(pixel) ((unsigned int) \
-   (((unsigned int)306U*(pixel)->red+ \
-     (unsigned int)601U*(pixel)->green+ \
-     (unsigned int)117U*(pixel)->blue) \
-    >> 10U))
-typedef unsigned char Quantum;
+#  define MaxColormapSize  256U
+#  define MaxMap  255U
+#  define MaxMapFloat 255.0f
+#  define MaxMapDouble 255.0
+#  define MaxRGB  255U
+#  define MaxRGBFloat 255.0f
+#  define MaxRGBDouble 255.0
+#  define ScaleCharToMap(value)        ((unsigned char) (value))
+#  define ScaleCharToQuantum(value)    ((Quantum) (value))
+#  define ScaleLongToQuantum(value)    ((Quantum) ((value)/16843009UL))
+#  define ScaleMapToChar(value)        ((unsigned int) (value))
+#  define ScaleMapToQuantum(value)     ((Quantum) (value))
+#  define ScaleQuantum(quantum)        ((unsigned long) (quantum))
+#  define ScaleQuantumToChar(quantum)  ((unsigned char) (quantum))
+#  define ScaleQuantumToLong(quantum)  ((unsigned long) (16843009UL*(quantum)))
+#  define ScaleQuantumToMap(quantum)   ((unsigned char) (quantum))
+#  define ScaleQuantumToShort(quantum) ((unsigned short) (257U*(quantum)))
+#  define ScaleShortToQuantum(value)   ((Quantum) ((value)/257U))
+#  define ScaleToQuantum(value)        ((unsigned long) (value))
+#  define ScaleQuantumToIndex(value)   ((unsigned char) (value))
+   typedef unsigned char Quantum;
 #elif (QuantumDepth == 16)
-#define MaxColormapSize  65536UL
-#define MaxMap 65535UL
-#define MaxRGB  65535UL
-#define ScaleCharToMap(value)        ((unsigned short) (257UL*(value)))
-#define ScaleCharToQuantum(value)    ((Quantum) (257UL*(value)))
-#define ScaleLongToQuantum(value)    ((Quantum) ((value)/65537UL))
-#define ScaleMapToChar(value)        ((unsigned int) ((value)/257UL))
-#define ScaleMapToQuantum(value)     ((Quantum) (value))
-#define ScaleQuantum(quantum)        ((unsigned long) ((quantum)/257UL))
-#define ScaleQuantumToChar(quantum)  ((unsigned char) ((quantum)/257UL))
-#define ScaleQuantumToLong(quantum)  ((unsigned long) (65537UL*(quantum)))
-#define ScaleQuantumToMap(quantum)   ((unsigned short) (quantum))
-#define ScaleQuantumToShort(quantum) ((unsigned short) (quantum))
-#define ScaleShortToQuantum(value)   ((Quantum) (value))
-#define ScaleToQuantum(value)        ((unsigned long) (257UL*(value)))
-#define ScaleQuantumToIndex(value)   ((unsigned short) (value))
-/*
-  intensity=0.299*red+0.587*green+0.114*blue.
-  Premultiply by 1024 to obtain integral values, and then divide
-  result by 1024 by shifting to the right by 10 bits.
-*/
-#define PixelIntensity(pixel) ((unsigned int) \
-   (((unsigned int)306U*(pixel)->red+ \
-     (unsigned int)601U*(pixel)->green+ \
-     (unsigned int)117U*(pixel)->blue) \
-    >> 10U))
-typedef unsigned short Quantum;
+#  define MaxColormapSize  65536U
+#  define MaxMap 65535U
+#  define MaxMapFloat 65535.0f
+#  define MaxMapDouble 65535.0
+#  define MaxRGB  65535U
+#  define MaxRGBFloat 65535.0f
+#  define MaxRGBDouble 65535.0
+#  define ScaleCharToMap(value)        ((unsigned short) (257U*(value)))
+#  define ScaleCharToQuantum(value)    ((Quantum) (257U*(value)))
+#  define ScaleLongToQuantum(value)    ((Quantum) ((value)/65537UL))
+#  define ScaleMapToChar(value)        ((unsigned int) ((value)/257U))
+#  define ScaleMapToQuantum(value)     ((Quantum) (value))
+#  define ScaleQuantum(quantum)        ((unsigned long) ((quantum)/257UL))
+#  define ScaleQuantumToChar(quantum)  ((unsigned char) ((quantum)/257U))
+#  define ScaleQuantumToLong(quantum)  ((unsigned long) (65537UL*(quantum)))
+#  define ScaleQuantumToMap(quantum)   ((unsigned short) (quantum))
+#  define ScaleQuantumToShort(quantum) ((unsigned short) (quantum))
+#  define ScaleShortToQuantum(value)   ((Quantum) (value))
+#  define ScaleToQuantum(value)        ((unsigned long) (257UL*(value)))
+#  define ScaleQuantumToIndex(value)   ((unsigned short) (value))
+   typedef unsigned short Quantum;
 #elif (QuantumDepth == 32)
-#define MaxColormapSize  65536UL
-#define MaxMap 65535UL
-#define MaxRGB  4294967295UL
-#define ScaleCharToMap(value)        ((unsigned short) (257UL*(value)))
-#define ScaleCharToQuantum(value)    ((Quantum) (16843009UL*(value)))
-#define ScaleLongToQuantum(value)    ((Quantum) ((value)))
-#define ScaleMapToChar(value)        ((unsigned int) ((value)/257UL))
-#define ScaleMapToQuantum(value)     ((Quantum) (65537UL*(value)))
-#define ScaleQuantum(quantum)        ((unsigned long) ((quantum)/16843009UL))
-#define ScaleQuantumToChar(quantum)  ((unsigned char) ((quantum)/16843009UL))
-#define ScaleQuantumToLong(quantum)  ((unsigned long) (quantum))
-#define ScaleQuantumToMap(quantum)   ((unsigned short) ((quantum)/65537UL))
-#define ScaleQuantumToShort(quantum) ((unsigned short) ((quantum)/65537UL))
-#define ScaleShortToQuantum(value)   ((Quantum) (65537UL*(value)))
-#define ScaleToQuantum(value)        ((unsigned long) (16843009UL*(value)))
-#define ScaleQuantumToIndex(value)   ((unsigned short) ((value)/65537UL))
+#  define MaxColormapSize  65536U
+#  define MaxRGB  4294967295U
+#  define MaxRGBFloat 4294967295.0f
+#  define MaxRGBDouble 4294967295.0
+#  define ScaleCharToQuantum(value)    ((Quantum) (16843009U*(value)))
+#  define ScaleLongToQuantum(value)    ((Quantum) ((value)))
+#  define ScaleQuantum(quantum)        ((unsigned long) ((quantum)/16843009UL))
+#  define ScaleQuantumToChar(quantum)  ((unsigned char) ((quantum)/16843009U))
+#  define ScaleQuantumToLong(quantum)  ((unsigned long) (quantum))
+#  define ScaleQuantumToShort(quantum) ((unsigned short) ((quantum)/65537U))
+#  define ScaleShortToQuantum(value)   ((Quantum) (65537U*(value)))
+#  define ScaleToQuantum(value)        ((unsigned long) (16843009UL*(value)))
+#  define ScaleQuantumToIndex(value)   ((unsigned short) ((value)/65537U))
+
 /*
-  intensity=0.299*red+0.587*green+0.114*blue.
-  Premultiply by 1024 to obtain integral values, and then divide
-  result by 1024.
+  MaxMap defines the maximum index value for algorithms which depend
+  on lookup tables (e.g. colorspace transformations and
+  normalization). When MaxMap is less than MaxRGB it is necessary to
+  downscale samples to fit the range of MaxMap. The number of bits
+  which are effectively preserved depends on the size of MaxMap.
+  MaxMap should be a multiple of 255 and no larger than MaxRGB.  Note
+  that tables can become quite large and as the tables grow larger it
+  may take more time to compute the table than to process the image.
 */
-#define PixelIntensity(pixel) ((unsigned int) \
-   (((double)306.0*(pixel)->red+ \
-     (double)601.0*(pixel)->green+ \
-     (double)117.0*(pixel)->blue) \
-    / 1024.0))
+#define MaxMap 65535U
+#define MaxMapFloat 65535.0f
+#define MaxMapDouble 65535.0
+#if MaxMap == 65535U
+#  define ScaleCharToMap(value)        ((unsigned short) (257U*(value)))
+#  define ScaleMapToChar(value)        ((unsigned int) ((value)/257U))
+#  define ScaleMapToQuantum(value)     ((Quantum) (65537U*(value)))
+#  define ScaleQuantumToMap(quantum)   ((unsigned short) ((quantum)/65537U))
+#else
+#  define ScaleCharToMap(value)        ((unsigned short) ((MaxMap/255U)*(value)))
+#  define ScaleMapToChar(value)        ((unsigned int) ((value)/(MaxMap/255U)))
+#  define ScaleMapToQuantum(value)     ((Quantum) ((MaxRGB/MaxMap)*(value)))
+#  define ScaleQuantumToMap(quantum)   ((unsigned short) ((quantum)/(MaxRGB/MaxMap)))
+#endif
 typedef unsigned int Quantum;
 #else
-# error "Specified value of QuantumDepth is not supported"
+#  ifndef _CH_
+#    error "Specified value of QuantumDepth is not supported"
+#  endif
 #endif
 
-#define ColorMatch(p,q) (((p)->red == (q)->red) && \
-  ((p)->green == (q)->green) && ((p)->blue == (q)->blue))
 #define OpaqueOpacity  0UL
 #define TransparentOpacity  MaxRGB
-#define RoundSignedToQuantum(value) ((Quantum) (value < 0 ? 0 : \
-  (value > MaxRGB) ? MaxRGB : value + 0.5))
-#define RoundToQuantum(value) ((Quantum) (value > MaxRGB ? MaxRGB : \
-  value + 0.5))
+#define RoundDoubleToQuantum(value) ((Quantum) (value < 0.0 ? 0U : \
+  (value > MaxRGBDouble) ? MaxRGB : value + 0.5))
+#define RoundFloatToQuantum(value) ((Quantum) (value < 0.0f ? 0U : \
+  (value > MaxRGBFloat) ? MaxRGB : value + 0.5f))
 #define ConstrainToRange(min,max,value) (value < min ? min : \
   (value > max) ? max : value)
 #define ConstrainToQuantum(value) ConstrainToRange(0,MaxRGB,value)
 #define ScaleAnyToQuantum(x,max_value) \
-  ((Quantum) (((double) MaxRGB*x)/max_value+0.5))
-
-#define PixelIntensityToDouble(pixel) ((double)PixelIntensity(pixel))
-#define PixelIntensityToQuantum(pixel) ((Quantum)PixelIntensity(pixel))
+  ((Quantum) (((double) MaxRGBDouble*x)/max_value+0.5))
+#define MagickBoolToString(value) (value != MagickFalse ? "True" : "False")
 
 /*
-  Maximum RGB value which fits in the specified bits
+  Return MagickTrue if channel is enabled in channels.  Allows using
+  code to adapt if ChannelType enumeration is changed to bit masks.
 */
-#define MaxRGBGivenBits(bits) ((0x01U << (bits-1)) +((0x01U << (bits-1))-1))
-
-/*
-  Tests for colorspace classification.
-*/
-#define IsCMYKColorspace(colorspace) \
-  ( \
-    (colorspace == CMYKColorspace) \
-  )
-#define IsGrayColorspace(colorspace) \
-  ( \
-    (colorspace == GRAYColorspace) \
-  )
-#define IsRGBColorspace(colorspace) \
-  ( \
-    (IsGrayColorspace(colorspace)) || \
-    (colorspace == RGBColorspace) || \
-    (colorspace == TransparentColorspace) \
-  )
-#define IsYCbCrColorspace(colorspace) \
-  ( \
-    (colorspace == YCbCrColorspace) \
-  )
+#define MagickChannelEnabled(channels,channel) ((channels == AllChannels) || (channels == channel))
 
 /*
   Deprecated defines.
 */
-#define Downscale(quantum)  ScaleQuantumToChar(quantum)
-#define Intensity(color)  PixelIntensityToQuantum(color)
 #define RunlengthEncodedCompression RLECompression
-#define Upscale(value)  ScaleCharToQuantum(value)
-#define XDownscale(value)  ScaleShortToQuantum(value)
-#define XUpscale(quantum)  ScaleQuantumToShort(quantum)
+#define RoundSignedToQuantum(value) RoundDoubleToQuantum(value)
+#define RoundToQuantum(value) RoundDoubleToQuantum(value)
 
 /*
   Enum declarations.
 */
 typedef enum
 {
+  UnspecifiedAlpha,
+  AssociatedAlpha,
+  UnassociatedAlpha
+} AlphaType;
+
+typedef enum
+{
   UndefinedChannel,
-  RedChannel,
-  CyanChannel,
-  GreenChannel,
-  MagentaChannel,
-  BlueChannel,
-  YellowChannel,
-  OpacityChannel,
-  BlackChannel,
-  MatteChannel,
-  AllChannels
+  RedChannel,     /* RGB Red channel */
+  CyanChannel,    /* CMYK Cyan channel */
+  GreenChannel,   /* RGB Green channel */
+  MagentaChannel, /* CMYK Magenta channel */
+  BlueChannel,    /* RGB Blue channel */
+  YellowChannel,  /* CMYK Yellow channel */
+  OpacityChannel, /* Opacity channel */
+  BlackChannel,   /* CMYK Black (K) channel */
+  MatteChannel,   /* Same as Opacity channel (deprecated) */
+  AllChannels,    /* Color channels */
+  GrayChannel     /* Color channels represent an intensity. */
 } ChannelType;
 
 typedef enum
@@ -196,36 +184,6 @@ typedef enum
   DirectClass,
   PseudoClass
 } ClassType;
-
-typedef enum
-{
-  UndefinedColorspace,
-  RGBColorspace,
-  GRAYColorspace,
-  TransparentColorspace,
-  OHTAColorspace,
-  XYZColorspace,
-  YCbCrColorspace,
-  YCCColorspace,
-  YIQColorspace,
-  YPbPrColorspace,
-  YUVColorspace,
-  CMYKColorspace,
-  sRGBColorspace,
-  HSLColorspace,
-  HWBColorspace,
-  LABColorspace
-} ColorspaceType;
-
-typedef enum
-{
-  UndefinedCompliance = 0x0000,
-  NoCompliance = 0x0000,
-  SVGCompliance = 0x0001,
-  X11Compliance = 0x0002,
-  XPMCompliance = 0x0004,
-  AllCompliance = 0xffff
-} ComplianceType;
 
 typedef enum
 {
@@ -259,12 +217,13 @@ typedef enum
   SaturateCompositeOp,
   ColorizeCompositeOp,
   LuminizeCompositeOp,
-  ScreenCompositeOp,
-  OverlayCompositeOp,
+  ScreenCompositeOp, /* Not yet implemented */
+  OverlayCompositeOp,  /* Not yet implemented */
   CopyCyanCompositeOp,
   CopyMagentaCompositeOp,
   CopyYellowCompositeOp,
-  CopyBlackCompositeOp
+  CopyBlackCompositeOp,
+  DivideCompositeOp
 } CompositeOperator;
 
 typedef enum
@@ -292,8 +251,9 @@ typedef enum
 typedef enum
 {
   UndefinedEndian,
-  LSBEndian,
-  MSBEndian
+  LSBEndian,            /* "little" endian */
+  MSBEndian,            /* "big" endian */
+  NativeEndian          /* native endian */
 } EndianType;
 
 typedef enum
@@ -319,26 +279,27 @@ typedef enum
 typedef enum
 {
 #undef NoValue
-  NoValue = 0x0000,
+  NoValue      = 0x00000,
 #undef XValue
-  XValue = 0x0001,
+  XValue       = 0x00001,
 #undef YValue
-  YValue = 0x0002,
+  YValue       = 0x00002,
 #undef WidthValue
-  WidthValue = 0x0004,
+  WidthValue   = 0x00004,
 #undef HeightValue
-  HeightValue = 0x0008,
+  HeightValue  = 0x00008,
 #undef AllValues
-  AllValues = 0x000F,
+  AllValues    = 0x0000F,
 #undef XNegative
-  XNegative = 0x0010,
+  XNegative    = 0x00010,
 #undef YNegative
-  YNegative = 0x0020,
-  PercentValue = 0x1000,
-  AspectValue = 0x2000,
-  LessValue = 0x4000,
-  GreaterValue = 0x8000,
-  AreaValue = 0x10000
+  YNegative    = 0x00020,
+  PercentValue = 0x01000, /* % */
+  AspectValue  = 0x02000, /* ! */
+  LessValue    = 0x04000, /* < */
+  GreaterValue = 0x08000, /* > */
+  AreaValue    = 0x10000, /* @  */
+  MinimumValue = 0x20000  /* ^ */
 } GeometryFlags;
 
 typedef enum
@@ -409,6 +370,22 @@ typedef enum
   PoissonNoise
 } NoiseType;
 
+/*
+  Image orientation.  Based on TIFF standard values.
+*/
+typedef enum               /* Line direction / Frame Direction */
+{                          /* -------------- / --------------- */
+  UndefinedOrientation,    /* Unknown        / Unknown         */
+  TopLeftOrientation,      /* Left to right  / Top to bottom   */
+  TopRightOrientation,     /* Right to left  / Top to bottom   */
+  BottomRightOrientation,  /* Right to left  / Bottom to top   */
+  BottomLeftOrientation,   /* Left to right  / Bottom to top   */
+  LeftTopOrientation,      /* Top to bottom  / Left to right   */
+  RightTopOrientation,     /* Top to bottom  / Right to left   */
+  RightBottomOrientation,  /* Bottom to top  / Right to left   */
+  LeftBottomOrientation    /* Bottom to top  / Left to right   */
+} OrientationType;
+
 typedef enum
 {
   UndefinedPreview = 0,
@@ -442,20 +419,6 @@ typedef enum
   CharcoalDrawingPreview,
   JPEGPreview
 } PreviewType;
-
-typedef enum
-{
-  UndefinedQuantumOp = 0,
-  AddQuantumOp,
-  AndQuantumOp,
-  DivideQuantumOp,
-  LShiftQuantumOp,
-  MultiplyQuantumOp,
-  OrQuantumOp,
-  RShiftQuantumOp,
-  SubtractQuantumOp,
-  XorQuantumOp
- } QuantumOperator;
 
 typedef enum
 {
@@ -504,53 +467,63 @@ typedef struct _ChromaticityInfo
     white_point;
 } ChromaticityInfo;
 
+#if defined(MAGICK_IMPLEMENTATION)
+/*
+  Useful macros for accessing PixelPacket members in a generic way.
+*/
+# define GetRedSample(p) ((p)->red)
+# define GetGreenSample(p) ((p)->green)
+# define GetBlueSample(p) ((p)->blue)
+# define GetOpacitySample(p) ((p)->opacity)
+
+# define SetRedSample(q,value) ((q)->red=(value))
+# define SetGreenSample(q,value) ((q)->green=(value))
+# define SetBlueSample(q,value) ((q)->blue=(value))
+# define SetOpacitySample(q,value) ((q)->opacity=(value))
+
+# define GetGraySample(p) ((p)->red)
+# define SetGraySample(q,value) ((q)->red=(q)->green=(q)->blue=(value))
+
+# define GetYSample(p) ((p)->red)
+# define GetCbSample(p) ((p)->green)
+# define GetCrSample(p) ((p)->blue)
+
+# define SetYSample(q,value) ((q)->red=(value))
+# define SetCbSample(q,value) ((q)->green=(value))
+# define SetCrSample(q,value) ((q)->blue=(value))
+
+# define GetCyanSample(p) ((p)->red)
+# define GetMagentaSample(p) ((p)->green)
+# define GetYellowSample(p) ((p)->blue)
+# define GetBlackSample(p) ((p)->opacity)
+
+# define SetCyanSample(q,value) ((q)->red=(value))
+# define SetMagentaSample(q,value) ((q)->green=(value))
+# define SetYellowSample(q,value) ((q)->blue=(value))
+# define SetBlackSample(q,value) ((q)->opacity=(value))
+
+#endif /* defined(MAGICK_IMPLEMENTATION) */
+
 typedef struct _PixelPacket
 {
 #if defined(WORDS_BIGENDIAN)
+  /* RGBA */
+#define MAGICK_PIXELS_RGBA 1
   Quantum
     red,
     green,
     blue,
     opacity;
 #else
-#if defined(macintosh)
-  Quantum
-    opacity,
-    red,
-    green,
-    blue;
-#else
+  /* BGRA (as used by Microsoft Windows DIB) */
+#define MAGICK_PIXELS_BGRA 1
   Quantum
     blue,
     green,
     red,
     opacity;
-#endif
 #endif
 } PixelPacket;
-
-typedef struct _ColorInfo
-{
-  char
-    *path,
-    *name;
-
-  ComplianceType
-    compliance;
-
-  PixelPacket
-    color;
-
-  unsigned int
-    stealth;
-
-  unsigned long
-    signature;
-
-  struct _ColorInfo
-    *previous,
-    *next;
-} ColorInfo;
 
 typedef struct _DoublePixelPacket
 {
@@ -561,12 +534,16 @@ typedef struct _DoublePixelPacket
     opacity;
 } DoublePixelPacket;
 
+/*
+  ErrorInfo is used to record statistical difference (error)
+  information based on computed Euclidean distance in RGB space.
+*/
 typedef struct _ErrorInfo
 {
   double
-    mean_error_per_pixel,
-    normalized_mean_error,
-    normalized_maximum_error;
+    mean_error_per_pixel,     /* Average error per pixel (absolute range) */
+    normalized_mean_error,    /* Average error per pixel (normalized to 1.0) */
+    normalized_maximum_error; /* Maximum error encountered (normalized to 1.0) */
 } ErrorInfo;
 
 typedef struct _FrameInfo
@@ -661,34 +638,6 @@ typedef struct _SegmentInfo
     y2;
 } SegmentInfo;
 
-typedef struct _ImageChannelStatistics
- {
-   /* Minimum value observed */
-   double maximum;
-   /* Maximum value observed */
-   double minimum;
-   /* Average (mean) value observed */
-   double mean;
-   /* Standard deviation, sqrt(variance) */
-   double standard_deviation;
-   /* Variance */
-   double variance;
- } ImageChannelStatistics;
-
-typedef struct _ImageStatistics
- {
-   ImageChannelStatistics red;
-   ImageChannelStatistics green;
-   ImageChannelStatistics blue;
-   ImageChannelStatistics opacity;
- } ImageStatistics;
-
-typedef struct _Ascii85Info _Ascii85Info_;
-
-typedef struct _BlobInfo _BlobInfo_;
-
-typedef struct _ImageAttribute  _ImageAttribute_;
-
 typedef struct _Image
 {
   ClassType
@@ -700,17 +649,17 @@ typedef struct _Image
   CompressionType
     compression;        /* Compression algorithm to use when encoding image */
 
-  unsigned int
+  MagickBool
     dither,             /* True if image is to be dithered */
-    matte;              /* True if image has an opacity channel */ 
+    matte;              /* True if image has an opacity (alpha) channel */ 
 
   unsigned long
     columns,            /* Number of image columns */
     rows;               /* Number of image rows */
 
-  unsigned long
-    depth,              /* Bits of precision to preserve in color quantum */
-    colors;             /* Current number of colors in PseudoClass colormap */
+  unsigned int
+    colors,             /* Current number of colors in PseudoClass colormap */
+    depth;              /* Bits of precision to preserve in color quantum */
 
   PixelPacket
     *colormap;          /* Pseudoclass colormap array */
@@ -721,10 +670,13 @@ typedef struct _Image
     matte_color;        /* Matte (transparent) color */
 
   double
-    gamma;              /* Image gamma */
+    gamma;              /* Image gamma (e.g. 0.45) */
 
   ChromaticityInfo
     chromaticity;       /* Red, green, blue, and white chromaticity values */
+
+  OrientationType
+    orientation;        /* Image orientation */
 
   RenderingIntent
     rendering_intent;   /* Rendering intent */
@@ -742,7 +694,7 @@ typedef struct _Image
 
   double
     x_resolution,       /* Horizontal resolution (also see units) */
-    y_resolution;       /* Vertical resoution (also see units) */
+    y_resolution;       /* Vertical resolution (also see units) */
 
   RectangleInfo
     page,               /* Offset to apply when placing image */
@@ -838,16 +790,20 @@ typedef struct _Image
     *next;              /* Pointer to next frame */
 
   /*
+    To be added here for a later release:
+
+    quality?
+    subsampling
+    video black/white setup levels (ReferenceBlack/ReferenceWhite)
+    sample format (integer/float)
+   */
+
+  /*
     Only private members appear past this point
   */
 
-  ProfileInfo
-    color_profile,      /* ICC color profile */
-    iptc_profile,       /* IPTC newsphoto profile */
-    *generic_profile;   /* List of additional profiles */
-
-  unsigned long
-    generic_profiles;   /* Number of additional generic profiles */
+  void                  /* Private, Embedded profiles */
+    *profiles;
 
   unsigned int
     is_monochrome,      /* Private, True if image is known to be monochrome */
@@ -857,23 +813,29 @@ typedef struct _Image
   struct _Image
     *clip_mask;         /* Private, Clipping mask to apply when updating pixels */
 
-  void
-    *cache;             /* Private, image pixel cache */
+  MagickBool
+    ping;               /* Private, if true, pixels are undefined */
 
-  _ImageAttribute_
-    *attributes;        /* Private, Image attribute list */
+  _CacheInfoPtr_
+    cache;              /* Private, image pixel cache */
 
-  _Ascii85Info_
-    *ascii85;           /* Private, supports huffman encoding */
+  _ThreadViewSetPtr_
+    default_views;      /* Private, default cache views */
 
-  _BlobInfo_
-    *blob;              /* Private, file I/O object */
+  _ImageAttributePtr_
+    attributes;         /* Private, Image attribute list */
+
+  _Ascii85InfoPtr_
+    ascii85;            /* Private, supports huffman encoding */
+
+  _BlobInfoPtr_
+    blob;               /* Private, file I/O object */
 
   long
     reference_count;    /* Private, Image reference count */
 
-  void
-    *semaphore;         /* Private, Per image lock (for reference count) */
+  _SemaphoreInfoPtr_
+    semaphore;          /* Private, Per image lock (for reference count) */
 
   unsigned int
     logging;            /* Private, True if logging is enabled */
@@ -885,15 +847,12 @@ typedef struct _Image
     signature;          /* Private, Unique code to validate structure */
 } Image;
 
-typedef unsigned int
-  (*StreamHandler)(const Image *,const void *,const size_t);
-
 typedef struct _ImageInfo
 {
   CompressionType
     compression;             /* Image compression to use while decoding */
 
-  unsigned int
+  MagickBool
     temporary,               /* Remove file "filename" once it has been read. */
     adjoin,                  /* If True, join multiple frames into one file */
     antialias;               /* If True, antialias while rendering */
@@ -939,21 +898,22 @@ typedef struct _ImageInfo
     border_color,            /* Border color (color surrounding frame) */
     matte_color;             /* Matte color (frame color) */
 
-  unsigned int
+  MagickBool
     dither,                  /* If true, dither image while writing */
-    monochrome;              /* If true, use monochrome format */
+    monochrome,              /* If true, use monochrome format */
+    progress;                /* If true, show progress indication */
 
   ColorspaceType
     colorspace;              /* Colorspace representations of image pixels */
 
   ImageType
-    type;                    /* Desired image type (used while writing) */
+    type;                    /* Desired image type (used while reading or writing) */
 
   long
     group;                   /* X11 window group ID */
 
   unsigned int
-    verbose;                 /* If true, display high-level processing */
+    verbose;                 /* If non-zero, display high-level processing */
 
   char
     *view,                   /* FlashPIX view specification */
@@ -961,9 +921,6 @@ typedef struct _ImageInfo
 
   void
     *client_data;            /* User-specified data to pass to coder */
-
-  StreamHandler
-    stream;                  /* Pass in open blob stream handler for read/write */
 
   FILE
     *file;                   /* If not null, stdio FILE to read image from */
@@ -976,8 +933,8 @@ typedef struct _ImageInfo
     Only private members appear past this point
   */
 
-  void
-    *cache;                  /* Private. Used to pass image via open cache */
+  _CacheInfoPtr_
+     cache;                  /* Private. Used to pass image via open cache */
 
   void
     *definitions;            /* Private. Map of coder specific options passed by user.
@@ -987,17 +944,17 @@ typedef struct _ImageInfo
   Image
     *attributes;             /* Private. Image attribute list */
 
-  unsigned int
+  MagickBool
     ping;                    /* Private, if true, read file header only */
 
   PreviewType
     preview_type;            /* Private, used by PreviewImage */
 
-  unsigned int
+  MagickBool
     affirm;                  /* Private, when true do not intuit image format */
 
-  void
-    *blob;                   /* Private, used to pass in open blob */
+  _BlobInfoPtr_
+    blob;                    /* Private, used to pass in open blob */
 
   size_t
     length;                  /* Private, used to pass in open blob length */
@@ -1011,27 +968,6 @@ typedef struct _ImageInfo
 } ImageInfo;
 
 /*
-  Image const declarations.
-*/
-extern MagickExport const char
-  *BackgroundColor,
-  *BorderColor,
-  *DefaultTileFrame,
-  *DefaultTileGeometry,
-  *DefaultTileLabel,
-  *ForegroundColor,
-  *MatteColor,
-  *LoadImageText,
-  *LoadImagesText,
-  *PSDensityGeometry,
-  *PSPageGeometry,
-  *SaveImageText,
-  *SaveImagesText;
-
-extern MagickExport const unsigned long
-  DefaultCompressionQuality;
-
-/*
   Image utilities methods.
 */
 
@@ -1041,72 +977,42 @@ extern MagickExport ExceptionType
 extern MagickExport Image
   *AllocateImage(const ImageInfo *),
   *AppendImages(const Image *,const unsigned int,ExceptionInfo *),
-  *AverageImages(const Image *,ExceptionInfo *),
   *CloneImage(const Image *,const unsigned long,const unsigned long,
    const unsigned int,ExceptionInfo *),
+  *GetImageClipMask(const Image *,ExceptionInfo *),
   *ReferenceImage(Image *);
 
 extern MagickExport ImageInfo
   *CloneImageInfo(const ImageInfo *);
 
-extern MagickExport ImageType
-  GetImageType(const Image *,ExceptionInfo *);
-
 extern MagickExport const char
   *AccessDefinition(const ImageInfo *image_info,const char *magick,
-   const char *key);
+     const char *key);
 
 extern MagickExport int
   GetImageGeometry(const Image *,const char *,const unsigned int,
   RectangleInfo *);
 
-extern MagickExport RectangleInfo
-  GetImageBoundingBox(const Image *,ExceptionInfo *exception);
+/* Functions which return unsigned int as a True/False boolean value */
+extern MagickExport MagickBool
+  IsTaintImage(const Image *),
+  IsSubimage(const char *,const unsigned int);
 
-extern MagickExport unsigned int
+/* Functions which return unsigned int to indicate operation pass/fail */
+extern MagickExport MagickPassFail
   AddDefinitions(ImageInfo *image_info,const char *options,
     ExceptionInfo *exception),
-  AllocateImageColormap(Image *,const unsigned long),
   AnimateImages(const ImageInfo *image_info,Image *image),
-  ChannelImage(Image *,const ChannelType),
   ClipImage(Image *),
-  ClipPathImage(Image *,const char *,const unsigned int),
-  CycleColormapImage(Image *image,const int amount),
-  DescribeImage(Image *image,FILE *file,const unsigned int verbose),
+  ClipPathImage(Image *image,const char *pathname,const MagickBool inside),
   DisplayImages(const ImageInfo *image_info,Image *image),
-  GetImageChannelDepth(const Image *image,
-    const ChannelType channel, ExceptionInfo *exception),
-  GradientImage(Image *,const PixelPacket *,const PixelPacket *),
-  IsImagesEqual(Image *,const Image *),
-  IsTaintImage(const Image *),
-  IsSubimage(const char *,const unsigned int),
-  PlasmaImage(Image *,const SegmentInfo *,unsigned long,unsigned long),
   RemoveDefinitions(const ImageInfo *image_info,const char *options),
-  RGBTransformImage(Image *,const ColorspaceType),
-  SetImageChannelDepth(Image *image,
-    const ChannelType channel, const unsigned int depth),
-  SetImageClipMask(Image *image,Image *clip_mask),
+  SetImage(Image *,const Quantum),
+  SetImageClipMask(Image *image,const Image *clip_mask),
   SetImageDepth(Image *,const unsigned long),
-  SetImageInfo(ImageInfo *,const unsigned int,ExceptionInfo *),
+  SetImageInfo(ImageInfo *image_info,const unsigned int flags,ExceptionInfo *exception),
   SetImageType(Image *,const ImageType),
-  SortColormapByIntensity(Image *),
-  TextureImage(Image *,const Image *),
-  TransformColorspace(Image *,const ColorspaceType),
-  TransformRGBImage(Image *,const ColorspaceType);
-
-extern MagickExport MagickPassFail
-  GetImageStatistics(const Image *image,ImageStatistics *statistics,
-    ExceptionInfo *exception),
-  QuantumOperatorImage(Image *image,const ChannelType channel,
-    const QuantumOperator quantum_operator,const double rvalue,
-    ExceptionInfo *exception),
-  QuantumOperatorRegionImage(Image *image,const long x,const long y,
-    const unsigned long columns,const unsigned long rows,
-    const ChannelType channel,const QuantumOperator quantum_operator,
-    const double rvalue,ExceptionInfo *exception);
-
-extern MagickExport unsigned long
-  GetImageDepth(const Image *,ExceptionInfo *);
+  SyncImage(Image *);
 
 extern MagickExport void
   AllocateNextImage(const ImageInfo *,Image *),
@@ -1114,17 +1020,30 @@ extern MagickExport void
   DestroyImageInfo(ImageInfo *),
   GetImageException(Image *,ExceptionInfo *),
   GetImageInfo(ImageInfo *),
-  GrayscalePseudoClassImage(Image *,unsigned int),
   ModifyImage(Image **,ExceptionInfo *),
-  SetImage(Image *,const Quantum),
-  SetImageOpacity(Image *,const unsigned int),
-  SyncImage(Image *);
+  SetImageOpacity(Image *,const unsigned int);
 
-extern MagickExport const char
-  *ColorspaceTypeToString(const ColorspaceType colorspace);
+#if defined(MAGICK_IMPLEMENTATION)
+  /*
+    SetImageInfo flags specification.
+  */
+#  define SETMAGICK_FALSE    0x00000 /* MagickFalse ("read") */
+#  define SETMAGICK_TRUE     0x00001 /* MagickTrue ("write+rectify") */
+#  define SETMAGICK_READ     0x00002 /* Filespec will be read */
+#  define SETMAGICK_WRITE    0x00004 /* Filespec will be written */
+#  define SETMAGICK_RECTIFY  0x00008 /* Look for adjoin in filespec */
+#endif /* defined(MAGICK_IMPLEMENTATION) */
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
-#endif
+#endif /* _MAGICK_IMAGE_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

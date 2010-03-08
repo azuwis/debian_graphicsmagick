@@ -54,7 +54,8 @@ typedef struct _TimerInfo
 */
 extern MagickExport double
   GetElapsedTime(TimerInfo *),
-  GetUserTime(TimerInfo *);
+  GetUserTime(TimerInfo *),
+  GetTimerResolution(void);
 
 extern MagickExport unsigned int
   ContinueTimer(TimerInfo *);
@@ -68,3 +69,11 @@ extern MagickExport void
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

@@ -15,14 +15,16 @@
 extern "C" {
 #endif
 
+#include "magick/image.h"
+
 typedef struct _ImageAttribute
 {
   char
-    *key,
-    *value;
+    *key,           /* identifying key */
+    *value;         /* value string */
 
-  unsigned int
-    compression;
+  size_t
+    length;         /* value string length */
 
   struct _ImageAttribute
     *previous,
@@ -37,7 +39,8 @@ extern MagickExport const ImageAttribute
   *GetImageClippingPathAttribute(const Image *image),
   *GetImageInfoAttribute(const ImageInfo *image_info,const Image *image,const char *key);
 
-extern MagickExport unsigned int
+extern MagickExport MagickPassFail
+  CloneImageAttributes(Image* clone_image, const Image* original_image),
   SetImageAttribute(Image *image,const char *key,const char *value);
 
 extern MagickExport void
@@ -48,3 +51,11 @@ extern MagickExport void
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

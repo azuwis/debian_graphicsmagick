@@ -37,13 +37,14 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/composite.h"
 #include "magick/constitute.h"
 #include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
+#include "magick/profile.h"
 #include "magick/tempfile.h"
 #include "magick/transform.h"
 #include "magick/utility.h"
@@ -360,8 +361,8 @@ static unsigned char *ExpandBuffer(unsigned char *pixels,
     {
       for (i=0; i < (long) *bytes_per_line; i++)
       {
-        *q++=(*p >> 4) & 0xff;
-        *q++=(*p & 15);
+        *q++=(*p >> 4U) & 0xffU;
+        *q++=(*p & 15U);
         p++;
       }
       *bytes_per_line*=2;
@@ -371,10 +372,10 @@ static unsigned char *ExpandBuffer(unsigned char *pixels,
     {
       for (i=0; i < (long) *bytes_per_line; i++)
       {
-        *q++=(*p >> 6) & 0x03;
-        *q++=(*p >> 4) & 0x03;
-        *q++=(*p >> 2) & 0x03;
-        *q++=(*p & 3);
+        *q++=(*p >> 6U) & 0x03U;
+        *q++=(*p >> 4U) & 0x03U;
+        *q++=(*p >> 2U) & 0x03U;
+        *q++=(*p & 3U);
         p++;
       }
       *bytes_per_line*=4;
@@ -403,8 +404,9 @@ static unsigned char *ExpandBuffer(unsigned char *pixels,
   return(scanline);
 }
 
-static unsigned char *DecodeImage(const ImageInfo *image_info,Image *blob,
-  Image *image,unsigned long bytes_per_line,const unsigned int bits_per_pixel)
+static unsigned char *DecodeImage(const ImageInfo *ARGUNUSED(image_info),
+  Image *blob,Image *image,unsigned long bytes_per_line,
+  const unsigned int bits_per_pixel)
 {
   long
     j,
@@ -455,11 +457,11 @@ static unsigned char *DecodeImage(const ImageInfo *image_info,Image *blob,
   /*
     Allocate pixel and scanline buffer.
   */
-  pixels=MagickAllocateMemoryElements(unsigned char *,image->rows,row_bytes);
+  pixels=MagickAllocateArray(unsigned char *,image->rows,row_bytes);
   if (pixels == (unsigned char *) NULL)
     return((unsigned char *) NULL);
   allocated_pixels=image->rows*row_bytes;
-  memset(pixels,0,allocated_pixels);
+  (void) memset(pixels,0,allocated_pixels);
   scanline=MagickAllocateMemory(unsigned char *,row_bytes);
   if (scanline == (unsigned char *) NULL)
     return((unsigned char *) NULL);
@@ -573,7 +575,7 @@ static unsigned char *DecodeImage(const ImageInfo *image_info,Image *blob,
 static size_t EncodeImage(Image *image,const unsigned char *scanline,
   const unsigned long bytes_per_line,unsigned char *pixels)
 {
-#define MaxCount  128
+#define MaxCount  128U
 #define MaxPackbitsRunlength  128
 
   long
@@ -697,7 +699,6 @@ static size_t EncodeImage(Image *image,const unsigned char *scanline,
   return(length);
 }
 
-#if !defined(macintosh)
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -788,9 +789,13 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
   status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
   if (status == False)
     ThrowReaderException(FileOpenError,UnableToOpenFile,image);
+  pixmap.bits_per_pixel=0;
+  pixmap.component_count=0;
   /*
     Read PICT header.
   */
+  pixmap.bits_per_pixel=0;
+  pixmap.component_count=0;
   for (i=0; i < 512; i++)
     (void) ReadBlobByte(image);  /* skip header */
   (void) ReadBlobMSBShort(image);  /* skip picture size */
@@ -823,6 +828,11 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
   flags=0;
   image->columns=frame.right-frame.left;
   image->rows=frame.bottom-frame.top;
+
+  if (IsEventLogging())
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Dimensions: %lux%lu",image->columns,image->rows);
+
   /*
     Interpret PICT opcodes.
   */
@@ -839,12 +849,12 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
     if (code > 0xa1)
       {
         if (IsEventLogging())
-          (void) LogMagickEvent(CoderEvent,GetMagickModule(),"%04X:",code);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Code %04X:",code);
       }
     else
       {
         if (IsEventLogging())
-          (void) LogMagickEvent(CoderEvent,GetMagickModule(),"  %04X %.1024s: %.1024s",code,
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Code  %04X %.1024s: %.1024s",code,
             codes[code].name,codes[code].description);
         switch (code)
         {
@@ -865,7 +875,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
               break;
             image->columns=frame.right-frame.left;
             image->rows=frame.bottom-frame.top;
-            SetImage(image,OpaqueOpacity);
+            (void) SetImage(image,OpaqueOpacity);
             break;
           }
           case 0x12:
@@ -1029,7 +1039,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image)
                   }
                 (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-                  "Allocated tile image colormap with %lu colors",tile_image->colors);
+                  "Allocated tile image colormap with %u colors",tile_image->colors);
                 if (bytes_per_line & 0x8000)
                   {
                     for (i=0; i < (long) tile_image->colors; i++)
@@ -1090,7 +1100,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
               q=SetImagePixels(tile_image,0,y,tile_image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(tile_image);
+              indexes=AccessMutableIndexes(tile_image);
               for (x=0; x < (long) tile_image->columns; x++)
               {
                 if (tile_image->storage_class == PseudoClass)
@@ -1141,7 +1151,9 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                 p+=(pixmap.component_count-1)*tile_image->columns;
               if (destination.bottom == (long) image->rows)
                 if (QuantumTick(y,tile_image->rows))
-                  if (!MagickMonitor(LoadImageText,y,tile_image->rows,&image->exception))
+                  if (!MagickMonitorFormatted(y,tile_image->rows,&image->exception,
+                                              LoadImageText,image->filename,
+					      image->columns,image->rows))
                     break;
             }
             MagickFreeMemory(pixels);
@@ -1152,7 +1164,9 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
                    destination.left,destination.top);
                 DestroyImage(tile_image);
             if (destination.bottom != (long) image->rows)
-              if (!MagickMonitor(LoadImageText,destination.bottom,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(destination.bottom,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
             break;
           }
@@ -1161,7 +1175,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
             unsigned char
               *info;
 
-            unsigned long
+            unsigned int
               type;
 
             /*
@@ -1185,24 +1199,18 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
               {
                 if (length == 0)
                   break;
-                image->color_profile.info=MagickAllocateMemory(unsigned char *,
-                  length);
-                if (image->color_profile.info == (unsigned char *) NULL)
+                if (SetImageProfile(image,"ICM",info,length) == MagickFail)
                   ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
-                image->color_profile.length=length;
-                (void) memcpy(image->color_profile.info,info,length);
+                MagickFreeMemory(info);
                 break;
               }
               case 0x1f2:
               {
                 if (length == 0)
                   break;
-                image->iptc_profile.info=MagickAllocateMemory(unsigned char *,
-                  length);
-                if (image->iptc_profile.info == (unsigned char *) NULL)
+                if (SetImageProfile(image,"IPTC",info,length) == MagickFail)
                   ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
-                image->iptc_profile.length=length;
-                (void) memcpy(image->iptc_profile.info,info,length);
+                MagickFreeMemory(info);
                 break;
               }
               default:
@@ -1273,7 +1281,7 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
         }
         (void) fclose(file);
         tile_image=ReadImage(clone_info,exception);
-        LiberateTemporaryFile(clone_info->filename);
+        (void) LiberateTemporaryFile(clone_info->filename);
         DestroyImageInfo(clone_info);
         if (tile_image == (Image *) NULL)
           continue;
@@ -1316,7 +1324,6 @@ static Image *ReadPICTImage(const ImageInfo *image_info,
   CloseBlob(image);
   return(image);
 }
-#endif
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1350,15 +1357,16 @@ ModuleExport void RegisterPICTImage(void)
   entry->decoder=(DecoderHandler) ReadPICTImage;
   entry->encoder=(EncoderHandler) WritePICTImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Apple Macintosh QuickDraw/PICT");
-  entry->module=AcquireString("PICT");
+  entry->description="Apple Macintosh QuickDraw/PICT";
+  entry->module="PICT";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PICT");
   entry->decoder=(DecoderHandler) ReadPICTImage;
   entry->encoder=(EncoderHandler) WritePICTImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Apple Macintosh QuickDraw/PICT");
-  entry->module=AcquireString("PICT");
+  entry->description="Apple Macintosh QuickDraw/PICT";
+  entry->module="PICT";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -1419,7 +1427,7 @@ ModuleExport void UnregisterPICTImage(void)
 */
 static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
 {
-#define MaxCount  128
+#define MaxCount  128U
 #define PictCropRegionOp  0x01
 #define PictEndOfPictureOp  0xff
 #define PictJPEGOp  0x8200
@@ -1450,10 +1458,16 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
     size_rectangle,
     source_rectangle;
 
+  const unsigned char
+    *profile_info;
+  
+  size_t
+    profile_length;
+
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -1492,7 +1506,7 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   /*
     Initialize image info.
   */
@@ -1551,7 +1565,7 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
   /*
     Write header, header size, size bounding box, version, and reserved.
   */
-  memset(buffer,0,PictInfoSize);
+  (void) memset(buffer,0,PictInfoSize);
   (void) WriteBlob(image,PictInfoSize,buffer);
   (void) WriteBlobMSBShort(image,0);
   (void) WriteBlobMSBShort(image,size_rectangle.top);
@@ -1574,23 +1588,31 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
   (void) WriteBlobMSBShort(image,frame_rectangle.bottom);
   (void) WriteBlobMSBShort(image,frame_rectangle.right);
   (void) WriteBlobMSBLong(image,0x00000000L);
-  if (image->iptc_profile.info != (unsigned char *) NULL)
+  /*
+    Output 8BIM profile.
+  */
+  profile_info=GetImageProfile(image,"8BIM",&profile_length);
+  if (profile_info != (unsigned char *) NULL)
     {
       (void) WriteBlobMSBShort(image,0xa1);
       (void) WriteBlobMSBShort(image,0x1f2);
-      (void) WriteBlobMSBShort(image,image->iptc_profile.length+4);
+      (void) WriteBlobMSBShort(image,profile_length+4);
       (void) WriteBlobString(image,"8BIM");
-      (void) WriteBlob(image,image->iptc_profile.length,
-        image->iptc_profile.info);
+      (void) WriteBlob(image,profile_length,
+                       profile_info);
     }
-  if (image->color_profile.info != (unsigned char *) NULL)
+  /*
+    Ouput ICM profile.
+  */
+  profile_info=GetImageProfile(image,"ICM",&profile_length);
+  if (profile_info != (unsigned char *) NULL)
     {
       (void) WriteBlobMSBShort(image,0xa1);
       (void) WriteBlobMSBShort(image,0xe0);
-      (void) WriteBlobMSBShort(image,image->color_profile.length+4);
+      (void) WriteBlobMSBShort(image,profile_length+4);
       (void) WriteBlobMSBLong(image,0x00000000UL);
-      (void) WriteBlob(image,image->color_profile.length,
-        image->color_profile.info);
+      (void) WriteBlob(image,profile_length,
+                       profile_info);
       (void) WriteBlobMSBShort(image,0xa1);
       (void) WriteBlobMSBShort(image,0xe0);
       (void) WriteBlobMSBShort(image,4);
@@ -1758,12 +1780,14 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
       p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
       if (p == (const PixelPacket *) NULL)
         break;
-      indexes=GetIndexes(image);
+      indexes=AccessImmutableIndexes(image);
       for (x=0; x < (long) image->columns; x++)
         scanline[x]=indexes[x];
       count+=EncodeImage(image,scanline,row_bytes & 0x7FFF,packed_scanline);
       if (QuantumTick(y,image->rows))
-        if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+        if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                    SaveImageText,image->filename,
+				    image->columns,image->rows))
           break;
     }
   else
@@ -1811,7 +1835,9 @@ static unsigned int WritePICTImage(const ImageInfo *image_info,Image *image)
           }
           count+=EncodeImage(image,scanline,bytes_per_line & 0x7FFF,packed_scanline);
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+            if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows))
               break;
         }
       }

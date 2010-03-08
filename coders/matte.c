@@ -37,7 +37,7 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
@@ -80,8 +80,9 @@ ModuleExport void RegisterMATTEImage(void)
   entry=SetMagickInfo("MATTE");
   entry->encoder=(EncoderHandler) WriteMATTEImage;
   entry->raw=True;
-  entry->description=AcquireString("MATTE format");
-  entry->module=AcquireString("MATTE");
+  entry->description="MATTE raw opacity format";
+  entry->module="MATTE";
+  entry->extension_treatment=ObeyExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -165,7 +166,7 @@ static unsigned int WriteMATTEImage(const ImageInfo *image_info,Image *image)
     CloneImage(image,image->columns,image->rows,True,&image->exception);
   if (matte_image == (Image *) NULL)
     return(False);
-  (void) SetImageType(matte_image,TrueColorType);
+  (void) (void) SetImageType(matte_image,TrueColorType);
   /*
     Convert image to matte pixels.
   */
@@ -188,7 +189,9 @@ static unsigned int WriteMATTEImage(const ImageInfo *image_info,Image *image)
       break;
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
-        if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+        if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                    SaveImageText,image->filename,
+				    image->columns,image->rows))
           break;
   }
   (void) FormatString(matte_image->filename,"MIFF:%.1024s",image->filename);

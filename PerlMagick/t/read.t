@@ -1,5 +1,5 @@
 #!/usr/local/bin/perl
-# Copyright (C) 2003 GraphicsMagick Group
+# Copyright (C) 2003 - 2009 GraphicsMagick Group
 # Copyright (C) 2002 ImageMagick Studio
 # Copyright (C) 1991-1999 E. I. du Pont de Nemours and Company
 #
@@ -13,7 +13,7 @@
 # Whenever a new test is added/removed, be sure to update the
 # 1..n ouput.
 #
-BEGIN { $| = 1; $test=1; print "1..47\n"; }
+BEGIN { $| = 1; $test=1; print "1..76\n"; }
 END {print "not ok $test\n" unless $loaded;}
 use Graphics::Magick;
 $loaded=1;
@@ -33,6 +33,14 @@ print("Microsoft Windows 24-bit bitmap image file ...\n");
 ++$test;
 testReadCompare('input.bmp24', 'reference/read/input_bmp24.miff', q//, 0, 0);
 
+print("Cineon Gray image file ...\n");
+++$test;
+testReadCompare('input_gray.cin', 'reference/read/input_gray_cin.miff', q//, 0, 0);
+
+print("Cineon RGB image file ...\n");
+++$test;
+testReadCompare('input_rgb.cin', 'reference/read/input_rgb_cin.miff', q//, 0, 0);
+
 print("ZSoft IBM PC multi-page Paintbrush file ...\n");
 ++$test;
 testReadCompare('input.dcx', 'reference/read/input_dcx.miff', q//, 0, 0);
@@ -41,9 +49,41 @@ print("Microsoft Windows bitmap image file ...\n");
 ++$test;
 testReadCompare('input.dib', 'reference/read/input_dib.miff', q//, 0, 0);
 
-print("Flexible Image Transport System ...\n");
+print("Flexible Image Transport System 8-bit ...\n");
 ++$test;
-testReadCompare('input.fits', 'reference/read/input_fits.miff', q//, 0, 0);
+testReadCompare('input_gray_08bit.fits', 'reference/read/input_gray_08bit_fits.miff', q//, 0, 0);
+
+print("Flexible Image Transport System LSB 16-bit ...\n");
+++$test;
+testReadCompare('input_gray_16bit.fits', 'reference/read/input_gray_16bit_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System LSB 32-bit ...\n");
+++$test;
+testReadCompare('input_gray_32bit.fits', 'reference/read/input_gray_32bit_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System LSB double ...\n");
+++$test;
+testReadCompare('input_gray_lsb_double.fits', 'reference/read/input_gray_lsb_double_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System MSB 16-bit ...\n");
+++$test;
+testReadCompare('input_gray_msb_16bit.fits', 'reference/read/input_gray_msb_16bit_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System MSB 32-bit ...\n");
+++$test;
+testReadCompare('input_gray_msb_32bit.fits', 'reference/read/input_gray_msb_32bit_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System MSB 64-bit ...\n");
+++$test;
+testReadCompare('input_gray_msb_64bit.fits', 'reference/read/input_gray_msb_64bit_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System MSB float ...\n");
+++$test;
+testReadCompare('input_gray_msb_float.fits', 'reference/read/input_gray_msb_float_fits.miff', q//, 0.002, 0.004);
+
+print("Flexible Image Transport System MSB double ...\n");
+++$test;
+testReadCompare('input_gray_msb_double.fits', 'reference/read/input_gray_msb_double_fits.miff', q//, 0.002, 0.004);
 
 print("CompuServe graphics interchange format ...\n");
 ++$test;
@@ -62,9 +102,41 @@ print("GRANITE (granite texture) ...\n");
 ++$test;
 testReadCompare('granite:', 'reference/read/granite.miff', q/size=>"70x46"/, 0, 0);
 
-print("MAT (MatLab image) ...\n");
+print("HRZ Slow scan TV ...\n");
 ++$test;
-testReadCompare('input.mat', 'reference/read/input_mat.miff', q//, 0, 0);
+testReadCompare('input.hrz', 'reference/read/input_hrz.miff', q//, 0, 0);
+
+print("MAT (MatLab logical 8-bit LSB integer) ...\n");
+++$test;
+testReadCompare('input_logical_lsb_08bit.mat', 'reference/read/input_logical_lsb_08bit_mat.miff', q//, 0, 0);
+
+print("MAT (MatLab gray 8-bit LSB integer) ...\n");
+++$test;
+testReadCompare('input_gray_lsb_08bit.mat', 'reference/read/input_gray_lsb_08bit_mat.miff', q//, 0, 0);
+
+print("MAT (MatLab gray 8-bit MSB integer) ...\n");
+++$test;
+testReadCompare('input_gray_msb_08bit.mat', 'reference/read/input_gray_msb_08bit_mat.miff', q//, 0, 0);
+
+print("MAT (MatLab gray 16-bit LSB integer) ...\n");
+++$test;
+testReadCompare('input_gray_lsb_16bit.mat', 'reference/read/input_gray_lsb_16bit_mat.miff', q//, 0, 0);
+
+print("MAT (MatLab gray 32-bit LSB integer) ...\n");
+++$test;
+testReadCompare('input_gray_lsb_32bit.mat', 'reference/read/input_gray_lsb_32bit_mat.miff', q//, 0, 0);
+
+print("MAT (MatLab gray 32-bit LSB float) ...\n");
+++$test;
+testReadCompare('input_gray_lsb_float.mat', 'reference/read/input_gray_lsb_float_mat.miff', q//, 0.002, 0.004);
+
+print("MAT (MatLab gray 64-bit LSB double) ...\n");
+++$test;
+testReadCompare('input_gray_lsb_double.mat', 'reference/read/input_gray_lsb_double_mat.miff', q//, 0.002, 0.004);
+
+print("MAT (MatLab RGB 8-bit LSB integer) ...\n");
+++$test;
+testReadCompare('input_rgb_lsb_08bit.mat', 'reference/read/input_rgb_lsb_08bit_mat.miff', q//, 0, 0);
 
 print("Microsoft icon ...\n");
 ++$test;
@@ -119,7 +191,19 @@ print("Apple Macintosh QuickDraw/PICT file ...\n");
 ++$test;
 testReadCompare('input.pict', 'reference/read/input_pict.miff', q//, 0, 0);
 
-print("Alias/Wavefront RLE image format ...\n");
+print("Alias/Wavefront RLA image format (gray scale) ...\n");
+++$test;
+testReadCompare('input_gray.rla', 'reference/read/input_gray_rla.miff', q//, 0, 0);
+
+print("Alias/Wavefront RLA image format (RGB) ...\n");
+++$test;
+testReadCompare('input_rgb.rla', 'reference/read/input_rgb_rla.miff', q//, 0, 0);
+
+print("Utah Raster Toolkit (URT) RLE image format (gray scale) ...\n");
+++$test;
+testReadCompare('input_gray.rle', 'reference/read/input_gray_rle.miff', q//, 0, 0);
+
+print("Utah Raster Toolkit (URT) RLE image format (RGB) ...\n");
 ++$test;
 testReadCompare('input.rle', 'reference/read/input_rle.miff', q//, 0, 0);
 
@@ -151,6 +235,30 @@ print("SUN TrueColor Rasterfile ...\n");
 ++$test;
 testReadCompare('sun:input.im24', 'reference/read/input_im24.miff', q//, 0, 0);
 
+print("Topol Type 1 ...\n");
+++$test;
+testReadCompare('topol:topol_1.ras', 'reference/read/topol_1.miff', q//, 0, 0);
+
+print("Topol Type 2 ...\n");
+++$test;
+testReadCompare('topol:topol_2.ras', 'reference/read/topol_2.miff', q//, 0, 0);
+
+print("Topol Type 3 ...\n");
+++$test;
+testReadCompare('topol:topol_3.ras', 'reference/read/topol_3.miff', q//, 0, 0);
+
+print("Topol Type 4 ...\n");
+++$test;
+testReadCompare('topol:topol_4.ras', 'reference/read/topol_4.miff', q//, 0, 0);
+
+print("Topol Type 5 ...\n");
+++$test;
+testReadCompare('topol:topol_5.ras', 'reference/read/topol_5.miff', q//, 0, 0);
+
+print("Topol Type 7 ...\n");
+++$test;
+testReadCompare('topol:topol_7.ras', 'reference/read/topol_7.miff', q//, 0, 0);
+
 print("Truevision Targa image file ...\n");
 ++$test;
 testReadCompare('input.tga', 'reference/read/input_tga.miff', q//, 0, 0);
@@ -167,9 +275,21 @@ print("WBMP (Wireless Bitmap (level 0) image) ...\n");
 ++$test;
 testReadCompare('input.wbmp', 'reference/read/input_wbmp.miff', q//, 0, 0);
 
-print("WPG (Word Perfect Graphics image) ...\n");
+print("WPG (Word Perfect Graphics image, 4 bit depth WPG level 1) ...\n");
 ++$test;
-testReadCompare('input.wpg', 'reference/read/input_wpg.miff', q//, 0, 0);
+testReadCompare('input1_4.wpg', 'reference/read/input1_4_wpg.miff', q//, 0, 0);
+
+print("WPG (Word Perfect Graphics image, 8 bit depth WPG level 1) ...\n");
+++$test;
+testReadCompare('input1_8_1.wpg', 'reference/read/input1_8_1_wpg.miff', q//, 0, 0);
+
+print("WPG (Word Perfect Graphics image, 1 bit depth + 24 bit depth WPG level 2) ...\n");
+++$test;
+testReadCompare('input2_TC1.wpg', 'reference/read/input2_TC1_wpg.miff', q//, 0, 0);
+
+print("WPG (Word Perfect Graphics image, 8 bit depth WPG level 2) ...\n");
+++$test;
+testReadCompare('input2_8.wpg', 'reference/read/input2_8_wpg.miff', q//, 0, 0);
 
 print("X Windows system bitmap (black and white only) ...\n");
 ++$test;
@@ -184,9 +304,9 @@ print("X Windows system pixmap file (color) ...\n");
 testReadCompare('input.xpm', 'reference/read/input_xpm.miff', q//, 0, 0);
 # Q:32 mean-error=0.23551931713272, maximum-error=0.989543041912839
 
-print("X Windows system window dump file (color) ...\n");
-++$test;
-testReadCompare('input.xwd', 'reference/read/input_xwd.miff', q//, 0, 0);
+#print("X Windows system window dump file (color) ...\n");
+#++$test;
+#testReadCompare('input.xwd', 'reference/read/input_xwd.miff', q//, 0, 0);
 
 print("TILE (Tile image with a texture) ...\n");
 # This is an internal generated format

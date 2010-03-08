@@ -22,12 +22,14 @@ extern ModuleExport void
   RegisterAVSImage(void),
   RegisterBIEImage(void),
   RegisterBMPImage(void),
+  RegisterCALSImage(void),
   RegisterCAPTIONImage(void),
   RegisterCINEONImage(void),
   RegisterCLIPBOARDImage(void),
   RegisterCMYKImage(void),
   RegisterCUTImage(void),
   RegisterDCMImage(void),
+  RegisterDCRAWImage(void),
   RegisterDCXImage(void),
   RegisterDIBImage(void),
   RegisterDPSImage(void),
@@ -51,10 +53,12 @@ extern ModuleExport void
   RegisterGRAYImage(void),
   RegisterHImage(void),
   RegisterHISTOGRAMImage(void),
+  RegisterHRZImage(void),
   RegisterHTMImage(void),
   RegisterHTMLImage(void),
   RegisterICBImage(void),
   RegisterICONImage(void),
+  RegisterIDENTITYImage(void),
   RegisterJBGImage(void),
   RegisterJBIGImage(void),
   RegisterJPGImage(void),
@@ -153,12 +157,14 @@ extern ModuleExport void
   UnregisterAVSImage(void),
   UnregisterBIEImage(void),
   UnregisterBMPImage(void),
+  UnregisterCALSImage(void),
   UnregisterCAPTIONImage(void),
   UnregisterCINEONImage(void),
   UnregisterCLIPBOARDImage(void),
   UnregisterCMYKImage(void),
   UnregisterCUTImage(void),
   UnregisterDCMImage(void),
+  UnregisterDCRAWImage(void),
   UnregisterDCXImage(void),
   UnregisterDIBImage(void),
   UnregisterDPSImage(void),
@@ -182,10 +188,12 @@ extern ModuleExport void
   UnregisterGRAYImage(void),
   UnregisterHImage(void),
   UnregisterHISTOGRAMImage(void),
+  UnregisterHRZImage(void),
   UnregisterHTMImage(void),
   UnregisterHTMLImage(void),
   UnregisterICBImage(void),
   UnregisterICONImage(void),
+  UnregisterIDENTITYImage(void),
   UnregisterJBGImage(void),
   UnregisterJBIGImage(void),
   UnregisterJPGImage(void),
@@ -290,3 +298,11 @@ extern unsigned int
 #endif
 
 #endif /* _MAGICK_STATIC_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

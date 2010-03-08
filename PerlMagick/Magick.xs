@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2010 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright (C) 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -44,6 +44,7 @@
 /*
   Include declarations.
 */
+#define MAGICK_IMPLEMENTATION 1
 #if !defined(WIN32)
 #define MagickExport
 #endif
@@ -179,7 +180,7 @@ static char
   *ChannelTypes[] =
   {
     "Undefined", "Red", "Cyan", "Green", "Magenta", "Blue", "Yellow",
-    "Opacity", "Black", "Matte", (char *) NULL
+    "Opacity", "Black", "Matte", "All", "Gray", (char *) NULL
   },
   *ClassTypes[] =
   {
@@ -187,8 +188,9 @@ static char
   },
   *ColorspaceTypes[] =
   {
-    "Undefined", "RGB", "Gray", "Transparent", "OHTA", "XYZ", "YCbCr",
-    "YCC", "YIQ", "YPbPr", "YUV", "CMYK", "sRGB", "HSL", "HWB", "LAB", (char *) NULL
+    "Undefined", "RGB", "Gray", "Transparent", "OHTA", "XYZ", "YCC",
+    "YIQ", "YPbPr", "YUV", "CMYK", "sRGB", "HSL", "HWB", "LAB",  "CineonLog",
+    "Rec601Luma", "Rec601YCbCr", "Rec709Luma", "Rec709YCbCr", (char *) NULL
   },
   *CompositeTypes[] =
   {
@@ -197,7 +199,8 @@ static char
     "CopyRed", "CopyGreen", "CopyBlue", "CopyOpacity", "Clear", "Dissolve",
     "Displace", "Modulate", "Threshold", "No", "Darken", "Lighten",
     "Hue", "Saturate", "Colorize", "Luminize", "Screen", "Overlay",
-    "CopyCyan", "CopyMagenta", "CopyYellow", "CopyBlack", (char *) NULL
+    "CopyCyan", "CopyMagenta", "CopyYellow", "CopyBlack", "Divide",
+    (char *) NULL
   },
   *CompressionTypes[] =
   {
@@ -210,7 +213,7 @@ static char
   },
   *EndianTypes[] =
   {
-    "Undefined", "LSB", "MSB", (char *) NULL
+    "Undefined", "LSB", "MSB", "Native", (char *) NULL
   },
   *FilterTypess[] =
   {
@@ -508,7 +511,7 @@ static struct PackageInfo *ClonePackageInfo(struct PackageInfo *info)
   struct PackageInfo
     *clone_info;
 
-  clone_info=(struct PackageInfo *) AcquireMemory(sizeof(struct PackageInfo));
+  clone_info=MagickAllocateMemory(struct PackageInfo *,sizeof(struct PackageInfo));
   if (!info)
     {
       clone_info->image_info=CloneImageInfo((ImageInfo *) NULL);
@@ -553,6 +556,8 @@ static struct PackageInfo *ClonePackageInfo(struct PackageInfo *info)
 */
 static double constant(char *name,int sans)
 {
+  (void) sans;
+
   errno=0;
   switch (*name)
   {
@@ -723,7 +728,7 @@ static void DestroyPackageInfo(struct PackageInfo *info)
   DestroyImageInfo(info->image_info);
   DestroyDrawInfo(info->draw_info);
   DestroyQuantizeInfo(info->quantize_info);
-  LiberateMemory((void **) &info);
+  MagickFreeMemory(info);
 }
 
 /*
@@ -831,11 +836,14 @@ static Image *GetList(pTHX_ SV *reference,SV ***reference_vector,int *current,
             {
               *last+=256;
               if (*reference_vector)
-                ReacquireMemory((void **) & (*reference_vector),
-                  *last*sizeof(*reference_vector));
+                {
+                  MagickReallocMemory(SV **,*reference_vector,*last*sizeof(*reference_vector));
+                }
               else
-                *reference_vector=(SV **)
-                  AcquireMemory(*last*sizeof(*reference_vector));
+                {
+                  *reference_vector=
+                    MagickAllocateMemory(SV **,*last*sizeof(*reference_vector));
+                }
             }
         (*reference_vector)[*current]=reference;
         (*reference_vector)[++(*current)]=NULL;
@@ -1569,7 +1577,7 @@ static void SetAttribute(pTHX_ struct PackageInfo *info,Image *image,
 
               GetExceptionInfo(&exception);
               FormatString(info->image_info->filename,"%.1024s:",SvPV(sval,na));
-              SetImageInfo(info->image_info,True,&exception);
+              SetImageInfo(info->image_info,SETMAGICK_WRITE,&exception);
               if (*info->image_info->magick == '\0')
                 MagickError(OptionError,UnrecognizedImageFormat,
                   info->image_info->filename);
@@ -1641,7 +1649,7 @@ static void SetAttribute(pTHX_ struct PackageInfo *info,Image *image,
             (void) CloneString(&info->image_info->page,geometry);
           for ( ; image; image=image->next)
             (void) GetImageGeometry(image,geometry,False,&image->page);
-          LiberateMemory((void **) &geometry);
+          MagickFreeMemory(geometry);
           return;
         }
       if (LocaleCompare(attribute,"pen") == 0)
@@ -2374,7 +2382,7 @@ Average(ref)
     FormatString(info->image_info->filename,"average-%.*s",MaxTextExtent-9,
       ((p=strrchr(image->filename,'/')) ? p+1 : image->filename));
     (void) strncpy(image->filename,info->image_info->filename,MaxTextExtent-1);
-    SetImageInfo(info->image_info,False,&image->exception);
+    SetImageInfo(info->image_info,SETMAGICK_WRITE,&image->exception);
     SvREFCNT_dec(MY_CXT.error_list);
     MY_CXT.error_jump=NULL;
     XSRETURN(1);
@@ -2456,8 +2464,8 @@ BlobToImage(ref,...)
     MY_CXT.error_list=newSVpv("",0);
     number_images=0;
     ac=(items < 2) ? 1 : items-1;
-    list=(char **) AcquireMemory((ac+1)*sizeof(*list));
-    length=(STRLEN *) AcquireMemory((ac+1)*sizeof(length));
+    list=MagickAllocateMemory(char **,(ac+1)*sizeof(*list));
+    length=MagickAllocateMemory(STRLEN *,(ac+1)*sizeof(length));
     if (!sv_isobject(ST(0)))
       {
         MagickError(OptionError,ReferenceIsNotMyType,PackageName);
@@ -2517,13 +2525,13 @@ BlobToImage(ref,...)
         for (p=keep; list[i] != *p++; )
           if (*p == NULL)
             {
-              LiberateMemory((void **) &list[i]);
+              MagickFreeMemory(list[i]);
               break;
             }
 
   ReturnIt:
-    LiberateMemory((void **) &list);
-    LiberateMemory((void **) &length);
+    MagickFreeMemory(list);
+    MagickFreeMemory(length);
     sv_setiv(MY_CXT.error_list,(IV) number_images);
     SvPOK_on(MY_CXT.error_list);
     ST(0)=sv_2mortal(MY_CXT.error_list);
@@ -2982,7 +2990,7 @@ Flatten(ref)
     FormatString(info->image_info->filename,"average-%.*s",MaxTextExtent-9,
       ((p=strrchr(image->filename,'/')) ? p+1 : image->filename));
     (void) strncpy(image->filename,info->image_info->filename,MaxTextExtent-1);
-    SetImageInfo(info->image_info,False,&image->exception);
+    SetImageInfo(info->image_info,SETMAGICK_WRITE,&image->exception);
     SvREFCNT_dec(MY_CXT.error_list);
     MY_CXT.error_jump=NULL;
     XSRETURN(1);
@@ -3028,6 +3036,12 @@ Get(ref,...)
 
     Image
       *image;
+
+    const unsigned char *
+      profile_info;
+
+    size_t
+      profile_length;
 
     int
       j;
@@ -3503,8 +3517,10 @@ Get(ref,...)
           if (LocaleCompare(attribute,"icm") == 0)
             {
               if (image)
-                s=newSVpv((const char *) image->color_profile.info,
-                  image->color_profile.length);
+                {
+                  profile_info=GetImageProfile(image,"ICM",&profile_length);
+                  s=newSVpv((const char *) profile_info,profile_length);
+                }
               PUSHs(s ? sv_2mortal(s) : &sv_undef);
               continue;
             }
@@ -3521,7 +3537,7 @@ Get(ref,...)
               char
                 name[MaxTextExtent];
 
-              IndexPacket
+              const IndexPacket
                 *indexes;
 
               long
@@ -3535,9 +3551,9 @@ Get(ref,...)
               x=0;
               y=0;
               (void) sscanf(attribute,"%*[^[][%ld%*[,/]%ld",&x,&y);
-              (void) AcquireOnePixel(image,(long) (x % image->columns),
-                (long) (y % image->rows),&image->exception);
-              indexes=GetIndexes(image);
+              (void) AcquireImagePixels(image,(long) (x % image->columns),
+                                        (long) (y % image->rows),1,1,&image->exception);
+              indexes=AccessImmutableIndexes(image);
               FormatString(name,"%u",*indexes);
               s=newSVpv(name,0);
               PUSHs(s ? sv_2mortal(s) : &sv_undef);
@@ -3546,8 +3562,10 @@ Get(ref,...)
           if (LocaleCompare(attribute,"iptc") == 0)
             {
               if (image)
-                s=newSVpv((const char *) image->iptc_profile.info,
-                  image->iptc_profile.length);
+                {
+                  profile_info=GetImageProfile(image,"IPTC",&profile_length);
+                  s=newSVpv((const char *) profile_info,profile_length);
+                }
               PUSHs(s ? sv_2mortal(s) : &sv_undef);
               continue;
             }
@@ -3701,7 +3719,7 @@ Get(ref,...)
               x=0;
               y=0;
               (void) sscanf(attribute,"%*[^[][%ld%*[,/]%ld",&x,&y);
-              pixel=AcquireOnePixel(image,(long) (x % image->columns),
+              (void) AcquireOnePixelByReference(image,&pixel,(long) (x % image->columns),
                 (long) (y % image->rows),&image->exception);
               FormatString(name,"%u,%u,%u,%u",pixel.red,pixel.green,pixel.blue,
                 pixel.opacity);
@@ -3719,7 +3737,7 @@ Get(ref,...)
           if (LocaleCompare(attribute,"preview") == 0)
             {
               s=newSViv(info->image_info->preview_type);
-              if ((info->image_info->preview_type >= 0) &&
+              if ((info->image_info->preview_type != UndefinedPreview) &&
                   (info->image_info->preview_type < (long) NumberOf(PreviewTypes)-1))
                 {
                   (void) sv_setpv(s,
@@ -4092,7 +4110,7 @@ ImageToBlob(ref,...)
       (void) strncpy(next->filename,filename,MaxTextExtent-1);
       next->scene=scene++;
     }
-    SetImageInfo(package_info->image_info,True,&image->exception);
+    SetImageInfo(package_info->image_info,SETMAGICK_WRITE,&image->exception);
     EXTEND(sp,(long) GetImageListLength(image));
     GetExceptionInfo(&exception);
     for ( ; image; image=image->next)
@@ -4104,7 +4122,7 @@ ImageToBlob(ref,...)
       if (blob != (char *) NULL)
         {
           PUSHs(sv_2mortal(newSVpv((const char *) blob,length)));
-          LiberateMemory((void **) &blob);
+          MagickFreeMemory(blob);
         }
       if (package_info->image_info->adjoin)
         break;
@@ -4295,7 +4313,7 @@ Mogrify(ref,...)
 
     char
       *attribute,
-      absolute_geometry[MaxTextExtent],
+      /* absolute_geometry[MaxTextExtent], */
       attribute_flag[MaxArguments],
       message[MaxTextExtent],
       *value;
@@ -4550,7 +4568,7 @@ Mogrify(ref,...)
           PixelPacket
             target;
 
-          target=AcquireOnePixel(image,0,0,&exception);
+          (void) AcquireOnePixelByReference(image,&target,0,0,&exception);
           if (attribute_flag[0])
             (void) QueryColorDatabase(argument_list[0].string_reference,&target,
               &exception);
@@ -5070,7 +5088,7 @@ Mogrify(ref,...)
           if (attribute_flag[4])
             QueryColorDatabase(argument_list[4].string_reference,&fill_color,
               &exception);
-          target=AcquireOnePixel(image,(long) (geometry.x % image->columns),
+          (void) AcquireOnePixelByReference(image,&target,(long) (geometry.x % image->columns),
             (long) (geometry.y % image->rows),&exception);
           if (attribute_flag[4])
             target=fill_color;
@@ -5109,30 +5127,35 @@ Mogrify(ref,...)
             compose=(CompositeOperator) argument_list[1].int_reference;
           opacity=OpaqueOpacity;
           if (attribute_flag[6])
-            opacity=argument_list[6].double_reference;
-          if (opacity != OpaqueOpacity)
-            SetImageOpacity(composite_image,(unsigned int) opacity);
-          if (compose == DissolveCompositeOp)
             {
-              register PixelPacket
-                *q;
-
-              if (!composite_image->matte)
-                SetImageOpacity(composite_image,OpaqueOpacity);
-              for (y=0; y < (long) composite_image->rows; y++)
-              {
-                q=GetImagePixels(composite_image,0,y,
-                  composite_image->columns,1);
-                if (q == (PixelPacket *) NULL)
-                  break;
-                for (x=(long) composite_image->columns; x > 0; x--)
+              opacity=argument_list[6].double_reference;
+              if (compose == DissolveCompositeOp)
                 {
-                  q->opacity=(Quantum) ((opacity*(MaxRGB-q->opacity))/100.0);
-                  q++;
+                  register PixelPacket
+                    *q;
+                  
+                  if (!composite_image->matte)
+                    SetImageOpacity(composite_image,OpaqueOpacity);
+                  for (y=0; y < (long) composite_image->rows; y++)
+                    {
+                      q=GetImagePixels(composite_image,0,y,
+                                       composite_image->columns,1);
+                      if (q == (PixelPacket *) NULL)
+                        break;
+                      for (x=(long) composite_image->columns; x > 0; x--)
+                        {
+                          q->opacity=(Quantum) ((opacity*(MaxRGB-q->opacity))/100.0);
+                          q++;
+                        }
+                      if (!SyncImagePixels(composite_image))
+                        break;
+                    }
                 }
-                if (!SyncImagePixels(composite_image))
-                  break;
-              }
+              else
+                {
+                  if (opacity != OpaqueOpacity)
+                    SetImageOpacity(composite_image,(unsigned int) opacity);
+                }
             }
           if (attribute_flag[9])
             QueryColorDatabase(argument_list[9].string_reference,
@@ -5440,7 +5463,7 @@ Mogrify(ref,...)
             opacity=argument_list[3].int_reference;
           if (!image->matte)
             SetImageOpacity(image,OpaqueOpacity);
-          target=AcquireOnePixel(image,(long) (geometry.x % image->columns),
+          (void) AcquireOnePixelByReference(image,&target,(long) (geometry.x % image->columns),
             (long) (geometry.y % image->rows),&exception);
           if (attribute_flag[4])
             target=fill_color;
@@ -5487,11 +5510,11 @@ Mogrify(ref,...)
             fill_color,
             target;
 
-          target=AcquireOnePixel(image,0,0,&exception);
+          (void) AcquireOnePixelByReference(image,&target,0,0,&exception);
           if (attribute_flag[0])
             (void) QueryColorDatabase(argument_list[0].string_reference,
               &target,&exception);
-          fill_color=AcquireOnePixel(image,0,0,&exception);
+          (void) AcquireOnePixelByReference(image,&fill_color,0,0,&exception);
           if (attribute_flag[1])
             (void) QueryColorDatabase(argument_list[1].string_reference,
               &fill_color,&exception);
@@ -5593,7 +5616,7 @@ Mogrify(ref,...)
         }
         case 53:  /* Sync */
         {
-          SyncImage(image);
+          (void) SyncImage(image);
           break;
         }
         case 54:  /* Texture */
@@ -5613,7 +5636,7 @@ Mogrify(ref,...)
           unsigned int
             opacity;
 
-          target=AcquireOnePixel(image,0,0,&exception);
+          (void) AcquireOnePixelByReference(image,&target,0,0,&exception);
           if (attribute_flag[0])
             (void) QueryColorDatabase(argument_list[0].string_reference,
               &target,&exception);
@@ -5627,9 +5650,21 @@ Mogrify(ref,...)
         }
         case 57:  /* Threshold */
         {
+          double
+            threshold;
+
+          int
+            count;
+
           if (!attribute_flag[0])
             argument_list[0].string_reference="50%";
-          ChannelThresholdImage(image,argument_list[0].string_reference);
+          count=sscanf(argument_list[0].string_reference,"%lf",&threshold);
+          if (count > 0)
+            {
+              if (strchr(argument_list[0].string_reference,'%') != (char *) NULL)
+                  threshold *=  MaxRGB/100.0;
+                (void) ThresholdImage(image,threshold);
+            }
           break;
         }
         case 58:  /* Charcoal */
@@ -5745,13 +5780,13 @@ Mogrify(ref,...)
             break;
           av=(AV *) argument_list[0].array_reference;
           radius=(unsigned int) sqrt(av_len(av)+1);
-          kernel=(double *) AcquireMemory(radius*radius*sizeof(double));
+          kernel=MagickAllocateMemory(double *,radius*radius*sizeof(double));
           for (j=0; j < (av_len(av)+1); j++)
             kernel[j]=(double) SvNV(*(av_fetch(av,j,0)));
           for ( ; j < (long) (radius*radius); j++)
             kernel[j]=0.0;
           image=ConvolveImage(image,radius,kernel,&exception);
-          LiberateMemory((void **) &kernel);
+          MagickFreeMemory(kernel);
           break;
         }
         case 68:  /* Profile */
@@ -5761,7 +5796,7 @@ Mogrify(ref,...)
           if (!attribute_flag[1])
             argument_list[1].string_reference=(char *) NULL;
           (void) ProfileImage(image,argument_list[0].string_reference,
-            (const unsigned char *) argument_list[1].string_reference,
+            (unsigned char *) argument_list[1].string_reference,
             argument_list[1].length,True);
           break;
         }
@@ -6027,8 +6062,7 @@ Mogrify(ref,...)
     DestroyExceptionInfo(&exception);
 
   ReturnIt:
-    if (reference_vector)
-      LiberateMemory((void **) &reference_vector);
+    MagickFreeMemory(reference_vector);
     sv_setiv(MY_CXT.error_list,(IV) number_images);
     SvPOK_on(MY_CXT.error_list);
     ST(0)=sv_2mortal(MY_CXT.error_list);
@@ -6377,7 +6411,7 @@ Montage(ref,...)
             }
           if (LocaleCompare(attribute,"transparent") == 0)
             {
-              transparent_color=AcquireOnePixel(image,0,0,&exception);
+              (void) AcquireOnePixelByReference(image,&transparent_color,0,0,&exception);
               QueryColorDatabase(SvPV(ST(i),na),&transparent_color,
                 &exception);
               for (next=image; next; next=next->next)
@@ -6645,7 +6679,7 @@ Mosaic(ref)
     SvREFCNT_dec(sv);
     info=GetPackageInfo(aTHX_ (void *) av,info);
     (void) strncpy(image->filename,info->image_info->filename,MaxTextExtent-1);
-    SetImageInfo(info->image_info,False,&image->exception);
+    SetImageInfo(info->image_info,SETMAGICK_WRITE,&image->exception);
     if (exception.severity != UndefinedException)
       CatchException(&exception);
     DestroyExceptionInfo(&exception);
@@ -6733,7 +6767,7 @@ Ping(ref,...)
     MY_CXT.error_list=newSVpv("",0);
     package_info=(struct PackageInfo *) NULL;
     ac=(items < 2) ? 1 : items-1;
-    list=(char **) AcquireMemory((ac+1)*sizeof(*list));
+    list=MagickAllocateMemory(char **,(ac+1)*sizeof(*list));
     reference=SvRV(ST(0));
     hv=SvSTASH(reference);
     av=(AV *) reference;
@@ -6746,16 +6780,15 @@ Ping(ref,...)
     else
       for (n=0, i=0; i < ac; i++)
       {
-        list[n]=(char *) SvPV(ST(i+1),na);
-        if ((items >= 3) &&
-            strEQcase(package_info->image_info->filename,"blob"))
-          {
-            STRLEN
-              length;
+	STRLEN
+	  length;
 
-            i++;
-            package_info->image_info->blob=(void *) (SvPV(ST(i),length));
-            package_info->image_info->length=length;
+        list[n]=(char *) SvPV(ST(i+1),length);
+        if ((items >= 3) && strEQcase(list[n],"blob"))
+          {
+	    package_info->image_info->blob=(void *) (SvPV(ST(i+2),length));
+            package_info->image_info->length=(size_t) length;
+	    continue;
           }
         if ((items >= 3) && strEQcase(list[n],"filename"))
           continue;
@@ -6810,14 +6843,14 @@ Ping(ref,...)
         for (p=keep; list[i] != *p++; )
           if (*p == NULL)
             {
-              LiberateMemory((void **) &list[i]);
+              MagickFreeMemory(list[i]);
               break;
             }
 
   ReturnIt:
     if (package_info)
       DestroyPackageInfo(package_info);
-    LiberateMemory((void **) &list);
+    MagickFreeMemory(list);
     SvREFCNT_dec(MY_CXT.error_list);  /* throw away all errors */
     MY_CXT.error_list=NULL;
   }
@@ -6869,9 +6902,9 @@ QueryColor(ref,...)
         for (i=0; i < colors; i++)
         {
           PUSHs(sv_2mortal(newSVpv(colorlist[i],0)));
-          LiberateMemory((void **) &colorlist[i]);
+          MagickFreeMemory(colorlist[i]);
         }
-        LiberateMemory((void **) &colorlist);
+        MagickFreeMemory(colorlist);
         goto MethodException;
       }
     EXTEND(sp,4*items);
@@ -7010,9 +7043,9 @@ QueryFont(ref,...)
         for (i=0; i < types; i++)
         {
           PUSHs(sv_2mortal(newSVpv(typelist[i],0)));
-          LiberateMemory((void **) &typelist[i]);
+          MagickFreeMemory(typelist[i]);
         }
-        LiberateMemory((void **) &typelist);
+        MagickFreeMemory(typelist);
         goto MethodException;
       }
     EXTEND(sp,10*items);
@@ -7501,7 +7534,7 @@ Read(ref,...)
     package_info=(struct PackageInfo *) NULL;
     number_images=0;
     ac=(items < 2) ? 1 : items-1;
-    list=(char **) AcquireMemory((ac+1)*sizeof(*list));
+    list=MagickAllocateMemory(char **,(ac+1)*sizeof(*list));
     if (!sv_isobject(ST(0)))
       {
         MagickError(OptionError,ReferenceIsNotMyType,PackageName);
@@ -7583,14 +7616,14 @@ Read(ref,...)
         for (p=keep; list[i] != *p++; )
           if (*p == NULL)
             {
-              LiberateMemory((void **) &list[i]);
+              MagickFreeMemory(list[i]);
               break;
             }
 
   ReturnIt:
     if (package_info)
       DestroyPackageInfo(package_info);
-    LiberateMemory((void **) &list);
+    MagickFreeMemory(list);
     sv_setiv(MY_CXT.error_list,(IV) number_images);
     SvPOK_on(MY_CXT.error_list);
     ST(0)=sv_2mortal(MY_CXT.error_list);
@@ -7946,7 +7979,10 @@ Write(ref,...)
       (void) strncpy(next->filename,filename,MaxTextExtent-1);
       next->scene=scene++;
     }
-    SetImageInfo(package_info->image_info,True,&image->exception);
+    (void) SetImageInfo(package_info->image_info,
+			(SETMAGICK_WRITE |
+			 (!package_info->image_info->adjoin ? SETMAGICK_RECTIFY: 0U)),
+			&image->exception);
     for (next=image; next; next=next->next)
     {
       (void) WriteImage(package_info->image_info,next);
@@ -7967,3 +8003,10 @@ Write(ref,...)
     MY_CXT.error_jump=NULL;
     XSRETURN(1);
   }
+
+# Local Variables:
+# mode: c
+# c-basic-offset: 2
+# fill-column: 78
+# End:
+

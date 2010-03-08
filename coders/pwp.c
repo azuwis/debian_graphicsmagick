@@ -192,7 +192,7 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
         char
           filename[MaxTextExtent];
 
-        strcpy(filename,clone_info->filename);
+        (void) strcpy(filename,clone_info->filename);
         DestroyImageInfo(clone_info);
         ThrowReaderTemporaryFileException(filename);
       }
@@ -206,7 +206,7 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
     (void) fclose(file);
     handler=SetMonitorHandler((MonitorHandler) NULL);
     next_image=ReadImage(clone_info,exception);
-    LiberateTemporaryFile(clone_info->filename);
+    (void) LiberateTemporaryFile(clone_info->filename);
     (void) SetMonitorHandler(handler);
     if (next_image == (Image *) NULL)
       break;
@@ -226,7 +226,9 @@ static Image *ReadPWPImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (image_info->subrange != 0)
       if (next_image->scene >= (image_info->subimage+image_info->subrange-1))
         break;
-    if (!MagickMonitor(LoadImagesText,TellBlob(pwp_image),GetBlobSize(image),&image->exception))
+    if (!MagickMonitorFormatted(TellBlob(pwp_image),GetBlobSize(image),
+                                &image->exception,LoadImagesText,
+                                image->filename))
       break;
   }
   DestroyImageInfo(clone_info);
@@ -270,8 +272,9 @@ ModuleExport void RegisterPWPImage(void)
   entry=SetMagickInfo("PWP");
   entry->decoder=(DecoderHandler) ReadPWPImage;
   entry->magick=(MagickHandler) IsPWP;
-  entry->description=AcquireString("Seattle Film Works");
-  entry->module=AcquireString("PWP");
+  entry->description="Seattle Film Works";
+  entry->module="PWP";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 

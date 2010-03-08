@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003-2010 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -37,38 +37,122 @@
 */
 #include "magick/studio.h"
 #include "magick/utility.h"
+
 #if defined(HAVE_PTHREAD)
-#include <pthread.h>
+#  define USE_POSIX_THREADS 1
+#elif defined(MSWINDOWS)
+#  define USE_WIN32_THREADS 1
 #endif
-#if defined(WIN32)
-#include <windows.h>
-#define USE_SPINLOCKS
-#define SPINLOCK_DELAY_MILLI_SECS 10
+
+#if defined(USE_POSIX_THREADS)
+#  include <pthread.h>
+#  define PTHREAD_MUTEX_DESTROY(semaphore_mutex)			\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutex_destroy(semaphore_mutex)) != 0)	\
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToDestroySemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEXATTR_DESTROY(mutexattr)				\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutexattr_destroy(mutexattr)) != 0)	\
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToDestroySemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEXATTR_INIT(mutexattr)				\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutexattr_init(mutexattr)) != 0)		\
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToInitializeSemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEXATTR_SETTYPE(mutexattr,mutexattrtype)		\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutexattr_settype(mutexattr,mutexattrtype)) != 0) \
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToInitializeSemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEX_INIT(semaphore_mutex,mutexattr)			\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutex_init(semaphore_mutex,mutexattr)) != 0) \
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToInitializeSemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEX_LOCK(semaphore_mutex)				\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutex_lock(semaphore_mutex)) != 0)	\
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToLockSemaphore);			\
+      }									\
+  }
+#  define PTHREAD_MUTEX_UNLOCK(semaphore_mutex)				\
+  {									\
+    int									\
+      err_status;							\
+    									\
+    if ((err_status = pthread_mutex_unlock(semaphore_mutex)) != 0)	\
+      {									\
+        errno=err_status;						\
+	MagickFatalError3(ResourceLimitFatalError,SemaporeOperationFailed, \
+			  UnableToUnlockSemaphore);			\
+      }									\
+  }
 #endif
+
+#if defined(USE_WIN32_THREADS)
+#  include <windows.h>
+#  define USE_SPINLOCKS
+#  define SPINLOCK_DELAY_MILLI_SECS 10
+#endif
+
 #include "magick/semaphore.h"
 
 /*
   Struct declaractions.
 */
-struct SemaphoreInfo
+struct _SemaphoreInfo
 {
-#if defined(HAVE_PTHREAD)
+#if defined(USE_POSIX_THREADS)
   pthread_mutex_t
     mutex;		/* POSIX thread mutex */
-
-  pthread_t
-    thread_id;		/* ID of thread which holds the lock */
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
   CRITICAL_SECTION
     mutex;		/* Windows critical section */
-
-  DWORD
-    thread_id;		/* ID of thread which holds the lock */
 #endif
-
-  unsigned int
-    locked;		/* True if semaphore is locked */
 
   unsigned long
     signature;		/* Used to validate structure */
@@ -77,34 +161,46 @@ struct SemaphoreInfo
 /*
   Static declaractions.
 */
-#if defined(HAVE_PTHREAD)
+#if defined(USE_POSIX_THREADS)
 static pthread_mutex_t
   semaphore_mutex = PTHREAD_MUTEX_INITIALIZER;
 #endif
 
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
 static CRITICAL_SECTION
   semaphore_mutex;
 
 static unsigned int
-  active_semaphore = False;
+  active_semaphore = MagickFalse;
 #else
-static int
+static LONG
   semaphore_mutex = 0;
 /* Wait for spin lock */
-static void spinlock_wait (int *sl)
+static void spinlock_wait (LONG volatile *sl)
 {
-  while (InterlockedCompareExchange (sl, 1, 0) != 0)
+  /*
+    InterlockedCompareExchange performs an atomic comparison of the
+    specified 32-bit values and exchanges them, based on the outcome of
+    the comparison. Requires Windows XP, Windows 2000 Professional,
+    Windows NT Workstation 4.0, Windows Me, or Windows 98.
+   */
+
+  while (InterlockedCompareExchange (sl, 1L, 0L) != 0)
   {
     /* slight delay - just in case OS does not giveup CPU */
     Sleep (SPINLOCK_DELAY_MILLI_SECS);
   }
 }
 /* Release spin lock */
-static void spinlock_release (int *sl)
+static void spinlock_release (LONG volatile *sl)
 {
-  InterlockedExchange (sl, 0);
+  /*
+    InterlockedExchange atomically exchanges a pair of 32-bit
+    values. Requires Windows XP, Windows 2000 Professional, Windows NT
+    Workstation 3.5 and later, Windows Me, Windows 98, or Windows 95.
+  */
+  InterlockedExchange (sl, 0L);
 }
 #endif
 #endif
@@ -120,11 +216,12 @@ static void spinlock_release (int *sl)
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  AcquireSemaphoreInfo() acquires a semaphore.
+%  AcquireSemaphoreInfo() locks a semaphore, initializing it first if
+%  necessary.
 %
 %  The format of the AcquireSemaphoreInfo method is:
 %
-%      AcquireSemaphoreInfo(SemaphoreInfo **semaphore_info)
+%      void AcquireSemaphoreInfo(SemaphoreInfo **semaphore_info)
 %
 %  A description of each parameter follows:
 %
@@ -135,14 +232,14 @@ static void spinlock_release (int *sl)
 MagickExport void AcquireSemaphoreInfo(SemaphoreInfo **semaphore_info)
 {
   assert(semaphore_info != (SemaphoreInfo **) NULL);
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_lock(&semaphore_mutex);
-#endif
-#if defined(WIN32)
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_LOCK(&semaphore_mutex);
+#endif /* defined(USE_POSIX_THREADS) */
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   if (!active_semaphore)
     InitializeCriticalSection(&semaphore_mutex);
-  active_semaphore=True;
+  active_semaphore=MagickTrue;
   EnterCriticalSection(&semaphore_mutex);
 #else
   spinlock_wait(&semaphore_mutex);
@@ -150,10 +247,10 @@ MagickExport void AcquireSemaphoreInfo(SemaphoreInfo **semaphore_info)
 #endif
   if (*semaphore_info == (SemaphoreInfo *) NULL)
     *semaphore_info=AllocateSemaphoreInfo();
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_unlock(&semaphore_mutex);
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_UNLOCK(&semaphore_mutex);
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   LeaveCriticalSection(&semaphore_mutex);
 #else
@@ -199,28 +296,31 @@ MagickExport SemaphoreInfo *AllocateSemaphoreInfo(void)
   if (semaphore_info == (SemaphoreInfo *) NULL)
     MagickFatalError3(ResourceLimitFatalError,MemoryAllocationFailed,
       UnableToAllocateSemaphoreInfo);
-  memset(semaphore_info,0,sizeof(SemaphoreInfo));
+  (void) memset(semaphore_info,0,sizeof(SemaphoreInfo));
   /*
     Initialize the semaphore.
   */
-#if defined(HAVE_PTHREAD)
+#if defined(USE_POSIX_THREADS)
   {
-    int
-      status;
+    pthread_mutexattr_t 
+      mutexattr;
 
-    status=pthread_mutex_init(&semaphore_info->mutex,
-      (const pthread_mutexattr_t *) NULL);
-    if (status != 0)
-      {
-        MagickFreeMemory(semaphore_info);
-        return((SemaphoreInfo *) NULL);
-      }
+    PTHREAD_MUTEXATTR_INIT(&mutexattr);
+
+#if 1
+#if defined(PTHREAD_MUTEX_RECURSIVE)
+    PTHREAD_MUTEXATTR_SETTYPE(&mutexattr, PTHREAD_MUTEX_RECURSIVE);
+#endif /* PTHREAD_MUTEX_RECURSIVE */
+#endif
+
+    PTHREAD_MUTEX_INIT(&semaphore_info->mutex,&mutexattr);
+    PTHREAD_MUTEXATTR_DESTROY(&mutexattr);
   }
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
   InitializeCriticalSection(&semaphore_info->mutex);
 #endif
-  semaphore_info->locked=False;
+  
   semaphore_info->signature=MagickSignature;
   return(semaphore_info);
 }
@@ -240,20 +340,25 @@ MagickExport SemaphoreInfo *AllocateSemaphoreInfo(void)
 %
 %  The format of the DestroySemaphore method is:
 %
-%      DestroySemaphore(void)
+%      void DestroySemaphore(void)
 %
 %
 */
 MagickExport void DestroySemaphore(void)
 {
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_destroy(&semaphore_mutex);
+#if defined(USE_POSIX_THREADS)
+  /*
+    We use static pthread mutex initialization with
+    PTHREAD_MUTEX_INITIALIZER so semaphore mutex should not be
+    destroyed.
+  */
+  /* PTHREAD_MUTEX_DESTROY(&semaphore_mutex); */
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   if (active_semaphore)
     DeleteCriticalSection(&semaphore_mutex);
-  active_semaphore=False;
+  active_semaphore=MagickFalse;
 #endif
 #endif
 }
@@ -273,7 +378,7 @@ MagickExport void DestroySemaphore(void)
 %
 %  The format of the DestroySemaphoreInfo method is:
 %
-%      DestroySemaphoreInfo(SemaphoreInfo **semaphore_info)
+%      void DestroySemaphoreInfo(SemaphoreInfo **semaphore_info)
 %
 %  A description of each parameter follows:
 %
@@ -287,30 +392,31 @@ MagickExport void DestroySemaphoreInfo(SemaphoreInfo **semaphore_info)
   if (*semaphore_info == (SemaphoreInfo *) NULL)
     return;
   assert((*semaphore_info)->signature == MagickSignature);
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_lock(&semaphore_mutex);
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_LOCK(&semaphore_mutex);
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   if (!active_semaphore)
     InitializeCriticalSection(&semaphore_mutex);
-  active_semaphore=True;
+  active_semaphore=MagickTrue;
   EnterCriticalSection(&semaphore_mutex);
 #else
   spinlock_wait(&semaphore_mutex);
 #endif
 #endif
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_destroy(&(*semaphore_info)->mutex);
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_DESTROY(&(*semaphore_info)->mutex);
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
   DeleteCriticalSection(&(*semaphore_info)->mutex);
 #endif
+  (void) memset((void *) *semaphore_info,0xbf,sizeof(SemaphoreInfo));
   MagickFreeMemory((*semaphore_info));
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_unlock(&semaphore_mutex);
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_UNLOCK(&semaphore_mutex);
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   LeaveCriticalSection(&semaphore_mutex);
 #else
@@ -334,21 +440,26 @@ MagickExport void DestroySemaphoreInfo(SemaphoreInfo **semaphore_info)
 %
 %  The format of the InitializeSemaphore method is:
 %
-%      InitializeSemaphore(void)
+%      void InitializeSemaphore(void)
 %
 %
 */
 MagickExport void InitializeSemaphore(void)
 {
-#if defined(HAVE_PTHREAD)
-  (void) pthread_mutex_init(&semaphore_mutex,
-    (const pthread_mutexattr_t *) NULL);
+#if defined(USE_POSIX_THREADS)
+  /*
+    We use static pthread mutex initialization with
+    PTHREAD_MUTEX_INITIALIZER so explicit runtime initialization is
+    not required.
+  */
+/*   (void) pthread_mutex_init(&semaphore_mutex, */
+/*     (const pthread_mutexattr_t *) NULL); */
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
 #if !defined(USE_SPINLOCKS)
   if (!active_semaphore)
     InitializeCriticalSection(&semaphore_mutex);
-  active_semaphore=True;
+  active_semaphore=MagickTrue;
 #endif
 #endif
 }
@@ -364,11 +475,11 @@ MagickExport void InitializeSemaphore(void)
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method LiberateSemaphoreInfo liberates a semaphore.
+%  Method LiberateSemaphoreInfo unlocks the semaphore if it has been allocated.
 %
 %  The format of the LiberateSemaphoreInfo method is:
 %
-%      LiberateSemaphoreInfo(SemaphoreInfo **semaphore_info)
+%      void LiberateSemaphoreInfo(SemaphoreInfo **semaphore_info)
 %
 %  A description of each parameter follows:
 %
@@ -379,10 +490,11 @@ MagickExport void InitializeSemaphore(void)
 MagickExport void LiberateSemaphoreInfo(SemaphoreInfo **semaphore_info)
 {
   assert(semaphore_info != (SemaphoreInfo **) NULL);
-  if (*semaphore_info == (SemaphoreInfo *) NULL)
-    return;
-  assert((*semaphore_info)->signature == MagickSignature);
-  (void) UnlockSemaphoreInfo(*semaphore_info);
+  if (*semaphore_info != (SemaphoreInfo *) NULL)
+    {
+      assert((*semaphore_info)->signature == MagickSignature);
+      (void) UnlockSemaphoreInfo(*semaphore_info);
+    }
 }
 
 /*
@@ -400,34 +512,24 @@ MagickExport void LiberateSemaphoreInfo(SemaphoreInfo **semaphore_info)
 %
 %  The format of the LockSemaphoreInfo method is:
 %
-%      unsigned int LockSemaphoreInfo(SemaphoreInfo *semaphore_info)
+%      void LockSemaphoreInfo(SemaphoreInfo *semaphore_info)
 %
 %  A description of each parameter follows:
-%
-%    o status:  Method LockSemaphoreInfo returns True on success otherwise
-%      False.
 %
 %    o semaphore_info: Specifies a pointer to an SemaphoreInfo structure.
 %
 %
 */
-MagickExport unsigned int LockSemaphoreInfo(SemaphoreInfo *semaphore_info)
+MagickExport void LockSemaphoreInfo(SemaphoreInfo *semaphore_info)
 {
   assert(semaphore_info != (SemaphoreInfo *) NULL);
   assert(semaphore_info->signature == MagickSignature);
-#if defined(HAVE_PTHREAD)
-  if (pthread_mutex_lock(&semaphore_info->mutex))
-    return(False);
-  /* Record the thread ID of the locking thread */
-  semaphore_info->thread_id=pthread_self();
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_LOCK(&semaphore_info->mutex);
 #endif
-#if defined(WIN32)
+#if defined(USE_WIN32_THREADS)
   EnterCriticalSection(&semaphore_info->mutex);
-  /* Record the thread ID of the locking thread */
-  semaphore_info->thread_id=GetCurrentThreadId();
 #endif
-  semaphore_info->locked=True;
-  return(True);
 }
 
 /*
@@ -445,34 +547,23 @@ MagickExport unsigned int LockSemaphoreInfo(SemaphoreInfo *semaphore_info)
 %
 %  The format of the LockSemaphoreInfo method is:
 %
-%      unsigned int UnlockSemaphoreInfo(SemaphoreInfo *semaphore_info)
+%      void UnlockSemaphoreInfo(SemaphoreInfo *semaphore_info)
 %
 %  A description of each parameter follows:
-%
-%    o status:  Method UnlockSemaphoreInfo returns True on success otherwise
-%      False.
 %
 %    o semaphore_info: Specifies a pointer to an SemaphoreInfo structure.
 %
 %
 */
-MagickExport unsigned int UnlockSemaphoreInfo(SemaphoreInfo *semaphore_info)
+MagickExport void UnlockSemaphoreInfo(SemaphoreInfo *semaphore_info)
 {
   assert(semaphore_info != (SemaphoreInfo *) NULL);
   assert(semaphore_info->signature == MagickSignature);
-  if (semaphore_info->locked != True)
-    return (False);
-  semaphore_info->locked=False;
-#if defined(HAVE_PTHREAD)
-  /* Enforce that unlocking thread is the same as the locking thread */
-  assert(pthread_equal(semaphore_info->thread_id,pthread_self()));
-  if (pthread_mutex_unlock(&semaphore_info->mutex))
-    return(False);
+
+#if defined(USE_POSIX_THREADS)
+  PTHREAD_MUTEX_UNLOCK(&semaphore_info->mutex);
 #endif
-#if defined(WIN32)
-  /* Enforce that unlocking thread is the same as the locking thread */
-  assert(GetCurrentThreadId() == semaphore_info->thread_id);
+#if defined(USE_WIN32_THREADS)
   LeaveCriticalSection(&semaphore_info->mutex);
 #endif
-  return(True);
 }

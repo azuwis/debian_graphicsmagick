@@ -37,10 +37,11 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 #include "magick/xwindow.h"
 #if defined(HasDPS)
@@ -82,7 +83,7 @@
 static Image *ReadDPSImage(const ImageInfo *image_info,
   ExceptionInfo *exception)
 {
-  char
+  const char
     *client_name;
 
   Display
@@ -130,7 +131,7 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
     page,
     bits_per_pixel;
 
-  XResourceInfo
+  MagickXResourceInfo
     resource_info;
 
   XrmDatabase
@@ -152,14 +153,14 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   display=XOpenDisplay(image_info->server_name);
   if (display == (Display *) NULL)
     {
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed to open X11 display!");
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed to open X11 display!");
       return((Image *) NULL);
     }
   /*
     Set our forgiving error handler.
   */
-  (void) XSetErrorHandler(XError);
+  (void) XSetErrorHandler(MagickXError);
   /*
     Open image file.
   */
@@ -167,15 +168,15 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
   if (status == False)
     {
-      LogMagickEvent(CoderEvent,GetMagickModule(),"failed to open blob!");
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),"failed to open blob!");
       return((Image *) NULL);
     }
   /*
     Get user defaults from X resource database.
   */
-  client_name=SetClientName((char *) NULL);
-  resource_database=XGetResourceDatabase(display,client_name);
-  XGetResourceInfo(resource_database,client_name,&resource_info);
+  client_name=GetClientName();
+  resource_database=MagickXGetResourceDatabase(display,client_name);
+  MagickXGetResourceInfo(resource_database,client_name,&resource_info);
   /*
     Allocate standard colormap.
   */
@@ -190,17 +191,17 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
         Initialize visual info.
       */
       (void) CloneString(&resource_info.visual_type,"default");
-      visual_info=XBestVisualInfo(display,map_info,&resource_info);
+      visual_info=MagickXBestVisualInfo(display,map_info,&resource_info);
       map_info->colormap=(Colormap) NULL;
     }
   if ((map_info == (XStandardColormap *) NULL) ||
       (visual_info == (XVisualInfo *) NULL))
     {
       DestroyImage(image);
-      XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-        (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed to initialize visual info!");
+      MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+        (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed to initialize visual info!");
       return((Image *) NULL);
     }
   /*
@@ -215,10 +216,10 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   if ((status == dps_status_failure) || (status == dps_status_no_extension))
     {
       DestroyImage(image);
-      XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-        (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed to create pixmap for image!");
+      MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+        (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed to create pixmap for image!");
       return((Image *) NULL);
     }
   /*
@@ -230,10 +231,10 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   if (status != dps_status_success)
     {
       DestroyImage(image);
-      XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-        (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed to rasterize EPS into pixmap!");
+      MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+        (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed to rasterize EPS into pixmap!");
       return((Image *) NULL);
     }
   /*
@@ -245,10 +246,10 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   if (dps_image == (XImage *) NULL)
     {
       DestroyImage(image);
-      XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-        (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed initialize DPS X image!");
+      MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+        (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed initialize DPS X image!");
       return((Image *) NULL);
     }
   /*
@@ -260,14 +261,14 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
     {
       DestroyImage(image);
       XDestroyImage(dps_image);
-      XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-        (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-      LogMagickEvent(CoderEvent,GetMagickModule(),
-                     "failed allocate memory for colormap!");
+      MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+        (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "failed allocate memory for colormap!");
       return((Image *) NULL);
     }
-  if ((visual_info->storage_class != DirectColor) &&
-      (visual_info->storage_class != TrueColor))
+  if ((visual_info->class != DirectColor) &&
+      (visual_info->class != TrueColor))
     for (i=0; i < visual_info->colormap_size; i++)
     {
       colors[i].pixel=i;
@@ -312,8 +313,8 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   /*
     Convert X image to MIFF format.
   */
-  if ((visual_info->storage_class != TrueColor) &&
-      (visual_info->storage_class != DirectColor))
+  if ((visual_info->class != TrueColor) &&
+      (visual_info->class != DirectColor))
     image->storage_class=PseudoClass;
   image->columns=dps_image->width;
   image->rows=dps_image->height;
@@ -329,7 +330,7 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
     {
       register unsigned long
         color,
-        index;
+        index_val;
 
       unsigned long
         blue_mask,
@@ -367,7 +368,7 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
         Convert X image to DirectClass packets.
       */
       if ((visual_info->colormap_size > 0) &&
-          (visual_info->storage_class == DirectColor))
+          (visual_info->class == DirectColor))
         for (y=0; y < (long) image->rows; y++)
         {
           q=SetImagePixels(image,0,y,image->columns,1);
@@ -376,18 +377,20 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
           for (x=0; x < (long) image->columns; x++)
           {
             pixel=XGetPixel(dps_image,x,y);
-            index=(pixel >> red_shift) & red_mask;
-            q->red=ScaleShortToQuantum(colors[index].red);
-            index=(pixel >> green_shift) & green_mask;
-            q->green=ScaleShortToQuantum(colors[index].green);
-            index=(pixel >> blue_shift) & blue_mask;
-            q->blue=ScaleShortToQuantum(colors[index].blue);
+            index_val=(pixel >> red_shift) & red_mask;
+            q->red=ScaleShortToQuantum(colors[index_val].red);
+            index_val=(pixel >> green_shift) & green_mask;
+            q->green=ScaleShortToQuantum(colors[index_val].green);
+            index_val=(pixel >> blue_shift) & blue_mask;
+            q->blue=ScaleShortToQuantum(colors[index_val].blue);
             q++;
           }
           if (!SyncImagePixels(image))
             break;
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+            if (!MagickMonitorFormatted(y,image->rows,exception,
+                                        LoadImageText,image->filename,
+					image->columns,image->rows))
               break;
         }
       else
@@ -410,7 +413,9 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
           if (!SyncImagePixels(image))
             break;
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+            if (!MagickMonitorFormatted(y,image->rows,exception,
+                                        LoadImageText,image->filename,
+					image->columns,image->rows))
               break;
         }
       break;
@@ -425,10 +430,10 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
           DestroyImage(image);
           MagickFreeMemory(colors);
           XDestroyImage(dps_image);
-          XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-            (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
-          LogMagickEvent(CoderEvent,GetMagickModule(),
-                         "failed allocate image colormap!");
+          MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+            (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "failed allocate image colormap!");
           return((Image *) NULL);
         }
       for (i=0; i < (long) image->colors; i++)
@@ -448,13 +453,15 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
         q=SetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < (long) image->columns; x++)
           indexes[x]=(unsigned short) XGetPixel(dps_image,x,y);
         if (!SyncImagePixels(image))
           break;
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+          if (!MagickMonitorFormatted(y,image->rows,exception,
+                                      LoadImageText,image->filename,
+				      image->columns,image->rows))
             break;
       }
       break;
@@ -463,7 +470,7 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   MagickFreeMemory(colors);
   XDestroyImage(dps_image);
   if (image->storage_class == PseudoClass)
-    SyncImage(image);
+    (void) SyncImage(image);
   /*
     Rasterize matte image.
   */
@@ -511,8 +518,8 @@ static Image *ReadDPSImage(const ImageInfo *image_info,
   /*
     Free resources.
   */
-  XFreeResources(display,visual_info,map_info,(XPixelInfo *) NULL,
-    (XFontStruct *) NULL,&resource_info,(XWindowInfo *) NULL);
+  MagickXFreeResources(display,visual_info,map_info,(MagickXPixelInfo *) NULL,
+    (XFontStruct *) NULL,&resource_info,(MagickXWindowInfo *) NULL);
   CloseBlob(image);
   return(image);
 }
@@ -557,8 +564,8 @@ ModuleExport void RegisterDPSImage(void)
   entry=SetMagickInfo("DPS");
   entry->decoder=(DecoderHandler) ReadDPSImage;
   entry->blob_support=False;
-  entry->description=AcquireString("Display Postscript Interpreter");
-  entry->module=AcquireString("DPS");
+  entry->description="Display Postscript Interpreter";
+  entry->module="DPS";
   (void) RegisterMagickInfo(entry);
 }
 

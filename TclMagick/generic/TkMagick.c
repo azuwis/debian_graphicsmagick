@@ -2,7 +2,7 @@
 
 /* Copyright 2003, 2004 David N. Welton <davidw@dedasys.com> */
 
-/* $Id: TkMagick.c,v 1.6.2.3 2005/01/22 19:35:06 bfriesen Exp $ */
+/* $Id: TkMagick.c,v 1.13.4.1 2010/01/20 23:31:43 bfriesen Exp $ */
 
 #include <tk.h>
 #include "TclMagick.h"
@@ -56,7 +56,7 @@ static int MagickToPhoto(
     photoname = Tcl_GetStringFromObj(objv[2], NULL);
     photohandle = Tk_FindPhoto(interp, photoname);
     if (photohandle == NULL) {
-	Tcl_AddErrorInfo(interp, "Not a photo image.");
+	Tcl_AppendResult(interp, "Not a photo image.", NULL);
 	return TCL_ERROR;
     }
 
@@ -74,11 +74,18 @@ static int MagickToPhoto(
     magickblock.offset[3] = 3;
 
     /* RGB corresponds to pixelSize above. */
+    map = "RGBA";
+#if 0
+    /*
+      Prior to GraphicsMagick 1.3.8, ImageMagick and GraphicsMagick
+       required a different map.
+    */
     if (strcmp(MagickPackageName, "ImageMagick") == 0) {
 	map = "RGBA";
     } else {
 	map = "RGBO";
     }
+#endif
 
     if (MagickGetImagePixels (
 	    wand, 0, 0, (unsigned)magickblock.width, (unsigned)magickblock.height,
@@ -147,7 +154,7 @@ static int PhotoToMagick(
     photohandle = Tk_FindPhoto(
 	interp, photoname);
     if (photohandle == NULL) {
-	Tcl_AddErrorInfo(interp, "Not a photo image.");
+	Tcl_AppendResult(interp, "Not a photo image.", NULL);
 	return TCL_ERROR;
     }
     Tk_PhotoGetImage(photohandle, &photoblock);
@@ -183,7 +190,7 @@ static int PhotoToMagick(
 	}
 	break;
     default:
-	Tcl_AddErrorInfo(interp, "Unsupported pixelSize in Tk image.");
+	Tcl_AppendResult(interp, "Unsupported pixelSize in Tk image.", NULL);
 	return TCL_ERROR;
     };
 

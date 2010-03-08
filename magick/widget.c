@@ -38,6 +38,7 @@
 */
 #include "magick/studio.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
 #include "magick/xwindow.h"
@@ -66,7 +67,7 @@
 /*
   Variable declarations.
 */
-static XWidgetInfo
+static MagickXWidgetInfo
   monitor_info =
   {
     (char *) NULL, (char *) NULL, (char *) NULL,
@@ -94,10 +95,10 @@ static const unsigned int
   Method prototypes.
 */
 static void
-  XDrawMatte(Display *,const XWindowInfo *,const XWidgetInfo *),
-  XSetBevelColor(Display *,const XWindowInfo *,const unsigned int),
-  XSetMatteColor(Display *,const XWindowInfo *,const unsigned int),
-  XSetTextColor(Display *,const XWindowInfo *,const unsigned int);
+  XDrawMatte(Display *,const MagickXWindowInfo *,const MagickXWidgetInfo *),
+  XSetBevelColor(Display *,const MagickXWindowInfo *,const unsigned int),
+  XSetMatteColor(Display *,const MagickXWindowInfo *,const unsigned int),
+  XSetTextColor(Display *,const MagickXWindowInfo *,const unsigned int);
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -123,15 +124,15 @@ static void
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o bevel_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o bevel_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the bevel.
 %
 %
 */
-static void XDrawBevel(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *bevel_info)
+static void XDrawBevel(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *bevel_info)
 {
   int
     x1,
@@ -213,15 +214,15 @@ static void XDrawBevel(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o button_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o button_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the button.
 %
 %
 */
-static void XDrawBeveledButton(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *button_info)
+static void XDrawBeveledButton(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *button_info)
 {
   int
     x,
@@ -289,7 +290,7 @@ static void XDrawBeveledButton(Display *display,const XWindowInfo *window_info,
     button_info->text,Extent(button_info->text));
   (void) XSetClipMask(display,window_info->widget_context,None);
   if (!button_info->raised)
-    XDelay(display,SuspendTime << 2);
+    MagickXDelay(display,SuspendTime << 2);
 }
 
 /*
@@ -316,15 +317,15 @@ static void XDrawBeveledButton(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o matte_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o matte_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the matte.
 %
 %
 */
-static void XDrawBeveledMatte(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *matte_info)
+static void XDrawBeveledMatte(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *matte_info)
 {
   /*
     Draw matte.
@@ -355,15 +356,15 @@ static void XDrawBeveledMatte(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o matte_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o matte_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the matte.
 %
 %
 */
-static void XDrawMatte(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *matte_info)
+static void XDrawMatte(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *matte_info)
 {
   /*
     Draw matte.
@@ -405,15 +406,15 @@ static void XDrawMatte(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o text_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o text_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the text.
 %
 %
 */
-static void XDrawMatteText(Display *display,const XWindowInfo *window_info,
-  XWidgetInfo *text_info)
+static void XDrawMatteText(Display *display,const MagickXWindowInfo *window_info,
+  MagickXWidgetInfo *text_info)
 {
   const char
     *text;
@@ -544,15 +545,15 @@ static void XDrawMatteText(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o triangle_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o triangle_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the triangle.
 %
 %
 */
-static void XDrawTriangleEast(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *triangle_info)
+static void XDrawTriangleEast(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *triangle_info)
 {
   int
     x1,
@@ -671,15 +672,15 @@ static void XDrawTriangleEast(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o triangle_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o triangle_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the triangle.
 %
 %
 */
-static void XDrawTriangleNorth(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *triangle_info)
+static void XDrawTriangleNorth(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *triangle_info)
 {
   int
     x1,
@@ -782,15 +783,15 @@ static void XDrawTriangleNorth(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
-%    o triangle_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o triangle_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the triangle.
 %
 %
 */
-static void XDrawTriangleSouth(Display *display,const XWindowInfo *window_info,
-  const XWidgetInfo *triangle_info)
+static void XDrawTriangleSouth(Display *display,const MagickXWindowInfo *window_info,
+  const MagickXWidgetInfo *triangle_info)
 {
   int
     x1,
@@ -896,12 +897,12 @@ static void XDrawTriangleSouth(Display *display,const XWindowInfo *window_info,
 %
 %    o window_info: Specifies a pointer to a XWindowText structure.
 %
-%    o text_info: Specifies a pointer to XWidgetInfo structure.
+%    o text_info: Specifies a pointer to MagickXWidgetInfo structure.
 %
 %
 */
-static void XDrawWidgetText(Display *display,const XWindowInfo *window_info,
-  XWidgetInfo *text_info)
+static void XDrawWidgetText(Display *display,const MagickXWindowInfo *window_info,
+  MagickXWidgetInfo *text_info)
 {
   GC
     widget_context;
@@ -988,7 +989,7 @@ static void XDrawWidgetText(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o text_info: Specifies a pointer to a XWidgetInfo structure.  It
+%    o text_info: Specifies a pointer to a MagickXWidgetInfo structure.  It
 %      contains the extents of the text.
 %
 %    o key_symbol:  A X11 KeySym that indicates what editing function to
@@ -1001,7 +1002,7 @@ static void XDrawWidgetText(Display *display,const XWindowInfo *window_info,
 %
 %
 */
-static void XEditText(Display *display,XWidgetInfo *text_info,
+static void XEditText(Display *display,MagickXWidgetInfo *text_info,
   const KeySym key_symbol,char *text,const unsigned long state)
 {
   switch ((int) key_symbol)
@@ -1108,7 +1109,7 @@ static void XEditText(Display *display,XWidgetInfo *text_info,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetWidgetInfo initializes the XWidgetInfo structure.
+%  Method XGetWidgetInfo initializes the MagickXWidgetInfo structure.
 %
 %  The format of the XGetWidgetInfo function is:
 %
@@ -1118,11 +1119,11 @@ static void XEditText(Display *display,XWidgetInfo *text_info,
 %
 %    o text: A string of characters associated with the widget.
 %
-%    o widget_info: Specifies a pointer to a X11 XWidgetInfo structure.
+%    o widget_info: Specifies a pointer to a X11 MagickXWidgetInfo structure.
 %
 %
 */
-static void XGetWidgetInfo(const char *text,XWidgetInfo *widget_info)
+static void XGetWidgetInfo(const char *text,MagickXWidgetInfo *widget_info)
 {
   /*
     Initialize widget info.
@@ -1169,7 +1170,7 @@ static void XGetWidgetInfo(const char *text,XWidgetInfo *widget_info)
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %    o x: Specifies an integer representing the rectangle offset in the
 %      x-direction.
@@ -1179,7 +1180,7 @@ static void XGetWidgetInfo(const char *text,XWidgetInfo *widget_info)
 %
 %
 */
-static void XHighlightWidget(Display *display,const XWindowInfo *window_info,
+static void XHighlightWidget(Display *display,const MagickXWindowInfo *window_info,
   const int x,const int y)
 {
   /*
@@ -1221,7 +1222,7 @@ static void XHighlightWidget(Display *display,const XWindowInfo *window_info,
 %
 %    o event: Specifies a pointer to a X11 XEvent structure.
 %
-%    o data: Specifies a pointer to a XWindows structure.
+%    o data: Specifies a pointer to a MagickXWindows structure.
 %
 %
 */
@@ -1232,10 +1233,10 @@ extern "C" {
 
 static int XScreenEvent(Display *display,XEvent *event,char *data)
 {
-  XWindows
+  MagickXWindows
     *windows;
 
-  windows=(XWindows *) data;
+  windows=(MagickXWindows *) data;
   if (event->xany.window == windows->popup.id)
     {
       if (event->type == MapNotify)
@@ -1271,20 +1272,20 @@ static int XScreenEvent(Display *display,XEvent *event,char *data)
     {
       if (event->xexpose.window == windows->image.id)
         {
-          XRefreshWindow(display,&windows->image,event);
+          MagickXRefreshWindow(display,&windows->image,event);
           break;
         }
       if (event->xexpose.window == windows->magnify.id)
         if (event->xexpose.count == 0)
           if (windows->magnify.mapped)
             {
-              XMakeMagnifyImage(display,windows);
+              MagickXMakeMagnifyImage(display,windows);
               break;
             }
       if (event->xexpose.window == windows->command.id)
         if (event->xexpose.count == 0)
           {
-            (void) XCommandWidget(display,windows,(const char **) NULL,event);
+            (void) MagickXCommandWidget(display,windows,(const char **) NULL,event);
             break;
           }
       break;
@@ -1338,14 +1339,14 @@ static int XScreenEvent(Display *display,XEvent *event,char *data)
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %    o raised: A value other than zero indicates the color show be a
 %      "highlight" color, otherwise the "shadow" color is set.
 %
 %
 */
-static void XSetBevelColor(Display *display,const XWindowInfo *window_info,
+static void XSetBevelColor(Display *display,const MagickXWindowInfo *window_info,
   const unsigned int raised)
 {
   if (window_info->depth == 1)
@@ -1398,13 +1399,13 @@ static void XSetBevelColor(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %    o raised: A value other than zero indicates the matte is active.
 %
 %
 */
-static void XSetMatteColor(Display *display,const XWindowInfo *window_info,
+static void XSetMatteColor(Display *display,const MagickXWindowInfo *window_info,
   const unsigned int raised)
 {
   if (window_info->depth == 1)
@@ -1451,14 +1452,14 @@ static void XSetMatteColor(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %    o raised: A value other than zero indicates the color show be a
 %      "highlight" color, otherwise the "shadow" color is set.
 %
 %
 */
-static void XSetTextColor(Display *display,const XWindowInfo *window_info,
+static void XSetTextColor(Display *display,const MagickXWindowInfo *window_info,
   const unsigned int raised)
 {
   long
@@ -1499,13 +1500,13 @@ static void XSetTextColor(Display *display,const XWindowInfo *window_info,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XColorBrowserWidget displays a Color Browser widget with a color
+%  Method MagickXColorBrowserWidget displays a Color Browser widget with a color
 %  query to the user.  The user keys a reply and presses the Action or Cancel
 %  button to exit.  The typed text is returned as the reply function parameter.
 %
-%  The format of the XColorBrowserWidget method is:
+%  The format of the MagickXColorBrowserWidget method is:
 %
-%      void XColorBrowserWidget(Display *display,XWindows *windows,
+%      void MagickXColorBrowserWidget(Display *display,MagickXWindows *windows,
 %        const char *action,char *reply)
 %
 %  A description of each parameter follows:
@@ -1513,7 +1514,7 @@ static void XSetTextColor(Display *display,const XWindowInfo *window_info,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o action: Specifies a pointer to the action of this widget.
 %
@@ -1521,7 +1522,7 @@ static void XSetTextColor(Display *display,const XWindowInfo *window_info,
 %
 %
 */
-MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
+MagickExport void MagickXColorBrowserWidget(Display *display,MagickXWindows *windows,
   const char *action,char *reply)
 {
 #define CancelButtonText  "Cancel"
@@ -1573,10 +1574,14 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     action_info,
     cancel_info,
-    expose_info,
+    expose_info =
+    {
+      (char *) NULL, (char *) NULL, (char *) NULL,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    },
     grab_info,
     list_info,
     mode_info,
@@ -1596,11 +1601,11 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
     Get color list and sort in ascending order.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(action != (char *) NULL);
   assert(reply != (char *) NULL);
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
   (void) strcpy(reset_pattern,"*");
   colorlist=GetColorList(glob_pattern,&colors);
   if (colorlist == (char **) NULL)
@@ -1612,9 +1617,9 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
       colorlist=GetColorList(glob_pattern,&colors);
       if (colorlist == (char **) NULL)
         {
-          XNoticeWidget(display,windows,"Unable to obtain colors names:",
+          MagickXNoticeWidget(display,windows,"Unable to obtain colors names:",
             glob_pattern);
-          (void) XDialogWidget(display,windows,action,"Enter color name:",
+          (void) MagickXDialogWidget(display,windows,action,"Enter color name:",
             reply);
           return;
         }
@@ -1651,7 +1656,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
   windows->widget.min_height=((23*height) >> 1)+((13*QuantumMargin) >> 1)+4;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Color Browser widget.
   */
@@ -1811,7 +1816,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         (void) XDrawString(display,windows->widget.id,
           windows->widget.annotate_context,x,y,ColorPatternText,
           Extent(ColorPatternText));
-        (void) strncpy(text_info.text,glob_pattern,MaxTextExtent-1);
+        (void) strlcpy(text_info.text,glob_pattern,MaxTextExtent);
         XDrawWidgetText(display,&windows->widget,&text_info);
         XDrawBeveledButton(display,&windows->widget,&grab_info);
         XDrawBeveledButton(display,&windows->widget,&reset_info);
@@ -1850,8 +1855,8 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
             /*
               Reply is a single color name-- exit.
             */
-            (void) strncpy(reply,glob_pattern,MaxTextExtent-1);
-            (void) strncpy(glob_pattern,reset_pattern,MaxTextExtent-1);
+            (void) strlcpy(reply,glob_pattern,MaxTextExtent);
+            (void) strlcpy(glob_pattern,reset_pattern,MaxTextExtent);
             action_info.raised=False;
             XDrawBeveledButton(display,&windows->widget,&action_info);
             break;
@@ -1862,7 +1867,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         checklist=GetColorList(glob_pattern,&number_colors);
         if (number_colors == 0)
           {
-            (void) strncpy(glob_pattern,reset_pattern,MaxTextExtent-1);
+            (void) strlcpy(glob_pattern,reset_pattern,MaxTextExtent);
             (void) XBell(display,0);
           }
         else
@@ -1894,7 +1899,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         */
         *reply_info.text='\0';
         reply_info.cursor=reply_info.text;
-        (void) strncpy(text_info.text,glob_pattern,MaxTextExtent-1);
+        (void) strlcpy(text_info.text,glob_pattern,MaxTextExtent);
         XDrawWidgetText(display,&windows->widget,&text_info);
         XDrawMatteText(display,&windows->widget,&reply_info);
         XDrawBeveledMatte(display,&windows->widget,&scroll_info);
@@ -1933,7 +1938,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         if ((slider_info.id < 0) || (colors <= visible_colors))
           slider_info.id=0;
         slider_info.y=slider_info.min_y;
-        if (colors > 0)
+        if (colors != 0)
           slider_info.y+=
             slider_info.id*(slider_info.max_y-slider_info.min_y+1)/colors;
         if (slider_info.id != selection_info.id)
@@ -1986,7 +1991,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         color=windows->widget.pixel_info->matte_color;
         (void) XParseColor(display,windows->widget.map_info->colormap,
           reply_info.text,&windows->widget.pixel_info->matte_color);
-        XBestPixel(display,windows->widget.map_info->colormap,(XColor *) NULL,
+        MagickXBestPixel(display,windows->widget.map_info->colormap,(XColor *) NULL,
           (unsigned int) windows->widget.visual_info->colormap_size,
           &windows->widget.pixel_info->matte_color);
         mode_info.text=colorname;
@@ -2008,7 +2013,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         /*
           Brief delay before advancing scroll bar.
         */
-        XDelay(display,delay);
+        MagickXDelay(display,delay);
         delay=SuspendTime;
         (void) XCheckIfEvent(display,&event,XScreenEvent,(char *) windows);
         if (!north_info.raised)
@@ -2090,7 +2095,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
               selection_info.height;
             if (id >= colors)
               break;
-            (void) strncpy(reply_info.text,colorlist[id],MaxTextExtent-1);
+            (void) strlcpy(reply_info.text,colorlist[id],MaxTextExtent);
             reply_info.highlight=False;
             reply_info.marker=reply_info.text;
             reply_info.cursor=reply_info.text+Extent(reply_info.text);
@@ -2098,7 +2103,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
             state|=RedrawActionState;
             if ((int) id == list_info.id)
               {
-                (void) strncpy(glob_pattern,reply_info.text,MaxTextExtent-1);
+                (void) strlcpy(glob_pattern,reply_info.text,MaxTextExtent);
                 state|=UpdateListState;
               }
             selection_info.id=(~0);
@@ -2129,8 +2134,8 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
             /*
               User pressed mode button.
             */
-            (void) strncpy(reply_info.text,mode_info.text,MaxTextExtent-1);
-            (void) strncpy(primary_selection,reply_info.text,MaxTextExtent-1);
+            (void) strlcpy(reply_info.text,mode_info.text,MaxTextExtent);
+            (void) strlcpy(primary_selection,reply_info.text,MaxTextExtent);
             (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
               event.xbutton.time);
             reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -2180,8 +2185,8 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
                 /*
                   Become the XA_PRIMARY selection owner.
                 */
-                (void) strncpy(primary_selection,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(primary_selection,reply_info.text,
+                  MaxTextExtent);
                 (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
                   event.xbutton.time);
                 reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -2236,7 +2241,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
                   /*
                     Select a pen color from the X server.
                   */
-                  (void) XGetWindowColor(display,windows,reply_info.text);
+                  (void) MagickXGetWindowColor(display,windows,reply_info.text);
                   reply_info.marker=reply_info.text;
                   reply_info.cursor=reply_info.text+Extent(reply_info.text);
                   XDrawMatteText(display,&windows->widget,&reply_info);
@@ -2250,7 +2255,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
             if (event.xbutton.window == windows->widget.id)
               if (MatteIsActive(reset_info,event.xbutton))
                 {
-                  (void) strncpy(glob_pattern,reset_pattern,MaxTextExtent-1);
+                  (void) strlcpy(glob_pattern,reset_pattern,MaxTextExtent);
                   state|=UpdateListState;
                 }
             reset_info.raised=True;
@@ -2415,7 +2420,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
             */
             if (*reply_info.text == '\0')
               break;
-            (void) strncpy(glob_pattern,reply_info.text,MaxTextExtent-1);
+            (void) strlcpy(glob_pattern,reply_info.text,MaxTextExtent);
             state|=UpdateListState;
             break;
           }
@@ -2631,9 +2636,9 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   /*
     Free color list.
   */
@@ -2646,7 +2651,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
   status=XParseColor(display,windows->widget.map_info->colormap,reply,&color);
   if (status != 0)
     return;
-  XNoticeWidget(display,windows,"Color is unknown to X server:",reply);
+  MagickXNoticeWidget(display,windows,"Color is unknown to X server:",reply);
   (void) strcpy(reply,"gray");
 }
 
@@ -2661,12 +2666,12 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XCommandWidget maps a menu and returns the command pointed to by
+%  Method MagickXCommandWidget maps a menu and returns the command pointed to by
 %  the user when the button is released.
 %
-%  The format of the XCommandWidget method is:
+%  The format of the MagickXCommandWidget method is:
 %
-%      int XCommandWidget(Display *display,XWindows *windows,
+%      int MagickXCommandWidget(Display *display,MagickXWindows *windows,
 %        const char **selections,XEvent *event)
 %
 %  A description of each parameter follows:
@@ -2677,7 +2682,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o selections: Specifies a pointer to one or more strings that comprise
 %      the choices in the menu.
@@ -2686,7 +2691,7 @@ MagickExport void XColorBrowserWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport int XCommandWidget(Display *display,XWindows *windows,
+MagickExport int MagickXCommandWidget(Display *display,MagickXWindows *windows,
   const char **selections,XEvent *event)
 {
   /*
@@ -2781,8 +2786,8 @@ static unsigned char tile_bits[] = {
   static unsigned int
     number_selections;
 
-  static XWidgetInfo
-    *selection_info = (XWidgetInfo *) NULL;
+  static MagickXWidgetInfo
+    *selection_info = (MagickXWidgetInfo *) NULL;
 
   unsigned int
     height;
@@ -2794,7 +2799,7 @@ static unsigned char tile_bits[] = {
     *font_info;
 
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   font_info=windows->command.font_info;
   height=font_info->ascent+font_info->descent;
   id=(~0);
@@ -2830,7 +2835,7 @@ static unsigned char tile_bits[] = {
         number_selections*(((3*height) >> 1)+10)+tile_height+20;
       windows->command.min_width=windows->command.width;
       windows->command.min_height=windows->command.height;
-      XConstrainWindowPosition(display,&windows->command);
+      MagickXConstrainWindowPosition(display,&windows->command);
       if (windows->command.id != (Window) NULL)
         {
           int
@@ -2855,11 +2860,11 @@ static unsigned char tile_bits[] = {
       /*
         Allocate selection info memory.
       */
-      if (selection_info != (XWidgetInfo *) NULL)
+      if (selection_info != (MagickXWidgetInfo *) NULL)
         MagickFreeMemory(selection_info);
-      selection_info=MagickAllocateMemory(XWidgetInfo *,
-        number_selections*sizeof(XWidgetInfo));
-      if (selection_info == (XWidgetInfo *) NULL)
+      selection_info=MagickAllocateMemory(MagickXWidgetInfo *,
+        number_selections*sizeof(MagickXWidgetInfo));
+      if (selection_info == (MagickXWidgetInfo *) NULL)
         {
           MagickError3(ResourceLimitError,MemoryAllocationFailed,
             UnableToCreateCommandWidget);
@@ -2990,7 +2995,7 @@ static unsigned char tile_bits[] = {
             XDrawTriangleEast(display,&windows->command,&toggle_info);
             id=i;
           }
-          XDelay(display,SuspendTime);
+          MagickXDelay(display,SuspendTime);
           if (!XCheckMaskEvent(display,ButtonMotionMask,event))
             break;
           while (XCheckMaskEvent(display,ButtonMotionMask,event));
@@ -3084,24 +3089,24 @@ static unsigned char tile_bits[] = {
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XConfirmWidget displays a Confirm widget with a notice to the user.
+%  Method MagickXConfirmWidget displays a Confirm widget with a notice to the user.
 %  The function returns -1 if Dismiss is pressed, 0 for Cancel, and 1 for
 %  Yes.
 %
-%  The format of the XConfirmWidget method is:
+%  The format of the MagickXConfirmWidget method is:
 %
-%      int XConfirmWidget(Display *display,XWindows *windows,
+%      int MagickXConfirmWidget(Display *display,MagickXWindows *windows,
 %        const char *reason,const char *description)
 %
 %  A description of each parameter follows:
 %
-%    o status:  Method XConfirmWidget returns True if the user presses Yes
+%    o status:  Method MagickXConfirmWidget returns True if the user presses Yes
 %      otherwise False is returned.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o reason: Specifies the message to display before terminating the
 %      program.
@@ -3110,7 +3115,7 @@ static unsigned char tile_bits[] = {
 %
 %
 */
-MagickExport int XConfirmWidget(Display *display,XWindows *windows,
+MagickExport int MagickXConfirmWidget(Display *display,MagickXWindows *windows,
   const char *reason,const char *description)
 {
 #define CancelButtonText  "Cancel"
@@ -3137,7 +3142,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     cancel_info,
     dismiss_info,
     yes_info;
@@ -3149,10 +3154,10 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
     Determine Confirm widget attributes.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(reason != (char *) NULL);
   assert(description != (char *) NULL);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   font_info=windows->widget.font_info;
   width=XTextWidth(font_info,CancelButtonText,Extent(CancelButtonText));
   if (XTextWidth(font_info,DismissButtonText,Extent(DismissButtonText)) > width)
@@ -3181,7 +3186,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
   windows->widget.min_height=7*height;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Confirm widget.
   */
@@ -3206,7 +3211,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
   */
   confirm=0;
   state=UpdateConfigurationState;
-  XSetCursorState(display,windows,True);
+  MagickXSetCursorState(display,windows,True);
   do
   {
     if (state & UpdateConfigurationState)
@@ -3253,7 +3258,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
             char
               question[MaxTextExtent];
 
-            (void) strncpy(question,description,MaxTextExtent-1);
+            (void) strlcpy(question,description,MaxTextExtent);
             (void) strcat(question,"?");
             width=XTextWidth(font_info,question,Extent(question));
             x=(windows->widget.width >> 1)-(width >> 1);
@@ -3471,9 +3476,9 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   return(confirm);
 }
 
@@ -3488,13 +3493,13 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XDialogWidget displays a Dialog widget with a query to the user.
+%  Method MagickXDialogWidget displays a Dialog widget with a query to the user.
 %  The user keys a reply and presses the Ok or Cancel button to exit.  The
 %  typed text is returned as the reply function parameter.
 %
-%  The format of the XDialogWidget method is:
+%  The format of the MagickXDialogWidget method is:
 %
-%      int XDialogWidget(Display *display,XWindows *windows,const char *action,
+%      int MagickXDialogWidget(Display *display,MagickXWindows *windows,const char *action,
 %        const char *query,char *reply)
 %
 %  A description of each parameter follows:
@@ -3502,7 +3507,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o action: Specifies a pointer to the action of this widget.
 %
@@ -3512,7 +3517,7 @@ MagickExport int XConfirmWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport int XDialogWidget(Display *display,XWindows *windows,
+MagickExport int MagickXDialogWidget(Display *display,MagickXWindows *windows,
   const char *action,const char *query,char *reply)
 {
 #define CancelButtonText  "Cancel"
@@ -3547,7 +3552,7 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     action_info,
     cancel_info,
     reply_info,
@@ -3561,11 +3566,11 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
     Determine Dialog widget attributes.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(action != (char *) NULL);
   assert(query != (char *) NULL);
   assert(reply != (char *) NULL);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   font_info=windows->widget.font_info;
   width=XTextWidth(font_info,(char *) action,Extent(action));
   if (XTextWidth(font_info,CancelButtonText,Extent(CancelButtonText)) > width)
@@ -3588,7 +3593,7 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
   windows->widget.min_height=windows->widget.height;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Dialog widget.
   */
@@ -3618,7 +3623,7 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
     (LocaleCompare(action,"Save") == 0) ||
     (LocaleCompare(action,"Shade") == 0);
   state=UpdateConfigurationState;
-  XSetCursorState(display,windows,True);
+  MagickXSetCursorState(display,windows,True);
   do
   {
     if (state & UpdateConfigurationState)
@@ -3753,8 +3758,8 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
                 /*
                   Become the XA_PRIMARY selection owner.
                 */
-                (void) strncpy(primary_selection,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(primary_selection,reply_info.text,
+                  MaxTextExtent);
                 (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
                   event.xbutton.time);
                 reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -4040,9 +4045,9 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   if (anomaly)
     if (special_info.raised)
       if (*reply != '\0')
@@ -4061,13 +4066,13 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XFileBrowserWidget displays a File Browser widget with a file query
+%  Method MagickXFileBrowserWidget displays a File Browser widget with a file query
 %  to the user.  The user keys a reply and presses the Action or Cancel button
 %  to exit.  The typed text is returned as the reply function parameter.
 %
-%  The format of the XFileBrowserWidget method is:
+%  The format of the MagickXFileBrowserWidget method is:
 %
-%      void XFileBrowserWidget(Display *display,XWindows *windows,
+%      void MagickXFileBrowserWidget(Display *display,MagickXWindows *windows,
 %        const char *action,char *reply)
 %
 %  A description of each parameter follows:
@@ -4075,7 +4080,7 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o action: Specifies a pointer to the action of this widget.
 %
@@ -4083,7 +4088,7 @@ MagickExport int XDialogWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
+MagickExport void MagickXFileBrowserWidget(Display *display,MagickXWindows *windows,
   const char *action,char *reply)
 {
 #define CancelButtonText  "Cancel"
@@ -4139,10 +4144,14 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     action_info,
     cancel_info,
-    expose_info,
+    expose_info =
+    {
+      (char *) NULL, (char *) NULL, (char *) NULL,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    },
     special_info,
     list_info,
     home_info,
@@ -4162,22 +4171,22 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
     Read filelist from current directory.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(action != (char *) NULL);
   assert(reply != (char *) NULL);
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
   (void) getcwd(home_directory,MaxTextExtent-1);
-  (void) strncpy(working_directory,home_directory,MaxTextExtent-1);
+  (void) strlcpy(working_directory,home_directory,MaxTextExtent);
   filelist=ListFiles(working_directory,glob_pattern,&files);
   if (filelist == (char **) NULL)
     {
       /*
         Directory read failed.
       */
-      XNoticeWidget(display,windows,"Unable to read directory:",
+      MagickXNoticeWidget(display,windows,"Unable to read directory:",
         working_directory);
-      (void) XDialogWidget(display,windows,action,"Enter filename:",reply);
+      (void) MagickXDialogWidget(display,windows,action,"Enter filename:",reply);
       return;
     }
   /*
@@ -4216,7 +4225,7 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
   windows->widget.min_height=((23*height) >> 1)+((13*QuantumMargin) >> 1)+4;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map File Browser widget.
   */
@@ -4284,7 +4293,7 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
             while ((p > (reply+1)) && (*(p-1) != '.'))
               p--;
             if ((p > (reply+1)) && (*(p-1) == '.'))
-              (void) strncpy(format,p,MaxTextExtent-1);
+              (void) strlcpy(format,p,MaxTextExtent);
           }
         XGetWidgetInfo(UpButtonText,&up_info);
         up_info.width=width;
@@ -4551,7 +4560,7 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
         /*
           Brief delay before advancing scroll bar.
         */
-        XDelay(display,delay);
+        MagickXDelay(display,delay);
         delay=SuspendTime;
         (void) XCheckIfEvent(display,&event,XScreenEvent,(char *) windows);
         if (!north_info.raised)
@@ -4633,15 +4642,15 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
               selection_info.height;
             if ((int) id >= files)
               break;
-            (void) strncpy(reply_info.text,filelist[id],MaxTextExtent-1);
+            (void) strlcpy(reply_info.text,filelist[id],MaxTextExtent);
             reply_info.highlight=False;
             reply_info.marker=reply_info.text;
             reply_info.cursor=reply_info.text+Extent(reply_info.text);
             XDrawMatteText(display,&windows->widget,&reply_info);
             if ((int) id == list_info.id)
               {
-                (void) strncpy(working_directory,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(working_directory,reply_info.text,
+                  MaxTextExtent);
                 state|=UpdateListState;
               }
             selection_info.id=(~0);
@@ -4716,8 +4725,8 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
                 /*
                   Become the XA_PRIMARY selection owner.
                 */
-                (void) strncpy(primary_selection,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(primary_selection,reply_info.text,
+                  MaxTextExtent);
                 (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
                   event.xbutton.time);
                 reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -4780,8 +4789,8 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
             if (event.xbutton.window == windows->widget.id)
               if (MatteIsActive(home_info,event.xbutton))
                 {
-                  (void) strncpy(working_directory,home_directory,
-                    MaxTextExtent-1);
+                  (void) strlcpy(working_directory,home_directory,
+                    MaxTextExtent);
                   state|=UpdateListState;
                 }
             home_info.raised=True;
@@ -4829,9 +4838,9 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
                   windows->widget.busy_cursor);
                 windows->popup.x=windows->widget.x+60;
                 windows->popup.y=windows->widget.y+60;
-                XListBrowserWidget(display,windows,&windows->popup,
+                MagickXListBrowserWidget(display,windows,&windows->popup,
                   (const char **)formats,"Select","Select image format type:",format);
-                XSetCursorState(display,windows,True);
+                MagickXSetCursorState(display,windows,True);
                 (void) XDefineCursor(display,windows->widget.id,
                   windows->widget.cursor);
                 AppendImageFormat(format,reply_info.text);
@@ -5011,11 +5020,11 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
             if (*reply_info.text == '\0')
               break;
             if (IsGlob(reply_info.text))
-              (void) strncpy(glob_pattern,reply_info.text,MaxTextExtent-1);
+              (void) strlcpy(glob_pattern,reply_info.text,MaxTextExtent);
             else
               {
-                (void) strncpy(working_directory,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(working_directory,reply_info.text,
+                  MaxTextExtent);
                 if (*working_directory == '~')
                   ExpandFilename(working_directory);
               }
@@ -5238,9 +5247,9 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   /*
     Free file list.
   */
@@ -5263,13 +5272,13 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XFontBrowserWidget displays a Font Browser widget with a font query
+%  Method MagickXFontBrowserWidget displays a Font Browser widget with a font query
 %  to the user.  The user keys a reply and presses the Action or Cancel button
 %  to exit.  The typed text is returned as the reply function parameter.
 %
-%  The format of the XFontBrowserWidget method is:
+%  The format of the MagickXFontBrowserWidget method is:
 %
-%      void XFontBrowserWidget(Display *display,XWindows *windows,
+%      void MagickXFontBrowserWidget(Display *display,MagickXWindows *windows,
 %        const char *action,char *reply)
 %
 %  A description of each parameter follows:
@@ -5277,7 +5286,7 @@ MagickExport void XFileBrowserWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o action: Specifies a pointer to the action of this widget.
 %
@@ -5310,7 +5319,7 @@ static int FontCompare(const void *x,const void *y)
 }
 #endif
 
-MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
+MagickExport void MagickXFontBrowserWidget(Display *display,MagickXWindows *windows,
   const char *action,char *reply)
 {
 #define BackButtonText  "Back"
@@ -5361,11 +5370,15 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     action_info,
     back_info,
     cancel_info,
-    expose_info,
+    expose_info =
+    {
+      (char *) NULL, (char *) NULL, (char *) NULL,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    },
     list_info,
     mode_info,
     north_info,
@@ -5384,12 +5397,12 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
     Get font list and sort in ascending order.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(action != (char *) NULL);
   assert(reply != (char *) NULL);
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
-  (void) strncpy(back_pattern,glob_pattern,MaxTextExtent-1);
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
+  (void) strlcpy(back_pattern,glob_pattern,MaxTextExtent);
   (void) strcpy(reset_pattern,"*");
   fontlist=XListFonts(display,glob_pattern,32767,&fonts);
   if (fonts == 0)
@@ -5397,13 +5410,13 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
       /*
         Pattern failed, obtain all the fonts.
       */
-      XNoticeWidget(display,windows,"Unable to obtain fonts names:",
+      MagickXNoticeWidget(display,windows,"Unable to obtain fonts names:",
         glob_pattern);
       (void) strcpy(glob_pattern,"*");
       fontlist=XListFonts(display,glob_pattern,32767,&fonts);
       if (fontlist == (char **) NULL)
         {
-          XNoticeWidget(display,windows,"Unable to obtain fonts names:",
+          MagickXNoticeWidget(display,windows,"Unable to obtain fonts names:",
             glob_pattern);
           return;
         }
@@ -5415,7 +5428,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
   fontlist=MagickAllocateMemory(char **,fonts*sizeof(char *));
   if (fontlist == (char **) NULL)
     {
-      XNoticeWidget(display,windows,"MemoryAllocationFailed",
+      MagickXNoticeWidget(display,windows,"MemoryAllocationFailed",
         "UnableToViewFonts");
       return;
     }
@@ -5454,7 +5467,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
   windows->widget.min_height=((27*height) >> 1)+((13*QuantumMargin) >> 1)+4;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Font Browser widget.
   */
@@ -5613,7 +5626,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
         (void) XDrawString(display,windows->widget.id,
           windows->widget.annotate_context,x,y,FontPatternText,
           Extent(FontPatternText));
-        (void) strncpy(text_info.text,glob_pattern,MaxTextExtent-1);
+        (void) strlcpy(text_info.text,glob_pattern,MaxTextExtent);
         XDrawWidgetText(display,&windows->widget,&text_info);
         XDrawBeveledButton(display,&windows->widget,&back_info);
         XDrawBeveledButton(display,&windows->widget,&reset_info);
@@ -5657,13 +5670,13 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
                 /*
                   Might be a scaleable font-- exit.
                 */
-                (void) strncpy(reply,glob_pattern,MaxTextExtent-1);
-                (void) strncpy(glob_pattern,back_pattern,MaxTextExtent-1);
+                (void) strlcpy(reply,glob_pattern,MaxTextExtent);
+                (void) strlcpy(glob_pattern,back_pattern,MaxTextExtent);
                 action_info.raised=False;
                 XDrawBeveledButton(display,&windows->widget,&action_info);
                 break;
               }
-            (void) strncpy(glob_pattern,back_pattern,MaxTextExtent-1);
+            (void) strlcpy(glob_pattern,back_pattern,MaxTextExtent);
             (void) XBell(display,0);
           }
         else
@@ -5672,8 +5685,8 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
               /*
                 Reply is a single font name-- exit.
               */
-              (void) strncpy(reply,checklist[0],MaxTextExtent-1);
-              (void) strncpy(glob_pattern,back_pattern,MaxTextExtent-1);
+              (void) strlcpy(reply,checklist[0],MaxTextExtent);
+              (void) strlcpy(glob_pattern,back_pattern,MaxTextExtent);
               (void) XFreeFontNames(checklist);
               action_info.raised=False;
               XDrawBeveledButton(display,&windows->widget,&action_info);
@@ -5693,7 +5706,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
         fontlist=MagickAllocateMemory(char **,fonts*sizeof(char *));
         if (fontlist == (char **) NULL)
           {
-            XNoticeWidget(display,windows,"MemoryAllocationFailed",
+            MagickXNoticeWidget(display,windows,"MemoryAllocationFailed",
               "UnableToViewFonts");
             return;
           }
@@ -5717,7 +5730,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
         */
         *reply_info.text='\0';
         reply_info.cursor=reply_info.text;
-        (void) strncpy(text_info.text,glob_pattern,MaxTextExtent-1);
+        (void) strlcpy(text_info.text,glob_pattern,MaxTextExtent);
         XDrawWidgetText(display,&windows->widget,&text_info);
         XDrawMatteText(display,&windows->widget,&reply_info);
         XDrawBeveledMatte(display,&windows->widget,&scroll_info);
@@ -5835,7 +5848,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
         /*
           Brief delay before advancing scroll bar.
         */
-        XDelay(display,delay);
+        MagickXDelay(display,delay);
         delay=SuspendTime;
         (void) XCheckIfEvent(display,&event,XScreenEvent,(char *) windows);
         if (!north_info.raised)
@@ -5917,7 +5930,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
               selection_info.height;
             if ((int) id >= fonts)
               break;
-            (void) strncpy(reply_info.text,fontlist[id],MaxTextExtent-1);
+            (void) strlcpy(reply_info.text,fontlist[id],MaxTextExtent);
             reply_info.highlight=False;
             reply_info.marker=reply_info.text;
             reply_info.cursor=reply_info.text+Extent(reply_info.text);
@@ -5925,7 +5938,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
             state|=RedrawActionState;
             if ((int) id == list_info.id)
               {
-                (void) strncpy(glob_pattern,reply_info.text,MaxTextExtent-1);
+                (void) strlcpy(glob_pattern,reply_info.text,MaxTextExtent);
                 state|=UpdateListState;
               }
             selection_info.id=(~0);
@@ -5991,8 +6004,8 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
                 /*
                   Become the XA_PRIMARY selection owner.
                 */
-                (void) strncpy(primary_selection,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(primary_selection,reply_info.text,
+                  MaxTextExtent);
                 (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
                   event.xbutton.time);
                 reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -6044,7 +6057,7 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
             if (event.xbutton.window == windows->widget.id)
               if (MatteIsActive(back_info,event.xbutton))
                 {
-                  (void) strncpy(glob_pattern,back_pattern,MaxTextExtent-1);
+                  (void) strlcpy(glob_pattern,back_pattern,MaxTextExtent);
                   state|=UpdateListState;
                 }
             back_info.raised=True;
@@ -6055,8 +6068,8 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
             if (event.xbutton.window == windows->widget.id)
               if (MatteIsActive(reset_info,event.xbutton))
                 {
-                  (void) strncpy(back_pattern,glob_pattern,MaxTextExtent-1);
-                  (void) strncpy(glob_pattern,reset_pattern,MaxTextExtent-1);
+                  (void) strlcpy(back_pattern,glob_pattern,MaxTextExtent);
+                  (void) strlcpy(glob_pattern,reset_pattern,MaxTextExtent);
                   state|=UpdateListState;
                 }
             reset_info.raised=True;
@@ -6219,8 +6232,8 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
             */
             if (*reply_info.text == '\0')
               break;
-            (void) strncpy(back_pattern,glob_pattern,MaxTextExtent-1);
-            (void) strncpy(glob_pattern,reply_info.text,MaxTextExtent-1);
+            (void) strlcpy(back_pattern,glob_pattern,MaxTextExtent);
+            (void) strlcpy(glob_pattern,reply_info.text,MaxTextExtent);
             state|=UpdateListState;
             break;
           }
@@ -6429,9 +6442,9 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   /*
     Free font list.
   */
@@ -6450,27 +6463,27 @@ MagickExport void XFontBrowserWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XInfoWidget displays text in the Info widget.  The purpose is to
+%  Method MagickXInfoWidget displays text in the Info widget.  The purpose is to
 %  inform the user that what activity is currently being performed (e.g.
 %  reading an image, rotating an image, etc.).
 %
-%  The format of the XInfoWidget method is:
+%  The format of the MagickXInfoWidget method is:
 %
-%      void XInfoWidget(Display *display,XWindows *windows,const char *activity)
+%      void MagickXInfoWidget(Display *display,MagickXWindows *windows,const char *activity)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o activity: This character string reflects the current activity and is
 %      displayed in the Info widget.
 %
 %
 */
-MagickExport void XInfoWidget(Display *display,XWindows *windows,
+MagickExport void MagickXInfoWidget(Display *display,MagickXWindows *windows,
   const char *activity)
 {
   int
@@ -6490,7 +6503,7 @@ MagickExport void XInfoWidget(Display *display,XWindows *windows,
     Map Info widget.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(activity != (char *) NULL);
   font_info=windows->info.font_info;
   width=XTextWidth(font_info,(char *) activity,Extent(activity))+
@@ -6546,15 +6559,15 @@ MagickExport void XInfoWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XListBrowserWidget displays a List Browser widget with a query to
+%  Method MagickXListBrowserWidget displays a List Browser widget with a query to
 %  the user.  The user keys a reply or select a reply from the list.  Finally,
 %  the user presses the Action or Cancel button to exit.  The typed text is
 %  returned as the reply function parameter.
 %
-%  The format of the XListBrowserWidget method is:
+%  The format of the MagickXListBrowserWidget method is:
 %
-%      void XListBrowserWidget(Display *display,XWindows *windows,
-%        XWindowInfo *window_info,const char **list,const char *action,
+%      void MagickXListBrowserWidget(Display *display,MagickXWindows *windows,
+%        MagickXWindowInfo *window_info,const char **list,const char *action,
 %        const char *query,char *reply)
 %
 %  A description of each parameter follows:
@@ -6562,7 +6575,7 @@ MagickExport void XInfoWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o list: Specifies a pointer to an array of strings.  The user can
 %      select from these strings as a possible reply value.
@@ -6575,8 +6588,8 @@ MagickExport void XInfoWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
-  XWindowInfo *window_info,const char **list,const char *action,
+MagickExport void MagickXListBrowserWidget(Display *display,MagickXWindows *windows,
+  MagickXWindowInfo *window_info,const char **list,const char *action,
   const char *query,char *reply)
 {
 #define CancelButtonText  "Cancel"
@@ -6614,10 +6627,14 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     action_info,
     cancel_info,
-    expose_info,
+    expose_info =
+    {
+      (char *) NULL, (char *) NULL, (char *) NULL,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    },
     list_info,
     north_info,
     reply_info,
@@ -6634,17 +6651,17 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
     Count the number of entries in the list.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
-  assert(window_info != (XWindowInfo *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
+  assert(window_info != (MagickXWindowInfo *) NULL);
   assert(list != (const char **) NULL);
   assert(action != (char *) NULL);
   assert(query != (char *) NULL);
   assert(reply != (char *) NULL);
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
   if (list == (const char **) NULL)
     {
-      XNoticeWidget(display,windows,"No text to browse:",(char *) NULL);
+      MagickXNoticeWidget(display,windows,"No text to browse:",(char *) NULL);
       return;
     }
   for (entries=0; ; entries++)
@@ -6674,7 +6691,7 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
   window_info->min_height=((23*height) >> 1)+((13*QuantumMargin) >> 1)+4;
   if (window_info->height < window_info->min_height)
     window_info->height=window_info->min_height;
-  XConstrainWindowPosition(display,window_info);
+  MagickXConstrainWindowPosition(display,window_info);
   /*
     Map List Browser widget.
   */
@@ -6892,7 +6909,7 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
         /*
           Brief delay before advancing scroll bar.
         */
-        XDelay(display,delay);
+        MagickXDelay(display,delay);
         delay=SuspendTime;
         (void) XCheckIfEvent(display,&event,XScreenEvent,(char *) windows);
         if (!north_info.raised)
@@ -6974,7 +6991,7 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
               selection_info.height;
             if ((int) id >= entries)
               break;
-            (void) strncpy(reply_info.text,list[id],MaxTextExtent-1);
+            (void) strlcpy(reply_info.text,list[id],MaxTextExtent);
             reply_info.highlight=False;
             reply_info.marker=reply_info.text;
             reply_info.cursor=reply_info.text+Extent(reply_info.text);
@@ -7030,8 +7047,8 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
                 /*
                   Become the XA_PRIMARY selection owner.
                 */
-                (void) strncpy(primary_selection,reply_info.text,
-                  MaxTextExtent-1);
+                (void) strlcpy(primary_selection,reply_info.text,
+                  MaxTextExtent);
                 (void) XSetSelectionOwner(display,XA_PRIMARY,window_info->id,
                   event.xbutton.time);
                 reply_info.highlight=XGetSelectionOwner(display,XA_PRIMARY) ==
@@ -7430,9 +7447,9 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,window_info->id,window_info->screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
 }
 
 /*
@@ -7446,12 +7463,12 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMenuWidget maps a menu and returns the command pointed to by the
+%  Method MagickXMenuWidget maps a menu and returns the command pointed to by the
 %  user when the button is released.
 %
-%  The format of the XMenuWidget method is:
+%  The format of the MagickXMenuWidget method is:
 %
-%      int XMenuWidget(Display *display,XWindows *windows,const char *title,
+%      int MagickXMenuWidget(Display *display,MagickXWindows *windows,const char *title,
 %        const char **selections,char *item)
 %
 %  A description of each parameter follows:
@@ -7462,7 +7479,7 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o title: Specifies a character string that describes the menu selections.
 %
@@ -7474,7 +7491,7 @@ MagickExport void XListBrowserWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport int XMenuWidget(Display *display,XWindows *windows,
+MagickExport int MagickXMenuWidget(Display *display,MagickXWindows *windows,
   const char *title,const char **selections,char *item)
 {
   Cursor
@@ -7504,7 +7521,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
   XSetWindowAttributes
     window_attributes;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     highlight_info,
     menu_info,
     selection_info;
@@ -7516,7 +7533,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
     Determine Menu widget attributes.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(title != (char *) NULL);
   assert(selections != (const char **) NULL);
   assert(item != (char *) NULL);
@@ -7543,7 +7560,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
   windows->widget.height=top_offset+number_selections*height+4;
   windows->widget.min_width=windows->widget.width;
   windows->widget.min_height=windows->widget.height;
-  XQueryPosition(display,windows->widget.root,&x,&y);
+  MagickXQueryPosition(display,windows->widget.root,&x,&y);
   windows->widget.x=x-(QuantumMargin >> 1);
   if (submenu_info.active)
     {
@@ -7552,10 +7569,10 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
       toggle_info.raised=True;
       XDrawTriangleEast(display,&windows->command,&toggle_info);
     }
-  windows->widget.y=!submenu_info.active ? y-((3*title_height) >> 2) : y;
+  windows->widget.y=(!submenu_info.active ? ((int) (y-((3*title_height) >> 2))) : y);
   if (submenu_info.active)
     windows->widget.y=windows->command.y+submenu_info.y;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Menu widget.
   */
@@ -7706,7 +7723,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
         /*
           Exit menu.
         */
-        XSetCursorState(display,windows,False);
+        MagickXSetCursorState(display,windows,False);
         *item='\0';
         state|=ExitState;
         break;
@@ -7856,7 +7873,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
   (void) XChangeWindowAttributes(display,windows->widget.id,CWOverrideRedirect,
     &window_attributes);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   if (submenu_info.active)
     {
       submenu_info.active=False;
@@ -7865,7 +7882,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
     }
   if ((selection_info.id < 0) || (selection_info.id >= (int) number_selections))
     return(~0);
-  (void) strncpy(item,selections[selection_info.id],MaxTextExtent-1);
+  (void) strlcpy(item,selections[selection_info.id],MaxTextExtent);
   return(selection_info.id);
 }
 
@@ -7880,13 +7897,13 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMonitorWidget displays the progress a task is making in
+%  Method MagickXMonitorWidget displays the progress a task is making in
 %  completing a task.  A span of zero toggles the active status.  An inactive
 %  state disables the progress monitor.
 %
-%  The format of the XMonitorWidget method is:
+%  The format of the MagickXMonitorWidget method is:
 %
-%      void XMonitorWidget(Display *display,XWindows *windows,const char *task,
+%      void MagickXMonitorWidget(Display *display,MagickXWindows *windows,const char *task,
 %        const magick_int64_t quantum,
 %        const magick_uint64_t span)
 %
@@ -7895,7 +7912,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o task: Identifies the task in progress.
 %
@@ -7906,7 +7923,7 @@ MagickExport int XMenuWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport void XMonitorWidget(Display *display,XWindows *windows,
+MagickExport void MagickXMonitorWidget(Display *display,MagickXWindows *windows,
   const char *task,const magick_int64_t quantum,
   const magick_uint64_t span)
 {
@@ -7917,7 +7934,7 @@ MagickExport void XMonitorWidget(Display *display,XWindows *windows,
     event;
 
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(task != (const char *) NULL);
   if (span == 0)
     return;
@@ -7925,17 +7942,17 @@ MagickExport void XMonitorWidget(Display *display,XWindows *windows,
     Update image windows if there is a pending expose event.
   */
   while (XCheckTypedWindowEvent(display,windows->command.id,Expose,&event))
-    (void) XCommandWidget(display,windows,(const char **) NULL,&event);
+    (void) MagickXCommandWidget(display,windows,(const char **) NULL,&event);
   while (XCheckTypedWindowEvent(display,windows->image.id,Expose,&event))
-    XRefreshWindow(display,&windows->image,&event);
+    MagickXRefreshWindow(display,&windows->image,&event);
   while (XCheckTypedWindowEvent(display,windows->info.id,Expose,&event))
     if (monitor_info.text != (char *) NULL)
-      XInfoWidget(display,windows,monitor_info.text);
+      MagickXInfoWidget(display,windows,monitor_info.text);
   /*
     Draw progress monitor bar to represent percent completion of a task.
   */
   if (!windows->info.mapped || (task != monitor_info.text))
-    XInfoWidget(display,windows,task);
+    MagickXInfoWidget(display,windows,task);
   width=(unsigned int) (((quantum+1)*(windows->info.width-
     (2*monitor_info.x)))/span);
   if (width < monitor_info.width)
@@ -7960,12 +7977,12 @@ MagickExport void XMonitorWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XNoticeWidget displays a Notice widget with a notice to the user.
+%  Method MagickXNoticeWidget displays a Notice widget with a notice to the user.
 %  The function returns when the user presses the "Dismiss" button.
 %
-%  The format of the XNoticeWidget method is:
+%  The format of the MagickXNoticeWidget method is:
 %
-%      void XNoticeWidget(Display *display,XWindows *windows,
+%      void MagickXNoticeWidget(Display *display,MagickXWindows *windows,
 %        const char *reason,const char *description)
 %
 %  A description of each parameter follows:
@@ -7973,7 +7990,7 @@ MagickExport void XMonitorWidget(Display *display,XWindows *windows,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o reason: Specifies the message to display before terminating the
 %      program.
@@ -7982,7 +7999,7 @@ MagickExport void XMonitorWidget(Display *display,XWindows *windows,
 %
 %
 */
-MagickExport void XNoticeWidget(Display *display,XWindows *windows,
+MagickExport void MagickXNoticeWidget(Display *display,MagickXWindows *windows,
   const char *reason,const char *description)
 {
 #define DismissButtonText  "Dismiss"
@@ -8015,7 +8032,7 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     dismiss_info;
 
   XWindowChanges
@@ -8025,11 +8042,11 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
     Determine Notice widget attributes.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(reason != (char *) NULL);
-  XDelay(display,SuspendTime << 3);  /* avoid surpise with delay */
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
+  MagickXDelay(display,SuspendTime << 3);  /* avoid surpise with delay */
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
   font_info=windows->widget.font_info;
   width=XTextWidth(font_info,DismissButtonText,Extent(DismissButtonText));
   text=GetLocaleExceptionMessage(XServerError,reason);
@@ -8053,7 +8070,7 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
   windows->widget.min_height=7*height;
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Notice widget.
   */
@@ -8128,7 +8145,7 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
         /*
           Do not block if delay > 0.
         */
-        XDelay(display,SuspendTime << 2);
+        MagickXDelay(display,SuspendTime << 2);
         continue;
       }
     switch (event.type)
@@ -8269,9 +8286,9 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
 }
 
 /*
@@ -8285,28 +8302,28 @@ MagickExport void XNoticeWidget(Display *display,XWindows *windows,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XPreferencesWidget displays a Preferences widget with program
+%  Method MagickXPreferencesWidget displays a Preferences widget with program
 %  preferences.  If the user presses the Apply button, the preferences are
 %  stored in a configuration file in the users' home directory.
 %
-%  The format of the XPreferencesWidget method is:
+%  The format of the MagickXPreferencesWidget method is:
 %
-%      unsigned int XPreferencesWidget(Display *display,
-%        XResourceInfo *resource_info,XWindows *windows)
+%      unsigned int MagickXPreferencesWidget(Display *display,
+%        MagickXResourceInfo *resource_info,MagickXWindows *windows)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %
 */
-MagickExport unsigned int XPreferencesWidget(Display *display,
-  XResourceInfo *resource_info,XWindows *windows)
+MagickExport unsigned int MagickXPreferencesWidget(Display *display,
+  MagickXResourceInfo *resource_info,MagickXWindows *windows)
 {
 #define ApplyButtonText  "Apply"
 #define CacheButtonText  "%lu mega-bytes of memory in the undo edit cache   "
@@ -8351,7 +8368,7 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     apply_info,
     cache_info,
     cancel_info,
@@ -8364,9 +8381,9 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
     Determine Preferences widget attributes.
   */
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(windows != (XWindows *) NULL);
-  XCheckRefreshWindows(display,windows);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
+  MagickXCheckRefreshWindows(display,windows);
   font_info=windows->widget.font_info;
   text_width=XTextWidth(font_info,CacheButtonText,Extent(CacheButtonText));
   for (i=0; i < NumberPreferences; i++)
@@ -8390,7 +8407,7 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
     7*height+NumberPreferences*(height+(QuantumMargin >> 1));
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Preferences widget.
   */
@@ -8414,7 +8431,7 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
     Respond to X events.
   */
   state=UpdateConfigurationState;
-  XSetCursorState(display,windows,True);
+  MagickXSetCursorState(display,windows,True);
   do
   {
     if (state & UpdateConfigurationState)
@@ -8676,9 +8693,9 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
         break;
     }
   } while (!(state & ExitState));
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
   if (apply_info.raised)
     return(False);
   /*
@@ -8693,7 +8710,7 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
   if (preferences_info[5].raised)
     resource_info->colormap=PrivateColormap;
   resource_info->use_pixmap=!preferences_info[6].raised;
-  XUserPreferences(resource_info);
+  MagickXUserPreferences(resource_info);
   return(True);
 }
 
@@ -8708,12 +8725,12 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XTextViewWidget displays text in a Text View widget.
+%  Method MagickXTextViewWidget displays text in a Text View widget.
 %
-%  The format of the XTextViewWidget method is:
+%  The format of the MagickXTextViewWidget method is:
 %
-%      void XTextViewWidget(Display *display,const XResourceInfo *resource_info,
-%        XWindows *windows,const unsigned int mono,const char *title,
+%      void MagickXTextViewWidget(Display *display,const MagickXResourceInfo *resource_info,
+%        MagickXWindows *windows,const unsigned int mono,const char *title,
 %        const char **textlist)
 %
 %  A description of each parameter follows:
@@ -8721,9 +8738,9 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
-%    o window: Specifies a pointer to a XWindows structure.
+%    o window: Specifies a pointer to a MagickXWindows structure.
 %
 %    o mono:  Use mono-spaced font when displaying text.
 %
@@ -8734,8 +8751,8 @@ MagickExport unsigned int XPreferencesWidget(Display *display,
 %
 %
 */
-MagickExport void XTextViewWidget(Display *display,
-  const XResourceInfo *resource_info,XWindows *windows,const unsigned int mono,
+MagickExport void MagickXTextViewWidget(Display *display,
+  const MagickXResourceInfo *resource_info,MagickXWindows *windows,const unsigned int mono,
   const char *title,const char **textlist)
 {
 #define DismissButtonText  "Dismiss"
@@ -8773,9 +8790,13 @@ MagickExport void XTextViewWidget(Display *display,
   XTextProperty
     window_name;
 
-  XWidgetInfo
+  MagickXWidgetInfo
     dismiss_info,
-    expose_info,
+    expose_info =
+    {
+      (char *) NULL, (char *) NULL, (char *) NULL,
+      0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+    },
     list_info,
     north_info,
     scroll_info,
@@ -8790,15 +8811,15 @@ MagickExport void XTextViewWidget(Display *display,
     Convert text string to a text list.
   */
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(title != (const char *) NULL);
   assert(textlist != (const char **) NULL);
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
   if (textlist == (const char **) NULL)
     {
-      XNoticeWidget(display,windows,"No text to view:",(char *) NULL);
+      MagickXNoticeWidget(display,windows,"No text to view:",(char *) NULL);
       return;
     }
   /*
@@ -8807,7 +8828,7 @@ MagickExport void XTextViewWidget(Display *display,
   font_info=windows->widget.font_info;
   text_info=(XFontStruct *) NULL;
   if (mono)
-    text_info=XBestFont(display,resource_info,True);
+    text_info=MagickXBestFont(display,resource_info,True);
   if (text_info == (XFontStruct *) NULL)
     text_info=windows->widget.font_info;
   text_width=0;
@@ -8832,11 +8853,11 @@ MagickExport void XTextViewWidget(Display *display,
     3*height+((13*height) >> 1)+((9*QuantumMargin) >> 1);
   if (windows->widget.height < windows->widget.min_height)
     windows->widget.height=windows->widget.min_height;
-  XConstrainWindowPosition(display,&windows->widget);
+  MagickXConstrainWindowPosition(display,&windows->widget);
   /*
     Map Text View widget.
   */
-  (void) strncpy(windows->widget.name,title,MaxTextExtent-1);
+  (void) strlcpy(windows->widget.name,title,MaxTextExtent);
   status=XStringListToTextProperty(&windows->widget.name,1,&window_name);
   if (status != 0)
     {
@@ -9023,7 +9044,7 @@ MagickExport void XTextViewWidget(Display *display,
         /*
           Brief delay before advancing scroll bar.
         */
-        XDelay(display,delay);
+        MagickXDelay(display,delay);
         delay=SuspendTime;
         (void) XCheckIfEvent(display,&event,XScreenEvent,(char *) windows);
         if (!north_info.raised)
@@ -9133,8 +9154,8 @@ MagickExport void XTextViewWidget(Display *display,
             /*
               Become the XA_PRIMARY selection owner.
             */
-            (void) strncpy(primary_selection,textlist[list_info.id],
-              MaxTextExtent-1);
+            (void) strlcpy(primary_selection,textlist[list_info.id],
+              MaxTextExtent);
             (void) XSetSelectionOwner(display,XA_PRIMARY,windows->widget.id,
               event.xbutton.time);
             if (XGetSelectionOwner(display,XA_PRIMARY) != windows->widget.id)
@@ -9412,8 +9433,8 @@ MagickExport void XTextViewWidget(Display *display,
   } while (!(state & ExitState));
   if (text_info != windows->widget.font_info)
     (void) XFreeFont(display,text_info);
-  XSetCursorState(display,windows,False);
+  MagickXSetCursorState(display,windows,False);
   (void) XWithdrawWindow(display,windows->widget.id,windows->widget.screen);
-  XCheckRefreshWindows(display,windows);
+  MagickXCheckRefreshWindows(display,windows);
 }
 #endif

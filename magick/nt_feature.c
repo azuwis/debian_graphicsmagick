@@ -32,15 +32,16 @@
 %
 */
 
-#if defined(WIN32) || defined(__CYGWIN__)
+#include "magick/studio.h"
+#if defined(MSWINDOWS) || defined(__CYGWIN__)
 /*
   Include declarations.
 */
-#include "magick/studio.h"
-#include "magick/cache.h"
+#include "magick/confirm_access.h"
 #include "magick/utility.h"
 #include "magick/monitor.h"
 #include "magick/nt_feature.h"
+#include "magick/pixel_cache.h"
 #define WIN32_LEAN_AND_MEAN
 #define VC_EXTRALEAN
 #include <windows.h>
@@ -80,7 +81,7 @@
 MagickExport void *CropImageToHBITMAP(Image *image,
   const RectangleInfo *geometry,ExceptionInfo *exception)
 {
-#define CropImageText  "  Crop image...  "
+#define CropImageText  "[%s] Crop to bitmap...  "
 
   long
     y;
@@ -161,7 +162,7 @@ MagickExport void *CropImageToHBITMAP(Image *image,
     bitmap.bmBits = bitmap_bits;
 
   if (image->colorspace != RGBColorspace)
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
 
   /*
     Extract crop image.
@@ -197,7 +198,8 @@ MagickExport void *CropImageToHBITMAP(Image *image,
       }
 #endif
     if (QuantumTick(y,page.height))
-      if (!MagickMonitor(CropImageText,y,page.height-1,exception))
+      if (!MagickMonitorFormatted(y,page.height-1,exception,CropImageText,
+				  image->filename))
         break;
   }
   if (y < (long) page.height)
@@ -211,6 +213,7 @@ MagickExport void *CropImageToHBITMAP(Image *image,
   bitmapH = CreateBitmapIndirect( &bitmap );
 
   GlobalUnlock((HGLOBAL) bitmap_bitsH);
+  GlobalFree((HGLOBAL) bitmap_bitsH);
 
   return (void *)bitmapH;
 }
@@ -321,17 +324,17 @@ MagickExport TypeInfo* NTGetTypeList( void )
   *font_root='\0';
   if ( getenv("SystemRoot") != (char *) NULL)
     {
-      strncpy(buffer,getenv("SystemRoot"),sizeof(buffer)-1);
-      strcat(buffer,"\\fonts\\arial.ttf");
+      strlcpy(buffer,getenv("SystemRoot"),sizeof(buffer));
+      strlcat(buffer,"\\fonts\\arial.ttf",sizeof(buffer));
       if (IsAccessible(buffer))
         {
-          strncpy(font_root,getenv("SystemRoot"),sizeof(buffer)-1);
-          strcat(font_root,"\\fonts\\");
+          strlcpy(font_root,getenv("SystemRoot"),sizeof(buffer));
+          strlcat(font_root,"\\fonts\\",sizeof(buffer));
         }
       else
         {
-          strncpy(font_root,getenv("SystemRoot"),sizeof(buffer)-1);
-          strcat(font_root,"\\");
+          strlcpy(font_root,getenv("SystemRoot"),sizeof(buffer));
+          strlcat(font_root,"\\",sizeof(buffer));
         }
     }
 
@@ -378,7 +381,7 @@ MagickExport TypeInfo* NTGetTypeList( void )
         type_info->signature=MagickSignature;
 
         /* Name */
-        strncpy(buffer,value_name,MaxTextExtent-1);
+        strlcpy(buffer,value_name,MaxTextExtent);
         for(pos = buffer; *pos != 0 ; pos++)
           if (*pos == ' ')
             *pos = '-';
@@ -393,11 +396,11 @@ MagickExport TypeInfo* NTGetTypeList( void )
         /* Glyphs */
         if (strchr(value_data,'\\') == (char *) NULL)
           {
-            strncpy(buffer,font_root,MaxTextExtent-1);
-            strcat(buffer,value_data);
+            strlcpy(buffer,font_root,MaxTextExtent);
+            strlcat(buffer,value_data,MaxTextExtent);
           }
         else
-          strncpy(buffer,value_data,MaxTextExtent-1);
+          strlcpy(buffer,value_data,MaxTextExtent);
 
         LocaleLower(buffer);
         type_info->glyphs=AcquireString(buffer);
@@ -527,7 +530,7 @@ MagickExport TypeInfo* NTGetTypeList( void )
               }
           }
 
-        strncpy(buffer,value_name,family_extent-value_name);
+        strncpy(buffer,value_name,family_extent-value_name+1);
         buffer[family_extent-value_name]='\0';
         type_info->family=AcquireString(buffer);
 
@@ -652,7 +655,7 @@ MagickExport void *ImageToHBITMAP(Image* image)
   if ( bitmap.bmBits == NULL )
     bitmap.bmBits = bitmap_bits;
 
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   for( row = 0 ; row < image->rows ; row++ )
     {
       pPixels = AcquireImagePixels(image,0,row,image->columns,1,
@@ -685,6 +688,7 @@ MagickExport void *ImageToHBITMAP(Image* image)
   bitmapH = CreateBitmapIndirect( &bitmap );
 
   GlobalUnlock((HGLOBAL) bitmap_bitsH);
+  GlobalFree((HGLOBAL) bitmap_bitsH);
 
   return (void *)bitmapH;
 }

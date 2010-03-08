@@ -6,11 +6,12 @@
 //
 
 #define MAGICK_IMPLEMENTATION
+#define MAGICK_PLUSPLUS_IMPLEMENTATION
 
 #include "Magick++/Include.h"
 #include <string>
-#include <cstring> // for strcpy
 #include <ctype.h> // for isdigit
+#include <string.h> // for strcpy
 
 using namespace std;
 
@@ -199,7 +200,7 @@ Magick::Geometry::operator = ( const std::string &geometry_ )
       if ( pageptr != 0 )
 	{
 	  strcpy(geom,pageptr);
-	  LiberateMemory( reinterpret_cast<void **>(&pageptr) );
+          MagickFreeMemory(pageptr);
 	}
     }
 

@@ -43,6 +43,9 @@
       <Message name="PixelCacheIsNotOpen">
         Pixel cache is not open
       </Message>
+      <Message name="UnableToAllocateCacheView">
+        Unable to allocate cache view
+      </Message>
       <Message name="UnableToCloneCache">
         Unable to clone cache
       </Message>
@@ -65,7 +68,7 @@
         Unable to read pixel cache
       </Message>
       <Message name="UnableToSyncCache">
-        Unable to sync cache
+        Unable to sync cache (check temporary file disk space)
       </Message>
     </Error>
     <FatalError>
@@ -84,6 +87,9 @@
   </Cache>
   <Coder>
     <Error>
+      <Message name="ColormapTooLarge">
+        Colormap size exceeds limit
+      </Message>
       <Message name="ColormapTypeNotSupported">
         Colormap type not supported
       </Message>
@@ -204,6 +210,9 @@
       <Message name="RLECompressionNotSupported">
         RLE compression not supported
       </Message>
+      <Message name="SubsamplingRequiresEvenWidth">
+        Subsampling requires that image width be evenly divisible by two
+      </Message>
       <Message name="UnableToCopyProfile">
         Unable to copy profile
       </Message>
@@ -299,6 +308,9 @@
       <Message name="UnableToAccessModuleFile">
         Unable to access module file
       </Message>
+      <Message name="StringTokenLengthExceeded">
+        String token maximum length exceeded
+      </Message>
     </Error>
     <FatalError>
       <Message name="Default">
@@ -364,6 +376,9 @@
         </Message>
         <Message name="StaticPlanesValueNotEqualToOne">
           Static planes value not equal to 1
+        </Message>
+        <Message name="SubsamplingRequiresEvenWidth">
+          Subsampling requires that image width be evenly divisible by two
         </Message>
         <Message name="UnableToReadColorProfile">
           Unable to read color profile
@@ -469,6 +484,12 @@
       </Message>
       <Message name="FailedToRenderFile">
         Failed to render file
+      </Message>
+      <Message name="FailedToAllocateArgumentList">
+        Failed to allocate argument list.
+      </Message>
+      <Message name="FailedToAllocateGhostscriptInterpreter">
+        Failed to allocate Ghostscript interpreter.
       </Message>
       <Message name="FailedToScanFile">
         Failed to scan file
@@ -586,6 +607,9 @@
       <Message name="ImageColorspaceDiffers">
         image colorspace differs
       </Message>
+      <Message name="ImageDifferenceExceedsLimit">
+        image difference exceeds limit (%s)
+      </Message>
       <Message name="ImageDoesNotContainResolution">
         image does not contain resolution
       </Message>
@@ -646,9 +670,12 @@
       <Message name="UnableToSegmentImage">
         unable to segment image
       </Message>
-        <Message name="UnableToSetClipMask">
-          Unable to set clip mask
-        </Message>
+      <Message name="UnableToGetClipMask">
+        Unable to get clip mask
+      </Message>
+      <Message name="UnableToSetClipMask">
+        Unable to set clip mask
+      </Message>
       <Message name="UnableToShearImage">
         unable to shear image
       </Message>
@@ -765,6 +792,9 @@
       <Message name="GeometryDoesNotContainImage">
         geometry does not contain image
       </Message>
+      <Message name="HaldClutImageDimensionsInvalid">
+        hald clut image dimensions are invalid
+      </Message>
       <Message name="InputImagesAlreadySpecified">
         input images already specified
       </Message>
@@ -783,11 +813,20 @@
       <Message name="ImageWidthsOrHeightsDiffer">
         image widths or heights differ
       </Message>
+      <Message name="InvalidSubimageSpecification">
+        Invalid subimage specification
+      </Message>
       <Message name="KernelRadiusIsTooSmall">
         kernel radius is too small
       </Message>
       <Message name="KernelWidthMustBeAnOddNumber">
         kernel width must be an odd number
+      </Message>
+      <Message name="MatrixOrderOutOfRange">
+        Matrix size is out of range
+      </Message>
+      <Message name="MatrixIsNotSquare">
+        Matrix is not square (%s elements)
       </Message>
       <Message name="MissingAnImageFilename">
         Missing an image filename
@@ -822,6 +861,9 @@
       <Message name="ReferenceIsNotMyType">
         Reference is not my type
       </Message>
+      <Message name="RequestDidNotReturnAnImage">
+        Request did not return an image
+      </Message>
       <Message name="SteganoImageRequired">
         Stegano image required
       </Message>
@@ -834,9 +876,6 @@
       <Message name="UnableToAddOrRemoveProfile">
         Unable to add or remove profile
       </Message>
-      <Message name="UnableToAllocateICCProfile">
-        unable to allocate ICC profile
-      </Message>
       <Message name="UnableToAverageImageSequence">
         unable to average image sequence
       </Message>
@@ -845,6 +884,9 @@
       </Message>
       <Message name="UnableToChopImage">
         unable to chop image
+      </Message>
+      <Message name="UnableToColorMatrixImage">
+        Unable to color matrix image
       </Message>
       <Message name="UnableToConvolveImage">
         Unable to convolve image
@@ -918,6 +960,9 @@
       <Message name="UnrecognizedGravityType">
         Unrecognized gravity type
       </Message>
+      <Message name="UnrecognizedHighlightStyle">
+        Unrecognized highlight style
+      </Message>
       <Message name="UnrecognizedImageCompression">
         Unrecognized image compression
       </Message>
@@ -941,6 +986,9 @@
       </Message>
       <Message name="UnrecognizedListType">
         Unrecognized list type
+      </Message>
+      <Message name="UnrecognizedMetric">
+        Unrecognized error metric
       </Message>
       <Message name="UnrecognizedModeType">
         Unrecognized mode type
@@ -975,6 +1023,9 @@
       <Message name="UnrecognizedVirtualPixelMethod">
         Unrecognized virtual pixel method
       </Message>
+      <Message name="UnsupportedSamplingFactor">
+        Unsupported sampling factor
+      </Message>
       <Message name="UsageError">
         Improper arguments supplied, please see manual
       </Message>
@@ -1003,6 +1054,9 @@
       </Message>
       <Message name="OptionLengthExceedsLimit">
         Option length exceeds limit
+      </Message>
+      <Message name="RequestDidNotReturnAnImage">
+        Request did not return an image
       </Message>
       <Message name="UnableToOpenXServer">
         Unable to open XServer
@@ -1086,7 +1140,7 @@
     <Limit>
       <Error>
         <Message name="CacheResourcesExhausted">
-          Cache resources exhausted
+          Disk space limit exceeded (see -limit Disk)
         </Message>
         <Message name="NoPixelsDefinedInCache">
           No pixels defined in cache
@@ -1094,11 +1148,17 @@
         <Message name="PixelCacheAllocationFailed">
           Pixel cache allocation failed
         </Message>
+        <Message name="ImagePixelLimitExceeded">
+          Image pixel limit exceeded (see -limit Pixels)
+        </Message>
         <Message name="MemoryAllocationFailed">
           Memory allocation failed
         </Message>
         <Message name="UnableToAllocateCoefficients">
           unable to allocate coefficients
+        </Message>
+         <Message name="UnableToAllocateICCProfile">
+          unable to allocate ICC profile
         </Message>
         <Message name="UnableToAllocateString">
           unable to allocate string
@@ -1120,6 +1180,9 @@
         </Message>
         <Message name="UnableToAverageImageSequence">
           unable to average image sequence
+        </Message>
+        <Message name="UnableToCloneDrawingWand">
+          unable to clone drawing wand
         </Message>
         <Message name="UnableToCloneImage">
           unable to clone image
@@ -1333,6 +1396,9 @@
         <Message name="UnableToAllocateQuantizeInfo">
           unable to allocate quantize info
         </Message>
+	<Message name="UnableToAllocateRandomKernel">
+          unable to allocate random kernel
+        </Message>
         <Message name="UnableToAllocateSemaphoreInfo">
           unable to allocate semaphore info
         </Message>
@@ -1346,10 +1412,25 @@
           unable to allocate registry info
         </Message>
         <Message name="UnableToAllocateWand">
-          unable to allocate wand '%s'
+          unable to allocate wand
+        </Message>
+        <Message name="UnableToDestroySemaphore">
+          unable to destroy semaphore
+        </Message>
+        <Message name="UnableToInitializeSemaphore">
+          unable to initialize semaphore
+        </Message>
+        <Message name="UnableToLockSemaphore">
+          unable to lock semaphore
+        </Message>
+        <Message name="UnableToUnlockSemaphore">
+          unable to unlock semaphore
         </Message>
         <Message name="MemoryAllocationFailed">
           Memory allocation failed
+        </Message>
+        <Message name="SemaporeOperationFailed">
+          Semaphore operation failed
         </Message>
         <Message name="UnableToAnimateImageSequence">
           unable to animate image sequence

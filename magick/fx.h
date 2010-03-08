@@ -1,12 +1,12 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003-2009 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
   Copyright.txt. You should have received a copy of Copyright.txt with this
   package; otherwise see http://www.graphicsmagick.org/www/Copyright.html.
  
-  ImageMagick Image FX Methods.
+  GraphicsMagick Image FX Methods.
 */
 #ifndef _MAGICK_FX_H
 #define _MAGICK_FX_H
@@ -18,8 +18,6 @@ extern "C" {
 extern MagickExport Image
   *CharcoalImage(const Image *,const double,const double,ExceptionInfo *),
   *ColorizeImage(const Image *,const char *,const PixelPacket,ExceptionInfo *),
-  *ConvolveImage(const Image *,const unsigned int,const double *,
-     ExceptionInfo *),
   *ImplodeImage(const Image *,const double,ExceptionInfo *),
   *MorphImages(const Image *,const unsigned long,ExceptionInfo *),
   *OilPaintImage(const Image *,const double,ExceptionInfo *),
@@ -28,7 +26,8 @@ extern MagickExport Image
   *SwirlImage(const Image *,double,ExceptionInfo *),
   *WaveImage(const Image *,const double,const double,ExceptionInfo *);
 
-extern MagickExport unsigned int
+extern MagickExport MagickPassFail
+  ColorMatrixImage(Image *image,const unsigned int order,const double *matrix),
   SolarizeImage(Image *,const double);
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -36,3 +35,11 @@ extern MagickExport unsigned int
 #endif /* defined(__cplusplus) || defined(c_plusplus) */
 
 #endif /* _MAGICK_FX_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

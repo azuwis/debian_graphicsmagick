@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,8 +37,9 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/constitute.h"
+#include "magick/enum_strings.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -107,8 +108,13 @@ static Image *ReadGRAYImage(const ImageInfo *image_info,
   unsigned int
     status;
 
-  unsigned long
+  unsigned int
+    depth,
+    quantum_size,
     packet_size;
+
+  ImportPixelAreaOptions
+    import_options;
 
   /*
     Open image file.
@@ -124,14 +130,55 @@ static Image *ReadGRAYImage(const ImageInfo *image_info,
   if (status == False)
     ThrowReaderException(FileOpenError,UnableToOpenFile,image);
   for (i=0; i < image->offset; i++)
-    (void) ReadBlobByte(image);
+    {
+      if (EOF == ReadBlobByte(image))
+        ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                       image->filename);
+    }
+
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			  "Tile %lux%lu%+ld%+ld",
+			  image->tile_info.width,image->tile_info.height,
+			  image->tile_info.x,image->tile_info.y);
+
+  /*
+    Support depth in multiples of 8 bits.
+  */
+  if (image->depth > 16)
+    depth=32;
+  else if (image->depth > 8)
+    depth=16;
+  else
+    depth=8;
   /*
     Allocate memory for a scanline.
   */
-  packet_size=image->depth > 8 ? 2 : 1;
-  scanline=MagickAllocateMemory(unsigned char *,packet_size*image->tile_info.width);
+  if (depth <= 8)
+    quantum_size=8;
+  else if (depth <= 16)
+    quantum_size=16;
+  else
+    quantum_size=32;
+
+  packet_size=quantum_size/8;
+  scanline=MagickAllocateArray(unsigned char *,packet_size,image->tile_info.width);
   if (scanline == (unsigned char *) NULL)
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+  /*
+    Initialize import options.
+  */
+  ImportPixelAreaOptionsInit(&import_options);
+  if (image_info->endian != UndefinedEndian)
+    import_options.endian=image_info->endian;
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			  "Depth %u bits, Endian %s",
+			  quantum_size,
+			  EndianTypeToString(import_options.endian));
+  /*
+    Support starting at intermediate image frame.
+  */
   if (image_info->subrange != 0)
     while (image->scene < image_info->subimage)
     {
@@ -148,8 +195,6 @@ static Image *ReadGRAYImage(const ImageInfo *image_info,
     /*
       Convert raster image to pixel packets.
     */
-    if (!AllocateImageColormap(image,1 << image->depth))
-      ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
     if (image_info->ping && (image_info->subrange != 0))
       if (image->scene >= (image_info->subimage+image_info->subrange-1))
         break;
@@ -162,14 +207,18 @@ static Image *ReadGRAYImage(const ImageInfo *image_info,
       q=SetImagePixels(image,0,y,image->columns,1);
       if (q == (PixelPacket *) NULL)
         break;
-      (void) PushImagePixels(image,GrayQuantum,scanline+x);
+      (void) ImportImagePixelArea(image,GrayQuantum,quantum_size,scanline+x,
+				  &import_options,0);
       if (!SyncImagePixels(image))
         break;
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+          if (!MagickMonitorFormatted(y,image->rows,exception,
+                                      LoadImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
+    image->is_grayscale=MagickTrue;
     count=image->tile_info.height-image->rows-image->tile_info.y;
     for (j=0; j < (long) count; j++)
       (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
@@ -198,7 +247,8 @@ static Image *ReadGRAYImage(const ImageInfo *image_info,
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),exception,
+                                    LoadImagesText,image->filename))
           break;
       }
   } while (count != 0);
@@ -241,72 +291,80 @@ ModuleExport void RegisterGRAYImage(void)
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->raw=True;
-  entry->description=AcquireString("Raw gray samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw gray samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("R");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw red samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw red samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("C");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw cyan samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw cyan samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("G");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw green samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw green samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("M");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw magenta samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw magenta samples";
+  entry->module="GRAY";
+
   (void) RegisterMagickInfo(entry);
   entry=SetMagickInfo("B");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw blue samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw blue samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("Y");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw yellow samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw yellow samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("O");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw opacity samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw opacity samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("K");
   entry->decoder=(DecoderHandler) ReadGRAYImage;
   entry->encoder=(EncoderHandler) WriteGRAYImage;
   entry->stealth=True;
   entry->raw=True;
-  entry->description=AcquireString("Raw black samples");
-  entry->module=AcquireString("GRAY");
+  entry->description="Raw black samples";
+  entry->module="GRAY";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -384,9 +442,17 @@ static unsigned int WriteGRAYImage(const ImageInfo *image_info,Image *image)
     *scanline;
 
   unsigned int
+    depth,
+    quantum_size,
     packet_size,
     scene,
     status;
+
+  ExportPixelAreaOptions
+    export_options;
+
+  ExportPixelAreaInfo
+    export_info;
 
   /*
     Open output image file.
@@ -399,6 +465,15 @@ static unsigned int WriteGRAYImage(const ImageInfo *image_info,Image *image)
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
   /*
+    Support depth in multiples of 8 bits.
+  */
+  if (image->depth > 16)
+    depth=32;
+  else if (image->depth > 8)
+    depth=16;
+  else
+    depth=8;
+  /*
     Convert image to gray scale PseudoColor class.
   */
   scene=0;
@@ -407,11 +482,29 @@ static unsigned int WriteGRAYImage(const ImageInfo *image_info,Image *image)
     /*
       Allocate memory for scanline.
     */
-    TransformColorspace(image,RGBColorspace);
-    packet_size=image->depth > 8 ? 2: 1;
-    scanline=MagickAllocateMemory(unsigned char *,packet_size*image->columns);
+    if (depth <= 8)
+      quantum_size=8;
+    else if (depth <= 16)
+      quantum_size=16;
+    else
+      quantum_size=32;
+    (void) TransformColorspace(image,RGBColorspace);
+    packet_size=quantum_size/8;
+    scanline=MagickAllocateArray(unsigned char *,packet_size,image->columns);
     if (scanline == (unsigned char *) NULL)
       ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
+    /*
+      Initialize export options.
+    */
+    ExportPixelAreaOptionsInit(&export_options);
+    if (image->endian != UndefinedEndian)
+      export_options.endian=image->endian;
+    else if (image_info->endian != UndefinedEndian)
+      export_options.endian=image_info->endian;
+    if (image->logging)
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			    "Depth %u bits, Endian %s",quantum_size,
+			    EndianTypeToString(export_options.endian));
     /*
       Convert MIFF to GRAY raster scanline.
     */
@@ -420,18 +513,22 @@ static unsigned int WriteGRAYImage(const ImageInfo *image_info,Image *image)
       p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
       if (p == (const PixelPacket *) NULL)
         break;
-      (void) PopImagePixels(image,GrayQuantum,scanline);
-      (void) WriteBlob(image,packet_size*image->columns,scanline);
+      (void) ExportImagePixelArea(image,GrayQuantum,quantum_size,scanline,
+				  &export_options,&export_info);
+      (void) WriteBlob(image,export_info.bytes_exported,scanline);
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                      SaveImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
     MagickFreeMemory(scanline);
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+    if (!MagickMonitorFormatted(scene++,GetImageListLength(image),&image->exception,
+                                SaveImagesText,image->filename))
       break;
   } while (image_info->adjoin);
   if (image_info->adjoin)

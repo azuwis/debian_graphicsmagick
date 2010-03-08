@@ -36,11 +36,14 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/quantize.h"
 #include "magick/resize.h"
 #include "magick/utility.h"
@@ -235,7 +238,7 @@ static Image *ReadXPMImage(const ImageInfo *image_info,ExceptionInfo *exception)
       if ((p-xpm_buffer+MaxTextExtent+1) < (long) length)
         continue;
       length<<=1;
-      MagickReallocMemory(xpm_buffer,length);
+      MagickReallocMemory(char *,xpm_buffer,length);
       if (xpm_buffer == (char *) NULL)
         break;
       p=xpm_buffer+strlen(xpm_buffer);
@@ -250,7 +253,7 @@ static Image *ReadXPMImage(const ImageInfo *image_info,ExceptionInfo *exception)
   {
     if (*p != '"')
       continue;
-    count=sscanf(p+1,"%lu %lu %lu %lu",&image->columns,&image->rows,
+    count=sscanf(p+1,"%lu %lu %u %lu",&image->columns,&image->rows,
       &image->colors,&width);
     if (count == 4)
       break;
@@ -321,7 +324,7 @@ static Image *ReadXPMImage(const ImageInfo *image_info,ExceptionInfo *exception)
       {
         while (!isspace((int) (*q)) && (*q != '\0'))
           q++;
-        (void) strncpy(target,q,MaxTextExtent-1);
+        (void) strlcpy(target,q,MaxTextExtent);
         q=ParseColor(target);
         if (q != (char *) NULL)
           *q='\0';
@@ -358,8 +361,11 @@ static Image *ReadXPMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           break;
         r=SetImagePixels(image,0,y,image->columns,1);
         if (r == (PixelPacket *) NULL)
-          break;
-        indexes=GetIndexes(image);
+          {
+            CopyException(exception,&image->exception);
+            break;
+          }
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < (long) image->columns; x++)
         {
           (void) strncpy(key,p,width);
@@ -376,7 +382,10 @@ static Image *ReadXPMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           p+=width;
         }
         if (!SyncImagePixels(image))
-          break;
+          {
+            CopyException(exception,&image->exception);
+            break;
+          }
       }
       if (y < (long) image->rows)
         ThrowReaderException(CorruptImageError,InsufficientImageDataInFile,image);
@@ -426,8 +435,8 @@ ModuleExport void RegisterXPMImage(void)
   entry->decoder=(DecoderHandler) ReadXPMImage;
   entry->encoder=(EncoderHandler) WritePICONImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Personal Icon");
-  entry->module=AcquireString("XPM");
+  entry->description="Personal Icon";
+  entry->module="XPM";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("PM");
@@ -435,8 +444,8 @@ ModuleExport void RegisterXPMImage(void)
   entry->encoder=(EncoderHandler) WriteXPMImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("X Windows system pixmap (color)");
-  entry->module=AcquireString("XPM");
+  entry->description="X Windows system pixmap (color)";
+  entry->module="XPM";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("XPM");
@@ -444,8 +453,8 @@ ModuleExport void RegisterXPMImage(void)
   entry->encoder=(EncoderHandler) WriteXPMImage;
   entry->magick=(MagickHandler) IsXPM;
   entry->adjoin=False;
-  entry->description=AcquireString("X Windows system pixmap (color)");
-  entry->module=AcquireString("XPM");
+  entry->description="X Windows system pixmap (color)";
+  entry->module="XPM";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -569,9 +578,6 @@ static unsigned int WritePICONImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
-    *indexes;
-
   register long
     i,
     x;
@@ -587,23 +593,39 @@ static unsigned int WritePICONImage(const ImageInfo *image_info,Image *image)
     characters_per_pixel,
     colors;
 
-  /*
-    Open output image file.
-  */
+    ImageCharacteristics
+      characteristics;
+
   assert(image_info != (const ImageInfo *) NULL);
   assert(image_info->signature == MagickSignature);
   assert(image != (Image *) NULL);
   assert(image->signature == MagickSignature);
+  /*
+    Open output image file.
+  */
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  /*
+    Ensure that image is in an RGB space.
+  */
+  (void) TransformColorspace(image,RGBColorspace);
+  /*
+    Analyze image to be written.
+  */
+  if (!GetImageCharacteristics(image,&characteristics,
+                               (OptimizeType == image_info->type),
+                               &image->exception))
+    {
+      CloseBlob(image);
+      return MagickFail;
+    }
   SetGeometry(image,&geometry);
   (void) GetMagickGeometry(PiconGeometry,&geometry.x,&geometry.y,
     &geometry.width,&geometry.height);
   picon=ThumbnailImage(image,geometry.width,geometry.height,&image->exception);
   if ((image_info->type != TrueColorType) &&
-      IsGrayImage(image,&image->exception))
+      (characteristics.grayscale))
     map=BlobToImage(image_info,Graymap,GraymapExtent,&image->exception);
   else
     map=BlobToImage(image_info,Colormap,ColormapExtent,&image->exception);
@@ -645,19 +667,22 @@ static unsigned int WritePICONImage(const ImageInfo *image_info,Image *image)
               break;
           }
         }
-      SetImageType(picon,PaletteType);
+      (void) SetImageType(picon,PaletteType);
     }
   colors=picon->colors;
   if (transparent)
     {
       colors++;
-      MagickReallocMemory(picon->colormap,colors*sizeof(PixelPacket));
+      MagickReallocMemory(PixelPacket *,picon->colormap,colors*sizeof(PixelPacket));
       for (y=0; y < (long) picon->rows; y++)
       {
+        register IndexPacket
+          *indexes;
+
         q=GetImagePixels(picon,0,y,picon->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(picon);
+        indexes=AccessMutableIndexes(picon);
         for (x=0; x < (long) picon->columns; x++)
         {
           if (q->opacity == TransparentOpacity)
@@ -718,10 +743,13 @@ static unsigned int WritePICONImage(const ImageInfo *image_info,Image *image)
   (void) WriteBlobString(image,"/* pixels */\n");
   for (y=0; y < (long) picon->rows; y++)
   {
+    register const IndexPacket
+      *indexes;
+
     p=AcquireImagePixels(picon,0,y,picon->columns,1,&picon->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(picon);
+    indexes=AccessImmutableIndexes(picon);
     (void) WriteBlobString(image,"\"");
     for (x=0; x < (long) picon->columns; x++)
     {
@@ -733,14 +761,16 @@ static unsigned int WritePICONImage(const ImageInfo *image_info,Image *image)
         symbol[j]=Cixel[k];
       }
       symbol[j]='\0';
-      (void) strncpy(buffer,symbol,MaxTextExtent-1);
+      (void) strlcpy(buffer,symbol,MaxTextExtent);
       (void) WriteBlobString(image,buffer);
     }
     FormatString(buffer,"\"%.1024s\n",
       (y == (long) (picon->rows-1) ? "" : ","));
     (void) WriteBlobString(image,buffer);
     if (QuantumTick(y,picon->rows))
-      if (!MagickMonitor(SaveImageText,y,picon->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,picon->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   DestroyImage(picon);
@@ -802,9 +832,6 @@ static unsigned int WriteXPMImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
-    *indexes;
-
   register long
     i,
     x;
@@ -830,7 +857,7 @@ static unsigned int WriteXPMImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   transparent=False;
   if (image->storage_class == PseudoClass)
     {
@@ -865,19 +892,22 @@ static unsigned int WriteXPMImage(const ImageInfo *image_info,Image *image)
               break;
           }
         }
-      SetImageType(image,PaletteType);
+      (void) SetImageType(image,PaletteType);
     }
   colors=image->colors;
   if (transparent)
     {
       colors++;
-      MagickReallocMemory(image->colormap,colors*sizeof(PixelPacket));
+      MagickReallocMemory(PixelPacket *,image->colormap,colors*sizeof(PixelPacket));
       for (y=0; y < (long) image->rows; y++)
       {
+        register IndexPacket
+          *indexes;
+
         q=GetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < (long) image->columns; x++)
         {
           if (q->opacity == TransparentOpacity)
@@ -938,10 +968,13 @@ static unsigned int WriteXPMImage(const ImageInfo *image_info,Image *image)
   (void) WriteBlobString(image,"/* pixels */\n");
   for (y=0; y < (long) image->rows; y++)
   {
+    register const IndexPacket
+      *indexes;
+
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     (void) WriteBlobString(image,"\"");
     for (x=0; x < (long) image->columns; x++)
     {
@@ -953,14 +986,16 @@ static unsigned int WriteXPMImage(const ImageInfo *image_info,Image *image)
         symbol[j]=Cixel[k];
       }
       symbol[j]='\0';
-      (void) strncpy(buffer,symbol,MaxTextExtent-1);
+      (void) strlcpy(buffer,symbol,MaxTextExtent);
       (void) WriteBlobString(image,buffer);
     }
     FormatString(buffer,"\"%.1024s\n",
       (y == (long) (image->rows-1) ? "" : ","));
     (void) WriteBlobString(image,buffer);
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   (void) WriteBlobString(image,"};\n");

@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -61,7 +62,8 @@ static unsigned int
 %
 %  Method ReadAVSImage reads an AVS X image file and returns it.  It
 %  allocates the memory necessary for the new Image structure and returns a
-%  pointer to the new image.
+%  pointer to the new image.  Note that these files often have the extension
+%  'X' which conflicts with our X11 support coder.
 %
 %  The format of the ReadAVSImage method is:
 %
@@ -127,6 +129,9 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (EOFBlob(image))
     ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
 
+  (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                        "AVS dimensions %ldx%ld",width,height);
+
   /*
     Impose a maximum width and height limit in order to avoid
     incredibly huge allocations.
@@ -136,23 +141,25 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
   do
   {
-    size_t row_bytes;
     /*
       Convert AVS raster image to pixel packets.
     */
+    size_t
+      row_bytes;
+
     image->columns=width;
     image->rows=height;
     image->depth=8;
     if (image_info->ping && (image_info->subrange != 0))
       if (image->scene >= (image_info->subimage+image_info->subrange-1))
         break;
-    pixels=MagickAllocateMemoryElements(unsigned char *,image->columns,4);
+    pixels=MagickAllocateArray(unsigned char *,image->columns,4);
     if (pixels == (unsigned char *) NULL)
       ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
     row_bytes=4*image->columns;
     for (y=0; y < (long) image->rows; y++)
     {
-      if (ReadBlob(image,4*image->columns,pixels) != row_bytes)
+      if (ReadBlob(image,row_bytes,pixels) != row_bytes)
         {
           ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
                          image->filename);
@@ -181,7 +188,9 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
         }
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+          if (!MagickMonitorFormatted(y,image->rows,exception,
+                                      LoadImageText,image->filename,
+				      image->columns,image->rows))
             {
               status=MagickFail;
               break;
@@ -215,12 +224,12 @@ static Image *ReadAVSImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        status=MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),
-          exception);
+        status=MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                      exception,LoadImagesText,image->filename);
         if (status == MagickFail)
           break;
       }
-  } while ((width != (unsigned long) ~0) && (height != (unsigned long) ~0));
+  } while (!(EOFBlob(image)));
   while (image->previous != (Image *) NULL)
     image=image->previous;
   CloseBlob(image);
@@ -265,8 +274,9 @@ ModuleExport void RegisterAVSImage(void)
   entry=SetMagickInfo("AVS");
   entry->decoder=(DecoderHandler) ReadAVSImage;
   entry->encoder=(EncoderHandler) WriteAVSImage;
-  entry->description=AcquireString("AVS X image");
-  entry->module=AcquireString("AVS");
+  entry->description="AVS X image";
+  entry->module="AVS";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -360,7 +370,7 @@ static unsigned int WriteAVSImage(const ImageInfo *image_info,Image *image)
     /*
       Write AVS header.
     */
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
     (void) WriteBlobMSBLong(image,image->columns);
     (void) WriteBlobMSBLong(image,image->rows);
     /*
@@ -390,15 +400,18 @@ static unsigned int WriteAVSImage(const ImageInfo *image_info,Image *image)
       (void) WriteBlob(image,q-pixels,(char *) pixels);
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                      SaveImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
     MagickFreeMemory(pixels);
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
   } while (image_info->adjoin);

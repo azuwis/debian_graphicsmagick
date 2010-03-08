@@ -6,6 +6,7 @@
 //
 
 #define MAGICK_IMPLEMENTATION
+#define MAGICK_PLUSPLUS_IMPLEMENTATION
 
 #include "Magick++/Include.h"
 #include "Magick++/Thread.h"
@@ -43,6 +44,6 @@ Magick::BlobRef::~BlobRef ( void )
     }
   else if ( _allocator == Magick::Blob::MallocAllocator )
     {
-      LiberateMemory(static_cast<void **>(&_data));
+      MagickFreeMemory(_data);
     }
 }

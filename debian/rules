@@ -8,6 +8,8 @@
 #export DH_VERBOSE=1
 
 export DEB_BUILD_ARCH ?= $(shell dpkg-architecture -qDEB_BUILD_ARCH)
+export DEB_HOST_ARCH_OS ?= $(shell dpkg-architecture -qDEB_HOST_ARCH_OS)
+export DEB_HOST_ARCH_CPU ?= $(shell dpkg-architecture -qDEB_HOST_ARCH_CPU)
 export DEB_HOST_GNU_TYPE  ?= $(shell dpkg-architecture -qDEB_HOST_GNU_TYPE)
 export DEB_BUILD_GNU_TYPE ?= $(shell dpkg-architecture -qDEB_BUILD_GNU_TYPE)
 ifeq ($(DEB_BUILD_GNU_TYPE), $(DEB_HOST_GNU_TYPE))
@@ -22,11 +24,21 @@ CHECK_FAILED_ACTION:=echo "Ignoring testsuite failures on this architecture"
 else
 CHECK_FAILED_ACTION:= { \
 		echo "Aborting build due to testsuite failures"; \
+		if test -e test-suite.log; then \
+			echo "==== test-suite.log ===="; \
+			cat test-suite.log; \
+			echo "==== end of test-suite.log ===="; \
+		fi; \
 		/bin/false; \
 	}
 endif
 
 CFLAGS = -Wall -g -fno-strict-aliasing
+LDFLAGS =
+
+include /usr/share/hardening-includes/hardening.make
+CFLAGS += $(HARDENING_CFLAGS)
+LDFLAGS += $(HARDENING_LDFLAGS)
 
 ifneq (,$(findstring noopt,$(DEB_BUILD_OPTIONS)))
 	CFLAGS += -O0
@@ -50,13 +62,15 @@ configure-stamp:
 	ln -sf /usr/share/misc/config.sub .
 	ln -sf /usr/share/misc/config.guess .
 
-	CFLAGS="$(CFLAGS)" ./configure $(gm_confflags) \
+	CFLAGS="$(CFLAGS)" CXXFLAGS="$(CFLAGS)" LDFLAGS="$(LDFLAGS)" \
+	    ./configure $(gm_confflags) \
 		--enable-shared \
 		--enable-static \
 		--enable-libtool-verbose \
 		--prefix=/usr \
 		--mandir=\$${prefix}/share/man \
 		--infodir=\$${prefix}/share/info \
+		--docdir=\$${prefix}/share/doc/graphicsmagick \
 		--with-gs-font-dir=/usr/share/fonts/type1/gsfonts \
 		--with-x \
 		--x-includes=/usr/include/X11 \
@@ -76,26 +90,37 @@ build-arch-stamp:  configure-stamp
 	dh_testdir
 
 	# Teach Perl binding to build without an installed library.
+	# Also, we need to prune several of the security options we
+	# added above:
+	# * The compiler chokes on Perl's standard macro MEM_WRAP_CHECK() 
+	#   if -Werror=format-security is set.
+	# * The Perl Makefile generator ignores linker flags it doesn't
+	#   grok (ie. -pie -z relro). Hence, we need to strip -fPIE from
+	#   CCFLAGS as well, or the linker would barf about non-PIC symbols.
 	test -e PerlMagick/Makefile.PL.debsave || sed -i.debsave -e \
 	 "/LIBS/s|\(-L[[:space:]]*\)[^[:space:]]\+|\1$(CURDIR)/magick/.libs|" \
+	 -e "s/-Werror=format-security/-Wformat-security/g" \
+	 -e "s/-fPIE//g" \
+	 -e "s/-pie//g" \
 	 PerlMagick/Makefile.PL
 
 
-ifeq ($(DEB_BUILD_ARCH),arm)
-	# Calling variadic functions can lead to stack corruption on arm
-	# with -O2 due to what I believe to be a compiler bug. Verfied for
-	# DrawRoundRectangle() in magick/draw.c and wand/drawing_wand.c.
-	# The following workaround prevents crashes of the drawtest runs
-	# during make check until the compiler issue is fully understood.
-	$(MAKE) CFLAGS="-Wall -g -O0" -C magick draw.lo
-	$(MAKE) CFLAGS="-Wall -g -O0" -C wand drawing_wand.lo
-endif
+## Check whether segfaults on arm are gone with current toolchain.
+#ifeq ($(DEB_BUILD_ARCH),arm)
+#	# Calling variadic functions can lead to stack corruption on arm
+#	# with -O2 due to what I believe to be a compiler bug. Verfied for
+#	# DrawRoundRectangle() in magick/draw.c and wand/drawing_wand.c.
+#	# The following workaround prevents crashes of the drawtest runs
+#	# during make check until the compiler issue is fully understood.
+#	$(MAKE) CFLAGS="-Wall -g -O0" -C magick \
+#	        magick_libGraphicsMagick_la-draw.lo
+#	$(MAKE) CFLAGS="-Wall -g -O0" -C wand drawing_wand.lo
+#endif
 
 	$(MAKE) 
-	# It seems that PerlMagick was forgotten in all in the main
-	# Makefile. Call it directly, and make sure to override the stupid
+	# Perl is built separately. Make sure to override the stupid
 	# rpath picked up from the LIBS hack above.
-	cd PerlMagick && perl Makefile.PL && $(MAKE) LD_RUN_PATH=
+	$(MAKE) perl-build LD_RUN_PATH=
 
 	touch build-arch-stamp
 
@@ -136,7 +161,8 @@ check-stamp: build-arch-stamp
 	@if test "$(DEB_HOST_GNU_TYPE)" = "$(DEB_BUILD_GNU_TYPE)"; then \
 		unset DISPLAY; \
 		LD_LIBRARY_PATH="$(CURDIR)/magick/.libs:$(CURDIR)/wand/.libs:$(CURDIR)/Magick++/lib/.libs:$$LD_LIBRARY_PATH" \
-		$(MAKE) check LD_RUN_PATH= || $(CHECK_FAILED_ACTION); \
+		$(MAKE) check check-perl LD_RUN_PATH= || \
+		        $(CHECK_FAILED_ACTION); \
 	else \
 		echo "Skipping regression tests because we appear to be cross-compiling"; \
 	fi
@@ -148,7 +174,7 @@ clean:
 	dh_testroot
 	rm -f configure-stamp build-arch-stamp build-indep-stamp check-stamp
 
-	test ! -f Makefile || $(MAKE) distclean
+	test ! -f Makefile || $(MAKE) distclean distclean-perl
 
 	rm -f 'debian/Image::Magick.3pm'
 
@@ -196,7 +222,7 @@ install-arch:
 
 	# pkgdocdir is hardwired in configure.ac and can only be overridden
 	# here.
-	$(MAKE) install \
+	$(MAKE) install install-exec-perl \
 		DESTDIR=$(CURDIR)/debian/tmp \
 		pkgdocdir=/usr/share/doc/$(PACKAGENAME)
 
@@ -246,8 +272,8 @@ binary-arch: build-arch check install-arch
 	dh_makeshlibs -a
 	dh_installdeb -a
 	dh_perl -p libgraphics-magick-perl
-	dh_shlibdeps -a -L libgraphicsmagick1 \
-	                -l debian/libgraphicsmagick1/usr/lib
+	dh_shlibdeps -a -L libgraphicsmagick3 \
+	                -l debian/libgraphicsmagick3/usr/lib
 	dh_gencontrol -a
 	dh_md5sums -a
 	dh_builddeb -a

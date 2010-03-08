@@ -108,7 +108,7 @@ static unsigned int IsEPT(const unsigned char *magick,const size_t length)
 %  The format of the ReadEPTImage method is:
 %
 %      Image *ReadEPTImage(const ImageInfo *image_info,
-         ExceptionInfo *exception)
+%                          ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -129,14 +129,13 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
 #define DocumentMedia  "%%DocumentMedia:"
 #define PageBoundingBox  "%%PageBoundingBox:"
 #define PostscriptLevel  "%!PS-"
-#define RenderPostscriptText  "  Rendering postscript...  "
+#define RenderPostscriptText  "[%s] Rendering postscript..."
 
   char
     density[MaxTextExtent],
     command[MaxTextExtent],
     filename[MaxTextExtent],
     geometry[MaxTextExtent],
-    options[MaxTextExtent],
     postscript_filename[MaxTextExtent],
     translate_geometry[MaxTextExtent];
 
@@ -154,12 +153,12 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
     *image,
     *next_image;
 
-  ImageInfo
-    *clone_info;
-
   int
     c,
     status;
+
+  unsigned int
+    antialias=4;
 
   ExtendedSignedIntegralType
     filesize;
@@ -188,18 +187,13 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   assert(image_info->signature == MagickSignature);
   assert(exception != (ExceptionInfo *) NULL);
   assert(exception->signature == MagickSignature);
-  if (image_info->monochrome)
-    {
-      delegate_info=GetDelegateInfo("gs-mono",(char *) NULL,exception);
-      if (delegate_info == (const DelegateInfo *) NULL)
-        return((Image *) NULL);
-    }
-  else
-    {
-      delegate_info=GetDelegateInfo("gs-color",(char *) NULL,exception);
-      if (delegate_info == (const DelegateInfo *) NULL)
-        return((Image *) NULL);
-    }
+
+  /*
+    Select Postscript delegate driver
+  */
+  delegate_info=GetPostscriptDelegateInfo(image_info,&antialias,exception);
+  if (delegate_info == (const DelegateInfo *) NULL)
+    return((Image *) NULL);
   /*
     Open image file.
   */
@@ -216,11 +210,14 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
     {
       (void) strcpy(density,PSDensityGeometry);
       count=GetMagickDimension(density,&image->x_resolution,
-        &image->y_resolution);
+        &image->y_resolution,NULL,NULL);
       if (count != 2)
         image->y_resolution=image->x_resolution;
     }
   FormatString(density,"%gx%g",image->x_resolution,image->y_resolution);
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Density: %s", density);
   SetGeometry(image,&page);
   page.width=612;
   page.height=792;
@@ -231,6 +228,10 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   (void) ReadBlobLSBLong(image);
   count=ReadBlobLSBLong(image);
   filesize=ReadBlobLSBLong(image);
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "File Size: %lu,  Offset: %lu",
+                          (unsigned long) filesize, (unsigned long) count);
   if (EOFBlob(image))
     ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   for (i=0; i < (long) (count-12); i++)
@@ -250,6 +251,10 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   box.width=0;
   box.height=0;
   p=command;
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Copying Postscript to temporary file \"%s\" ...",
+                          postscript_filename);
   for (i=0; i < (long) filesize; i++)
   {
     if ((c=ReadBlobByte(image)) == EOF)
@@ -290,16 +295,22 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
     page.height=height;
     box=page;
   }
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Done copying.");
   if (image_info->page != (char *) NULL)
     (void) GetGeometry(image_info->page,&page.x,&page.y,&page.width,
       &page.height);
   FormatString(geometry,"%lux%lu",
     (unsigned long) ceil(page.width*image->x_resolution/dx_resolution-0.5),
     (unsigned long) ceil(page.height*image->y_resolution/dy_resolution-0.5));
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Page geometry: %s",geometry);
   if (ferror(file))
     {
       (void) fclose(file);
-      LiberateTemporaryFile(postscript_filename);
+      (void) LiberateTemporaryFile(postscript_filename);
       ThrowReaderException(CorruptImageError,AnErrorHasOccurredWritingToFile,
         image)
     }
@@ -312,23 +323,36 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
   /*
     Use Ghostscript to convert Postscript image.
   */
-  *options='\0';
-  if (image_info->subrange != 0)
-    FormatString(options,"-dFirstPage=%lu -dLastPage=%lu",
-      image_info->subimage+1,image_info->subimage+image_info->subrange);
-  (void) strncpy(filename,image_info->filename,MaxTextExtent-1);
-  if (image_info->temporary)
-    LiberateTemporaryFile((char *) image_info->filename);
-  if(!AcquireTemporaryFileName((char *)image_info->filename))
-    {
-      LiberateTemporaryFile(postscript_filename);
-      ThrowReaderTemporaryFileException(image_info->filename);
-    }
-  FormatString(command,delegate_info->commands,image_info->antialias ? 4 : 1,
-    image_info->antialias ? 4 : 1,geometry,density,options,image_info->filename,
-    postscript_filename);
-  (void) MagickMonitor(RenderPostscriptText,0,8,&image->exception);
-  status=InvokePostscriptDelegate(image_info->verbose,command);
+  {
+    char
+      options[MaxTextExtent];
+
+    options[0]='\0';
+    /*
+      Append subrange.
+    */
+    if (image_info->subrange != 0)
+      FormatString(options,"-dFirstPage=%lu -dLastPage=%lu",
+		   image_info->subimage+1,image_info->subimage+image_info->subrange);
+    /*
+      Append bounding box.
+    */
+    FormatString(options+strlen(options)," -g%s",geometry);
+    (void) strlcpy(filename,image_info->filename,MaxTextExtent);
+    if (image_info->temporary)
+      (void) LiberateTemporaryFile((char *) image_info->filename);
+    if(!AcquireTemporaryFileName((char *)image_info->filename))
+      {
+	(void) LiberateTemporaryFile(postscript_filename);
+	ThrowReaderTemporaryFileException(image_info->filename);
+      }
+    FormatString(command,delegate_info->commands,antialias,
+		 antialias,density,options,image_info->filename,
+		 postscript_filename);
+  }
+  (void) MagickMonitorFormatted(0,8,&image->exception,RenderPostscriptText,
+                                image->filename);
+  status=InvokePostscriptDelegate(image_info->verbose,command,exception);
   if (!IsAccessibleAndNotEmpty(image_info->filename))
     {
       /*
@@ -336,43 +360,59 @@ static Image *ReadEPTImage(const ImageInfo *image_info,
       */
       file=fopen(postscript_filename,"ab");
       if (file == (FILE *) NULL)
-        ThrowReaderException(FileOpenError,UnableToWriteFile,image);
+        {
+          (void) LiberateTemporaryFile((char *) image_info->filename);
+          ThrowReaderException(FileOpenError,UnableToWriteFile,image);
+        }
       (void) fputs("showpage\n",file);
       (void) fclose(file);
-      status=InvokePostscriptDelegate(image_info->verbose,command);
+      status=InvokePostscriptDelegate(image_info->verbose,command,exception);
     }
-  LiberateTemporaryFile(postscript_filename);
-  (void) MagickMonitor(RenderPostscriptText,7,8,&image->exception);
-  if (!IsAccessibleAndNotEmpty(image_info->filename))
+  (void) LiberateTemporaryFile(postscript_filename);
+  (void) MagickMonitorFormatted(7,8,&image->exception,RenderPostscriptText,
+                                image->filename);
+  if (IsAccessibleAndNotEmpty(image_info->filename))
+    {
+      /*
+	Read Ghostscript output.
+      */
+      ImageInfo
+	*clone_info;
+
+      clone_info=CloneImageInfo(image_info);
+      clone_info->blob=(void *) NULL;
+      clone_info->length=0;
+      clone_info->magick[0]='\0';
+      image=ReadImage(clone_info,exception);
+      DestroyImageInfo(clone_info);
+    }
+  (void) LiberateTemporaryFile((char *) image_info->filename);
+#if defined(HasDPS)
+  if (image == (Image *) NULL)
     {
       /*
         Ghostscript has failed-- try the Display Postscript Extension.
       */
       (void) FormatString((char *) image_info->filename,"dps:%.1024s",filename);
       image=ReadImage(image_info,exception);
-      if (image != (Image *) NULL)
-        return(image);
-      ThrowReaderException(DelegateError,PostscriptDelegateFailed,image)
     }
-  clone_info=CloneImageInfo(image_info);
-  clone_info->blob=(void *) NULL;
-  clone_info->length=0;
-  clone_info->magick[0]='\0';
-  image=ReadImage(clone_info,exception);
-  DestroyImageInfo(clone_info);
-  LiberateTemporaryFile((char *) image_info->filename);
+#endif /* defined(HasDPS) */
   if (image == (Image *) NULL)
-    ThrowReaderException(DelegateError,PostscriptDelegateFailed,image);
-  do
-  {
-    (void) strcpy(image->magick,"PS");
-    (void) strncpy(image->filename,filename,MaxTextExtent-1);
-    next_image=SyncNextImageInList(image);
-    if (next_image != (Image *) NULL)
-      image=next_image;
-  } while (next_image != (Image *) NULL);
-  while (image->previous != (Image *) NULL)
-    image=image->previous;
+    if (UndefinedException == exception->severity)
+      ThrowException(exception,DelegateError,PostscriptDelegateFailed,filename);
+  if (image != (Image *) NULL)
+    {
+      do
+	{
+	  (void) strcpy(image->magick,"PS");
+	  (void) strlcpy(image->filename,filename,MaxTextExtent);
+	  next_image=SyncNextImageInList(image);
+	  if (next_image != (Image *) NULL)
+	    image=next_image;
+	} while (next_image != (Image *) NULL);
+      while (image->previous != (Image *) NULL)
+	image=image->previous;
+    }
   return(image);
 }
 
@@ -410,9 +450,31 @@ ModuleExport void RegisterEPTImage(void)
   entry->magick=(MagickHandler) IsEPT;
   entry->adjoin=False;
   entry->blob_support=False;
-  entry->description=
-    AcquireString("Adobe Encapsulated PostScript with MS-DOS TIFF preview");
-  entry->module=AcquireString("EPT");
+  entry->description="Adobe Encapsulated PostScript with MS-DOS TIFF preview";
+  entry->module="EPT";
+  entry->coder_class=PrimaryCoderClass;
+  (void) RegisterMagickInfo(entry);
+
+  entry=SetMagickInfo("EPT2");
+  entry->decoder=(DecoderHandler) ReadEPTImage;
+  entry->encoder=(EncoderHandler) WriteEPTImage;
+  entry->magick=(MagickHandler) IsEPT;
+  entry->adjoin=False;
+  entry->blob_support=False;
+  entry->description="Adobe Level II Encapsulated PostScript with MS-DOS TIFF preview";
+  entry->module="EPT";
+  entry->coder_class=PrimaryCoderClass;
+  (void) RegisterMagickInfo(entry);
+
+  entry=SetMagickInfo("EPT3");
+  entry->decoder=(DecoderHandler) ReadEPTImage;
+  entry->encoder=(EncoderHandler) WriteEPTImage;
+  entry->magick=(MagickHandler) IsEPT;
+  entry->adjoin=False;
+  entry->blob_support=False;
+  entry->description="Adobe Level III Encapsulated PostScript with MS-DOS TIFF preview";
+  entry->module="EPT";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -438,6 +500,8 @@ ModuleExport void RegisterEPTImage(void)
 ModuleExport void UnregisterEPTImage(void)
 {
   (void) UnregisterMagickInfo("EPT");
+  (void) UnregisterMagickInfo("EPT2");
+  (void) UnregisterMagickInfo("EPT3");
 }
 
 /*
@@ -492,16 +556,32 @@ static unsigned int WriteEPTImage(const ImageInfo *image_info,Image *image)
 
   logging=IsEventLogging();
 
-  (void) strncpy(filename,image->filename,MaxTextExtent-1);
-  (void) strncpy(ps_filename,image->magick_filename,MaxTextExtent-1);
+  (void) strlcpy(filename,image->filename,MaxTextExtent);
+  (void) strlcpy(ps_filename,image->magick_filename,MaxTextExtent);
   if (LocaleCompare(image_info->magick,"EPS") != 0)
     {
       /*
         Write image as Encapsulated Postscript to a temporary file.
       */
+      char
+        subformat[MaxTextExtent];
+
       if(!AcquireTemporaryFileName(ps_filename))
         ThrowWriterTemporaryFileException(ps_filename);
-      FormatString(image->filename,"eps:%.1024s",ps_filename);
+
+      /* Select desired EPS level */
+      (void) strcpy(subformat,"eps");
+      if (LocaleCompare(image_info->magick,"EPT2") == 0)
+        (void) strcpy(subformat,"eps2");
+      else if (LocaleCompare(image_info->magick,"EPT3") == 0)
+        (void) strcpy(subformat,"eps3");
+
+      /* JPEG compression requires at least EPS2 */
+      if ((image->compression == JPEGCompression) &&
+          (LocaleCompare(subformat,"EPS") == 0))
+        (void) strcpy(subformat,"eps2");
+
+      FormatString(image->filename,"%s:%.1024s",subformat,ps_filename);
       if (logging)
         (void) LogMagickEvent(CoderEvent,GetMagickModule(),
           "Writing temporary EPS file \"%s\"",ps_filename);
@@ -512,7 +592,7 @@ static unsigned int WriteEPTImage(const ImageInfo *image_info,Image *image)
   */
   if(!AcquireTemporaryFileName(tiff_filename))
     {
-      LiberateTemporaryFile(ps_filename);
+      (void) LiberateTemporaryFile(ps_filename);
       ThrowWriterTemporaryFileException(tiff_filename);
     }
   
@@ -525,7 +605,7 @@ static unsigned int WriteEPTImage(const ImageInfo *image_info,Image *image)
   /*
     Write EPT image.
   */
-  (void) strncpy(image->filename,filename,MaxTextExtent-1);
+  (void) strlcpy(image->filename,filename,MaxTextExtent);
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   ps_file=fopen(ps_filename,"rb");
   status&=ps_file != (FILE *) NULL;
@@ -600,8 +680,8 @@ static unsigned int WriteEPTImage(const ImageInfo *image_info,Image *image)
   (void) fclose(ps_file);
   (void) fclose(tiff_file);
   if (LocaleCompare(image_info->magick,"EPS") != 0)
-    LiberateTemporaryFile(ps_filename);
-  LiberateTemporaryFile(tiff_filename);
+    (void) LiberateTemporaryFile(ps_filename);
+  (void) LiberateTemporaryFile(tiff_filename);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
   return(True);

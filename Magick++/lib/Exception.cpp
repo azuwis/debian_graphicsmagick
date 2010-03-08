@@ -6,6 +6,7 @@
 //
 
 #define MAGICK_IMPLEMENTATION
+#define MAGICK_PLUSPLUS_IMPLEMENTATION
 
 #include "Magick++/Include.h"
 #include <string>
@@ -24,7 +25,8 @@ Magick::Exception::Exception( const std::string& what_ )
 
 // Copy constructor
 Magick::Exception::Exception( const Magick::Exception& original_ )
-  : _what(original_._what)
+  : exception(original_),
+    _what(original_._what)
 {
 }
 

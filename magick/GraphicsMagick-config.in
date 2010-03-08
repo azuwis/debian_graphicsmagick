@@ -30,13 +30,13 @@ while test $# -gt 0; do
       echo @PACKAGE_VERSION@
       ;;
     --cflags)
-      echo '@CFLAGS@'
+      echo ''
       ;;
     --cppflags)
       echo '@MAGICK_API_CPPFLAGS@'
       ;;
     --ldflags)
-      echo '@MAGICK_API_LDFLAGS@'
+      echo '-L@libdir@'
       ;;
     --libs)
       echo '@MAGICK_API_LIBS@'

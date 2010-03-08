@@ -1,6 +1,6 @@
 // This may look like C code, but it is really -*- C++ -*-
 //
-// Copyright Bob Friesenhahn, 1999, 2000, 2001, 2002, 2003, 2004
+// Copyright Bob Friesenhahn, 1999, 2000, 2001, 2002, 2003, 2004, 2009
 //
 // Definition of Image, the representation of a single image in Magick++
 //
@@ -119,6 +119,8 @@ namespace Magick
 
     // Add noise to image with specified noise type
     void            addNoise ( const NoiseType noiseType_ );
+    void            addNoiseChannel ( const ChannelType channel_,
+                                      const NoiseType noiseType_);
 
     // Transform image by specified affine (or free transform) matrix.
     void            affineTransform ( const DrawableAffine &affine );
@@ -163,10 +165,20 @@ namespace Magick
     // specifies the standard deviation of the Laplacian, in pixels.
     void            blur ( const double radius_ = 0.0,
                            const double sigma_ = 1.0  );
-    
+    void            blurChannel ( const ChannelType channel_,
+                                  const double radius_ = 0.0,
+                                  const double sigma_ = 1.0  );
+
     // Border image (add border to image)
     void            border ( const Geometry &geometry_
                              = borderGeometryDefault );
+
+    // Bake in the ASC-CDL, which is a convention for the for the
+    // exchange of basic primary color grading information between for
+    // the exchange of basic primary color grading information between
+    // equipment and software from different manufacturers.  It is a
+    // useful transform for other purposes as well.
+    void            cdl ( const std::string &cdl_ );
 
     // Extract channel from image
     void            channel ( const ChannelType channel_ );
@@ -198,6 +210,11 @@ namespace Magick
     // Colorize image with pen color, using specified percent opacity.
     void            colorize ( const unsigned int opacity_,
 			       const Color &penColor_ );
+
+    // Apply a color matrix to the image channels.  The user supplied
+    // matrix may be of order 1 to 5 (1x1 through 5x5).
+    void            colorMatrix (const unsigned int order_,
+				 const double *color_matrix_);
     
     // Comment image (add comment string to image)
     void            comment ( const std::string &comment_ );
@@ -340,12 +357,48 @@ namespace Magick
     // mask is specified by 'width_'. The standard deviation of the
     // gaussian bell curve is specified by 'sigma_'.
     void            gaussianBlur ( const double width_, const double sigma_ );
+    void            gaussianBlurChannel ( const ChannelType channel_,
+                                          const double width_, const double sigma_ );
     
     // Implode image (special effect)
     void            implode ( const double factor_ );
+
+    // Apply a color lookup table (Hald CLUT) to the image.
+    void            haldClut ( const Image &clutImage_ );
     
     // Label image
     void            label ( const std::string &label_ );
+
+    // Level image. Adjust the levels of the image by scaling the
+    // colors falling between specified white and black points to the
+    // full available quantum range. The parameters provided represent
+    // the black, mid (gamma), and white points.  The black point
+    // specifies the darkest color in the image. Colors darker than
+    // the black point are set to zero. Mid point (gamma) specifies a
+    // gamma correction to apply to the image. White point specifies
+    // the lightest color in the image.  Colors brighter than the
+    // white point are set to the maximum quantum value. The black and
+    // white point have the valid range 0 to MaxRGB while mid (gamma)
+    // has a useful range of 0 to ten.
+    void            level ( const double black_point,
+                            const double white_point,
+                            const double mid_point=1.0 );
+
+    // Level image channel. Adjust the levels of the image channel by
+    // scaling the values falling between specified white and black
+    // points to the full available quantum range. The parameters
+    // provided represent the black, mid (gamma), and white points.
+    // The black point specifies the darkest color in the
+    // image. Colors darker than the black point are set to zero. Mid
+    // point (gamma) specifies a gamma correction to apply to the
+    // image. White point specifies the lightest color in the image.
+    // Colors brighter than the white point are set to the maximum
+    // quantum value. The black and white point have the valid range 0
+    // to MaxRGB while mid (gamma) has a useful range of 0 to ten.
+    void            levelChannel ( const ChannelType channel,
+                                   const double black_point,
+                                   const double white_point,
+                                   const double mid_point=1.0 );
 
     // Magnify image by integral size
     void            magnify ( void );
@@ -376,6 +429,16 @@ namespace Magick
     void            modulate ( const double brightness_,
 			       const double saturation_,
 			       const double hue_ );
+
+    // Motion blur image with specified blur factor
+    // The radius_ parameter specifies the radius of the Gaussian, in
+    // pixels, not counting the center pixel.  The sigma_ parameter
+    // specifies the standard deviation of the Laplacian, in pixels.
+    // The angle_ parameter specifies the angle the object appears
+    // to be comming from (zero degrees is from the right).
+    void            motionBlur ( const double radius_,
+                                 const double sigma_,
+                                 const double angle_ );
     
     // Negate colors in image.  Set grayscale to only negate grayscale
     // values in image.
@@ -419,13 +482,22 @@ namespace Magick
     // Apply an arithmetic or bitwise operator to the image pixel quantums.
     void            quantumOperator ( const ChannelType channel_,
                                       const QuantumOperator operator_,
-                                      Quantum rvalue_);
+                                      Quantum rvalue_) __attribute__ ((deprecated));
+    void            quantumOperator ( const ChannelType channel_,
+                                      const QuantumOperator operator_,
+                                      double rvalue_);
     void            quantumOperator ( const int x_,const int y_,
                                       const unsigned int columns_,
                                       const unsigned int rows_,
                                       const ChannelType channel_,
                                       const QuantumOperator operator_,
-                                      const Quantum rvalue_);
+                                      const Quantum rvalue_) __attribute__ ((deprecated));
+    void            quantumOperator ( const int x_,const int y_,
+                                      const unsigned int columns_,
+                                      const unsigned int rows_,
+                                      const ChannelType channel_,
+                                      const QuantumOperator operator_,
+                                      const double rvalue_);
 
     // Execute a named process module using an argc/argv syntax similar to
     // that accepted by a C 'main' routine. An exception is thrown if the
@@ -439,6 +511,20 @@ namespace Magick
     // 3-D raised or lowered effect)
     void            raise ( const Geometry &geometry_ = raiseGeometryDefault,
 			    const bool raisedFlag_ = false );
+
+    // Random threshold image.
+    //
+    // Changes the value of individual pixels based on the intensity
+    // of each pixel compared to a random threshold.  The result is a
+    // low-contrast, two color image.  The thresholds_ argument is a
+    // geometry containing LOWxHIGH thresholds.  If the string
+    // contains 2x2, 3x3, or 4x4, then an ordered dither of order 2,
+    // 3, or 4 will be performed instead.  If a channel_ argument is
+    // specified then only the specified channel is altered.  This is
+    // a very fast alternative to 'quantize' based dithering.
+    void            randomThreshold( const Geometry &thresholds_ );
+    void            randomThresholdChannel( const Geometry &thresholds_,
+                                            const ChannelType channel_ );
     
     // Read single image frame into current object
     void            read ( const std::string &imageSpec_ );
@@ -519,6 +605,9 @@ namespace Magick
     // specifies the standard deviation of the Laplacian, in pixels.
     void            sharpen ( const double radius_ = 0.0,
                               const double sigma_ = 1.0 );
+    void            sharpenChannel ( const ChannelType channel_,
+                                     const double radius_ = 0.0,
+                                     const double sigma_ = 1.0 );
 
     // Shave pixels from image edges.
     void            shave ( const Geometry &geometry_ );
@@ -547,7 +636,9 @@ namespace Magick
     // Channel a texture on image background
     void            texture ( const Image &texture_ );
     
-    // Threshold image
+    // Threshold image channels (below threshold becomes black, above
+    // threshold becomes white).
+    // The range of the threshold parameter is 0 to MaxRGB.
     void            threshold ( const double threshold_ );
     
     // Transform image based on image and crop geometries
@@ -586,6 +677,11 @@ namespace Magick
                                   const double sigma_,
                                   const double amount_,
                                   const double threshold_ );
+    void            unsharpmaskChannel ( const ChannelType channel_,
+                                         const double radius_,
+                                         const double sigma_,
+                                         const double amount_,
+                                         const double threshold_ );
 
     // Map image pixels to a sine wave
     void            wave ( const double amplitude_ = 25.0,
@@ -894,6 +990,10 @@ namespace Magick
     // color reduced.
     double          normalizedMeanError ( void ) const;
 
+    // Image orientation
+    void            orientation ( const OrientationType orientation_ );
+    OrientationType orientation ( void ) const;
+
     // Preferred size and location of an image canvas.
     void            page ( const Geometry &pageSize_ );
     Geometry        page ( void ) const;
@@ -1105,10 +1205,10 @@ namespace Magick
                                         const unsigned int columns_,
                                         const unsigned int rows_ ) const;
 
-    // Obtain image pixel indexes (valid for PseudoClass images)
-    IndexPacket* getIndexes ( void ) const;
+    // Obtain mutable image pixel indexes (valid for PseudoClass images)
+    IndexPacket* getIndexes ( void );
 
-    // Obtain image pixel indexes (valid for PseudoClass images)
+    // Obtain immutable image pixel indexes (valid for PseudoClass images)
     const IndexPacket* getConstIndexes ( void ) const;
 
     // Transfers pixels from the image to the pixel cache as defined

@@ -39,6 +39,7 @@
 #include "magick/attribute.h"
 #include "magick/blob.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
 #include "magick/constitute.h"
 #include "magick/decorate.h"
 #include "magick/effect.h"
@@ -97,9 +98,9 @@ ModuleExport void RegisterPREVIEWImage(void)
   entry=SetMagickInfo("PREVIEW");
   entry->encoder=(EncoderHandler) WritePreviewImage;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Show a preview an image enhancement, effect, or f/x");
-  entry->module=AcquireString("PREVIEW");
+  entry->description="Show a preview an image enhancement, effect, or f/x";
+  entry->module="PREVIEW";
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -173,7 +174,7 @@ ModuleExport void UnregisterPREVIEWImage(void)
 static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
 {
 #define NumberTiles  9
-#define PreviewImageText  "  Creating image preview...  "
+#define PreviewImageText  "[%s] Creating image preview..."
 
   char
     factor[MaxTextExtent],
@@ -229,7 +230,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
   CloseBlob(image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   clone_info=CloneImageInfo(image_info);
   clone_info->quality=0;
   colors=2;
@@ -343,7 +344,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
         GetQuantizeInfo(&quantize_info);
         FormatString(factor,"%lu",colors);
         FormatString(label,"colors %.1024s",factor);
-        TransformColorspace(preview_image,GRAYColorspace);
+        (void) TransformColorspace(preview_image,GRAYColorspace);
         quantize_info.number_colors=colors;
         quantize_info.colorspace=GRAYColorspace;
         quantize_info.dither=image_info->dither;
@@ -363,7 +364,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
         quantize_info.number_colors=colors;
         quantize_info.colorspace=preview_image->colorspace;
         quantize_info.dither=image_info->dither;
-        quantize_info.tree_depth=8;
+        /* quantize_info.tree_depth=8; */
         (void) QuantizeImage(&quantize_info,preview_image);
         colors<<=1;
         break;
@@ -473,7 +474,8 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
       {
         FormatString(factor,"%g",percentage);
         FormatString(label,"solarize %.1024s",factor);
-        SolarizeImage(preview_image,percentage);
+        (void) SolarizeImage(preview_image,
+                             (percentage*((double) MaxRGB+1.0))/100);
         break;
       }
       case ShadePreview:
@@ -504,7 +506,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
         raise_info.y=0;
         FormatString(factor,"%ldx%ld",2*i+2,2*i+2);
         FormatString(label,"raise %.1024s",factor);
-        RaiseImage(preview_image,&raise_info,True);
+        (void) RaiseImage(preview_image,&raise_info,True);
         break;
       }
       case SegmentPreview:
@@ -578,8 +580,8 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
             Image
               *quality_image;
 
-            (void) strncpy(clone_info->filename,preview_image->filename,
-              MaxTextExtent-1);
+            (void) strlcpy(clone_info->filename,preview_image->filename,
+              MaxTextExtent);
             quality_image=ReadImage(clone_info,&image->exception);
             if (quality_image != (Image *) NULL)
               {
@@ -587,7 +589,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
                 preview_image=quality_image;
               }
           }
-        LiberateTemporaryFile(filename);
+        (void) LiberateTemporaryFile(filename);
         if ((GetBlobSize(preview_image)/1024) >= 1024)
           FormatString(label,"quality %.1024s\n%gmb ",factor,
             (double) GetBlobSize(preview_image)/1024.0/1024.0);
@@ -608,7 +610,8 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
     (void) SetImageAttribute(preview_image,"label",label);
     (void) SetMonitorHandler(handler);
     AppendImageToList(&images,preview_image);
-    if (!MagickMonitor(PreviewImageText,i,NumberTiles,&image->exception))
+    if (!MagickMonitorFormatted(i,NumberTiles,&image->exception,
+                                PreviewImageText,image->filename))
       break;
   }
   DestroyImage(master_image);
@@ -619,7 +622,7 @@ static unsigned int WritePreviewImage(const ImageInfo *image_info,Image *image)
     Create the montage.
   */
   montage_info=CloneMontageInfo(image_info,(MontageInfo *) NULL);
-  (void) strncpy(montage_info->filename,image->filename,MaxTextExtent-1);
+  (void) strlcpy(montage_info->filename,image->filename,MaxTextExtent);
   montage_info->shadow=True;
   (void) CloneString(&montage_info->tile,"3x3");
   (void) CloneString(&montage_info->geometry,DefaultPreviewGeometry);

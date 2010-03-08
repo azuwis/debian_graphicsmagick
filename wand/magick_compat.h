@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003-2009 GraphicsMagick Group
   Copyright (C) 2003 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
@@ -22,11 +22,11 @@ extern "C" {
 #include "magick/color.h"
 #include "magick/composite.h"
 #include "magick/constitute.h"
-#include "magick/cache.h"
 #include "magick/decorate.h"
 #include "magick/effect.h"
 #include "magick/enhance.h"
 #include "magick/fx.h"
+#include "magick/pixel_cache.h"
 #include "magick/shear.h"
 #include "magick/semaphore.h"
 #include "magick/tempfile.h"
@@ -109,7 +109,9 @@ extern WandExport void
 
 extern WandExport int
   FormatMagickString(char *,const size_t,const char *,...)
-    __attribute__((format (printf,3,4)));
+    __attribute__((format (printf,3,4))),
+  FormatMagickStringList(char *string,const size_t length,
+    const char *format,va_list operands);
 
 extern WandExport unsigned int
   ImportImagePixels(Image *image,const long x_offset,
@@ -126,3 +128,11 @@ extern WandExport size_t
 #endif /* defined(MAGICK_IMPLEMENTATION) */
 
 #endif /* _MAGICK_COMPAT_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

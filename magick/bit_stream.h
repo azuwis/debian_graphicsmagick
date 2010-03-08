@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003, 2005, 2009 GraphicsMagick Group
  
   This program is covered by multiple licenses, which are described in
   Copyright.txt. You should have received a copy of Copyright.txt with this
@@ -16,140 +16,112 @@
 extern "C" {
 #endif
 
-  static const unsigned int BitAndMasks[9] =
-    {
-      /*
-        Same as (~(~0 << retrieve_bits))
-      */
-      0x00, 0x01, 0x03, 0x07, 0x0f, 0x1f, 0x3f, 0x7f, 0xff
-    };
-
   /*
     Bit stream reader "handle"
   */
   typedef struct _BitStreamReadHandle
   {
-    const unsigned char
-      *bytes;
-
-    int
-      bits_remaining;
+    const unsigned char  *bytes;
+    unsigned int          bits_remaining;
   } BitStreamReadHandle;
-
-  /*
-    Initialize Bit Stream for reading
-  */
-  static inline void BitStreamInitializeRead(BitStreamReadHandle *bit_stream,
-                                             const unsigned char *bytes)
-  {
-    bit_stream->bytes          = bytes;
-    bit_stream->bits_remaining = 8;
-  }
-
-  /*
-    Return the requested number of bits from the current position in a
-    bit stream. Stream is read in most-significant bit/byte "big endian"
-    order.
-  */
-  static inline unsigned int BitStreamMSBRead(BitStreamReadHandle *bit_stream,
-                                              const unsigned int requested_bits)
-  {
-    register unsigned int
-      remaining_quantum_bits,
-      quantum;
-
-    remaining_quantum_bits = requested_bits;
-    quantum = 0;
-
-    while (remaining_quantum_bits > 0)
-      {
-        register unsigned int
-          octet_bits;
-
-        octet_bits = remaining_quantum_bits;
-        if (octet_bits > bit_stream->bits_remaining)
-          octet_bits = bit_stream->bits_remaining;
-
-        remaining_quantum_bits -= octet_bits;
-        bit_stream->bits_remaining -= octet_bits;
-
-        quantum = (quantum << octet_bits) |
-          ((*bit_stream->bytes >> (bit_stream->bits_remaining))
-           & BitAndMasks[octet_bits]);
-
-        if (bit_stream->bits_remaining == 0)
-          {
-            bit_stream->bytes++;
-            bit_stream->bits_remaining=8;
-          }
-      }
-    return quantum;
-  }
 
   /*
     Bit stream writer "handle"
   */
   typedef struct _BitStreamWriteHandle
   {
-    unsigned char
-      *bytes;
-
-    int
-      bits_remaining;
+    unsigned char  *bytes;
+    unsigned int    bits_remaining;
   } BitStreamWriteHandle;
 
   /*
-    Initialize Bit Stream for writing
+    Word reading function.
+
+    read_func_state  - state to pass to word reading function.
   */
-  static inline void BitStreamInitializeWrite(BitStreamWriteHandle *bit_stream,
-                                              unsigned char *bytes)
+  typedef unsigned long (*WordStreamReadFunc) (void *read_func_state);
+  
+  /*
+    Word stream word reader "handle"
+  */
+  typedef struct _WordStreamReadHandle
   {
-    bit_stream->bytes          = bytes;
-    bit_stream->bits_remaining = 8;
-  }
+    magick_uint32_t      word;
+    unsigned int         bits_remaining;
+    WordStreamReadFunc   read_func;
+    void                *read_func_state;
+  } WordStreamReadHandle;
 
   /*
-    Write quantum using the specified number of bits at the current
-    position in the bit stream. Stream is written in most-significant
-    bit/byte "big endian" order.
+    Word writing function.
+
+    write_func_state  - state to pass to word writing function.
+    value             - value to write
+    returns number of bytes written.
   */
-  static inline void BitStreamMSBWrite(BitStreamWriteHandle *bit_stream,
-                                       const unsigned int requested_bits,
-                                       const unsigned int quantum)
+  typedef size_t (*WordStreamWriteFunc) (void *write_func_state,
+                                         const unsigned long value);
+
+  /*
+    Word stream writer "handle"
+  */
+  typedef struct _WordStreamWriteHandle
   {
-    register unsigned int
-      remaining_quantum_bits = requested_bits;
+    magick_uint32_t      word;
+    unsigned int         bits_remaining;
+    WordStreamWriteFunc  write_func;
+    void                *write_func_state;
+  } WordStreamWriteHandle;
 
-    while (remaining_quantum_bits > 0)
-      {
-        register unsigned int
-          octet_bits;
+  extern MagickExport void
+  MagickBitStreamInitializeRead(BitStreamReadHandle *bit_stream,
+				const unsigned char *bytes);
 
-        octet_bits = remaining_quantum_bits;
-        if (octet_bits > bit_stream->bits_remaining)
-          octet_bits = bit_stream->bits_remaining;
+  extern MagickExport unsigned int
+  MagickBitStreamMSBRead(BitStreamReadHandle *bit_stream,
+			 const unsigned int requested_bits);
 
-        remaining_quantum_bits -= octet_bits;
+  extern MagickExport void
+  MagickBitStreamInitializeWrite(BitStreamWriteHandle *bit_stream,
+				 unsigned char *bytes);
 
-        if(bit_stream->bits_remaining == 8)
-          *bit_stream->bytes = 0;
+  extern MagickExport void
+  MagickBitStreamMSBWrite(BitStreamWriteHandle *bit_stream,
+			  const unsigned int requested_bits,
+			  const unsigned int quantum);
 
-        bit_stream->bits_remaining -= octet_bits;
+  extern MagickExport void
+  MagickWordStreamInitializeRead(WordStreamReadHandle *word_stream,
+				 WordStreamReadFunc read_func,
+				 void *read_func_state);
 
-        *bit_stream->bytes |=
-          (((quantum >> (remaining_quantum_bits)) &
-            BitAndMasks[octet_bits]) << (bit_stream->bits_remaining));
+  extern MagickExport unsigned int
+  MagickWordStreamLSBRead(WordStreamReadHandle *word_stream,
+			  const unsigned int requested_bits);
 
-        if (bit_stream->bits_remaining == 0)
-          {
-            bit_stream->bytes++;
-            bit_stream->bits_remaining=8;
-          }
-      }
-  }
+  extern MagickExport void
+  MagickWordStreamInitializeWrite(WordStreamWriteHandle *word_stream,
+				  WordStreamWriteFunc write_func,
+				  void *write_func_state);
+
+  extern MagickExport void
+  MagickWordStreamLSBWrite(WordStreamWriteHandle *word_stream,
+			   const unsigned int requested_bits,
+			   const unsigned int quantum);
+
+  extern MagickExport void
+  MagickWordStreamLSBWriteFlush(WordStreamWriteHandle *word_stream);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif /* _MAGICK_BIT_STREAM_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

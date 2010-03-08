@@ -39,7 +39,7 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/paint.h"
@@ -121,27 +121,28 @@ ModuleExport void RegisterHTMLImage(void)
   entry->encoder=(EncoderHandler) WriteHTMLImage;
   entry->magick=(MagickHandler) IsHTML;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Hypertext Markup Language and a client-side image map");
-  entry->module=AcquireString("HTML");
+  entry->description="Hypertext Markup Language and a client-side image map";
+  entry->stealth=MagickTrue;
+  entry->module="HTML";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("HTML");
   entry->encoder=(EncoderHandler) WriteHTMLImage;
   entry->magick=(MagickHandler) IsHTML;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Hypertext Markup Language and a client-side image map");
-  entry->module=AcquireString("HTML");
+  entry->description="Hypertext Markup Language and a client-side image map";
+  entry->module="HTML";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("SHTML");
   entry->encoder=(EncoderHandler) WriteHTMLImage;
   entry->magick=(MagickHandler) IsHTML;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Hypertext Markup Language and a client-side image map");
-  entry->module=AcquireString("HTML");
+  entry->description="Hypertext Markup Language and a client-side image map";
+  entry->module="HTML";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -235,7 +236,7 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
   CloseBlob(image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   *url='\0';
   if ((LocaleCompare(image_info->magick,"FTP") == 0) ||
       (LocaleCompare(image_info->magick,"HTTP") == 0))
@@ -247,22 +248,22 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
       if (p)
         {
           p++;
-          (void) strncpy(url,image_info->magick,MaxTextExtent-1);
-          (void) strcat(url,":");
+          (void) strlcpy(url,image_info->magick,MaxTextExtent);
+          (void) strlcat(url,":",MaxTextExtent);
           url[strlen(url)+p-image->filename]='\0';
-          (void) strncat(url,image->filename,(size_t)(p-image->filename));
-          (void) strncpy(image->filename,p,MaxTextExtent-1);
+          (void) strlcat(url,image->filename,(size_t)(p-image->filename+1));
+          (void) strlcpy(image->filename,p,MaxTextExtent);
         }
     }
   /*
     Refer to image map file.
   */
-  (void) strncpy(filename,image->filename,MaxTextExtent-1);
+  (void) strlcpy(filename,image->filename,MaxTextExtent);
   AppendImageFormat("map",filename);
   GetPathComponent(filename,BasePath,basename);
-  (void) strncpy(mapname,basename,MaxTextExtent-1);
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
-  (void) strncpy(filename,image->filename,MaxTextExtent-1);
+  (void) strlcpy(mapname,basename,MaxTextExtent);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
+  (void) strlcpy(filename,image->filename,MaxTextExtent);
   clone_info=CloneImageInfo(image_info);
   clone_info->adjoin=True;
   status=True;
@@ -297,7 +298,7 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
       FormatString(buffer,"<h1>%.1024s</h1>\n",image->filename);
       (void) WriteBlobString(image,buffer);
       (void) WriteBlobString(image,"<br><br>\n");
-      (void) strncpy(filename,image->filename,MaxTextExtent-1);
+      (void) strlcpy(filename,image->filename,MaxTextExtent);
       AppendImageFormat("gif",filename);
       FormatString(buffer,
         "<img ismap usemap=\"#%.1024s\" src=\"%.1024s\" border=0>\n",
@@ -351,9 +352,14 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
             }
       (void) WriteBlobString(image,"</map>\n");
       if (image->montage != (char *) NULL)
-        (void) TransparentImage(image,GetOnePixel(image,0,0),
-          TransparentOpacity);
-      (void) strncpy(filename,image->filename,MaxTextExtent-1);
+        {
+          PixelPacket
+            transparent_color;
+
+          (void) AcquireOnePixelByReference(image,&transparent_color,0,0,&image->exception);
+          (void) TransparentImage(image,transparent_color,TransparentOpacity);
+        }
+      (void) strlcpy(filename,image->filename,MaxTextExtent);
       (void) WriteBlobString(image,"</center>\n");
       (void) WriteBlobString(image,"</body>\n");
       (void) WriteBlobString(image,"</html>\n");
@@ -361,7 +367,7 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
       /*
         Write the image as transparent GIF.
       */
-      (void) strncpy(image->filename,filename,MaxTextExtent-1);
+      (void) strlcpy(image->filename,filename,MaxTextExtent);
       AppendImageFormat("gif",image->filename);
       next=image->next;
       image->next=(Image *) NULL;
@@ -371,7 +377,7 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
       /*
         Determine image map filename.
       */
-      (void) strncpy(image->filename,filename,MaxTextExtent-1);
+      (void) strlcpy(image->filename,filename,MaxTextExtent);
       for (p=filename+strlen(filename)-1; p > (filename+1); p--)
         if (*p == '.')
           {
@@ -436,6 +442,6 @@ static unsigned int WriteHTMLImage(const ImageInfo *image_info,Image *image)
         }
   (void) WriteBlobString(image,"</map>\n");
   CloseBlob(image);
-  (void) strncpy(image->filename,filename,MaxTextExtent-1);
+  (void) strlcpy(image->filename,filename,MaxTextExtent);
   return(status);
 }

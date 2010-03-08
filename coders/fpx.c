@@ -36,20 +36,21 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 #if defined(HasFPX)
-#if !defined(vms) && !defined(macintosh) && !defined(WIN32)
-#include <fpxlib.h>
-#else
-#include "Fpxlib.h"
-#endif
+#  if defined(POSIX)
+#    include <fpxlib.h>
+#  else
+#    include "Fpxlib.h"
+#  endif
 #endif
 
 /*
@@ -181,14 +182,14 @@ static Image *ReadFPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
   unsigned int
     status,
-    subimage;
-
-  unsigned long
+    subimage,
     height,
-    memory_limit,
     tile_width,
     tile_height,
     width;
+
+  size_t
+    memory_limit;
 
   /*
     Open image.
@@ -222,15 +223,7 @@ static Image *ReadFPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
   tile_height=64;
   flashpix=(FPXImageHandle *) NULL;
   {
-#if defined(macintosh)
-    FSSpec
-      fsspec;
-
-    FilenameToFSSpec(image->filename,&fsspec);
-    fpx_status=FPX_OpenImageByFilename((const FSSpec &) fsspec,(char *) NULL,
-#else
     fpx_status=FPX_OpenImageByFilename(image->filename,(char *) NULL,
-#endif
       &width,&height,&tile_width,&tile_height,&colorspace,&flashpix);
   }
   if (fpx_status == FPX_LOW_MEMORY_ERROR)
@@ -281,9 +274,8 @@ static Image *ReadFPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
             ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
               image);
           }
-        (void) strncpy(label,(char *) summary_info.title.ptr,
-          summary_info.title.length);
-        label[summary_info.title.length]='\0';
+        (void) strlcpy(label,(char *) summary_info.title.ptr,
+          summary_info.title.length+1);
         (void) SetImageAttribute(image,"label",label);
         MagickFreeMemory(label);
       }
@@ -304,9 +296,8 @@ static Image *ReadFPXImage(const ImageInfo *image_info,ExceptionInfo *exception)
             ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
               image);
           }
-        (void) strncpy(comments,(char *) summary_info.comments.ptr,
-          summary_info.comments.length);
-        comments[summary_info.comments.length]='\0';
+        (void) strlcpy(comments,(char *) summary_info.comments.ptr,
+          summary_info.comments.length+1);
         (void) SetImageAttribute(image,"comment",comments);
         MagickFreeMemory(comments);
       }
@@ -507,8 +498,8 @@ ModuleExport void RegisterFPXImage(void)
   entry->seekable_stream=True;
   entry->blob_support=False;
   entry->magick=(MagickHandler) IsFPX;
-  entry->description=AcquireString("FlashPix Format");
-  entry->module=AcquireString("FPX");
+  entry->description="FlashPix Format";
+  entry->module="FPX";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -794,8 +785,10 @@ static unsigned int WriteFPXImage(const ImageInfo *image_info,Image *image)
   unsigned char
     *pixels;
 
+  size_t
+    memory_limit;
+
   unsigned long
-    memory_limit,
     tile_height,
     tile_width;
 
@@ -810,7 +803,7 @@ static unsigned int WriteFPXImage(const ImageInfo *image_info,Image *image)
     Initialize FPX toolkit.
   */
   image->depth=8;
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   memory_limit=20000000;
   fpx_status=FPX_SetToolkitMemoryLimit(&memory_limit);
   if (fpx_status != FPX_OK)
@@ -834,15 +827,7 @@ static unsigned int WriteFPXImage(const ImageInfo *image_info,Image *image)
   if (image_info->compression == JPEGCompression)
     compression=JPEG_UNSPECIFIED;
   {
-#if defined(macintosh)
-    FSSpec
-      fsspec;
-
-    FilenameToFSSpec(filename,&fsspec);
-    fpx_status=FPX_CreateImageByFilename((const FSSpec &) fsspec,image->columns,
-#else
     fpx_status=FPX_CreateImageByFilename(image->filename,image->columns,
-#endif
       image->rows,tile_width,tile_height,colorspace,background_color,
       compression,&flashpix);
   }
@@ -890,8 +875,8 @@ static unsigned int WriteFPXImage(const ImageInfo *image_info,Image *image)
       summary_info.title.ptr=MagickAllocateMemory(unsigned char *,
         strlen(label->value)+1);
       if (summary_info.title.ptr != (unsigned char *) NULL)
-        (void) strncpy((char *) summary_info.title.ptr,label->value,
-          MaxTextExtent-1);
+        (void) strlcpy((char *) summary_info.title.ptr,label->value,
+          MaxTextExtent);
       else
         ThrowWriterException(CoderError,UnableToSetImageTitle,image);
     }
@@ -951,12 +936,12 @@ static unsigned int WriteFPXImage(const ImageInfo *image_info,Image *image)
     if (!AcquireImagePixels(image,0,y,image->columns,1,&image->exception))
       break;
     if (fpx_info.numberOfComponents == 1)
-      (void) PopImagePixels(image,GrayQuantum,pixels);
+      (void) ExportImagePixelArea(image,GrayQuantum,8,pixels,0,0);
     else
       if (!image->matte)
-        (void) PopImagePixels(image,RGBQuantum,pixels);
+        (void) ExportImagePixelArea(image,RGBQuantum,8,pixels,0,0);
       else
-        (void) PopImagePixels(image,RGBAQuantum,pixels);
+        (void) ExportImagePixelArea(image,RGBAQuantum,8,pixels,0,0);
     fpx_status=FPX_WriteImageLine(flashpix,&fpx_info);
     if (fpx_status != FPX_OK)
       break;

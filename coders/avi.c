@@ -36,10 +36,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -140,9 +140,11 @@ typedef struct _StreamInfo
 static MagickPassFail DecodeImage(Image *image,const unsigned int compression,
   unsigned char *pixels)
 {
-  long
+  int
     byte,
-    count,
+    count;
+
+  long
     y;
 
   register long
@@ -272,7 +274,9 @@ static MagickPassFail DecodeImage(Image *image,const unsigned int compression,
         }
       }
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  LoadImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   if (ReadBlobByte(image) == EOF)  /* end of line */
@@ -520,7 +524,7 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=SetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessMutableIndexes(image);
               for (x=0; x < ((long) image->columns-7); x+=8)
               {
                 for (bit=0; bit < 8; bit++)
@@ -546,8 +550,10 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(LoadImageText,image->rows-y-1,
-                      image->rows,exception);
+                    status=MagickMonitorFormatted(image->rows-y-1,
+                                                  image->rows,exception,
+                                                  LoadImageText,image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -565,7 +571,7 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=SetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessMutableIndexes(image);
               for (x=0; x < ((long) image->columns-1); x+=2)
               {
                 index=(IndexPacket) ((*p >> 4) & 0xf);
@@ -591,8 +597,10 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(LoadImageText,image->rows-y-1,
-                      image->rows,exception);
+                    status=MagickMonitorFormatted(image->rows-y-1,
+                                                  image->rows,exception,
+                                                  LoadImageText,image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -611,7 +619,7 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=SetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessMutableIndexes(image);
               for (x=0; x < (long) image->columns; x++)
               {
                 index=(IndexPacket) (*p);
@@ -626,8 +634,10 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(LoadImageText,image->rows-y-1,
-                      image->rows,exception);
+                    status=MagickMonitorFormatted(image->rows-y-1,
+                                                  image->rows,exception,
+                                                  LoadImageText,image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -664,8 +674,10 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(LoadImageText,image->rows-y-1,
-                      image->rows,exception);
+                    status=MagickMonitorFormatted(image->rows-y-1,
+                                                  image->rows,exception,
+                                                  LoadImageText,image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -699,8 +711,10 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(LoadImageText,image->rows-y-1,
-                      image->rows,exception);
+                    status=MagickMonitorFormatted(image->rows-y-1,
+                                                  image->rows,exception,
+                                                  LoadImageText,image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -725,8 +739,9 @@ static Image *ReadAVIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 return((Image *) NULL);
               }
             image=SyncNextImageInList(image);
-            status=MagickMonitor(LoadImagesText,TellBlob(image),
-              GetBlobSize(image),exception);
+            status=MagickMonitorFormatted(TellBlob(image),
+                                          GetBlobSize(image),exception,
+                                          LoadImagesText,image->filename);
             if (status == False)
               break;
           }
@@ -945,8 +960,9 @@ ModuleExport void RegisterAVIImage(void)
   entry=SetMagickInfo("AVI");
   entry->decoder=(DecoderHandler) ReadAVIImage;
   entry->magick=(MagickHandler) IsAVI;
-  entry->description=AcquireString("Microsoft Audio/Visual Interleaved");
-  entry->module=AcquireString("AVI");
+  entry->description="Microsoft Audio/Visual Interleaved";
+  entry->module="AVI";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 

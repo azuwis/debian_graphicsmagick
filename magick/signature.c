@@ -36,8 +36,9 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
 #include "magick/attribute.h"
+#include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/signature.h"
 #include "magick/utility.h"
 
@@ -166,12 +167,13 @@ MagickExport void GetSignatureInfo(SignatureInfo *signature_info)
 %
 %
 */
+#define SignatureImageText "[%s] Compute SHA-256 signature..."
 MagickExport unsigned int SignatureImage(Image *image)
 {
   char
     signature[MaxTextExtent];
 
-  IndexPacket
+  const IndexPacket
     *indexes;
 
   long
@@ -213,7 +215,7 @@ MagickExport unsigned int SignatureImage(Image *image)
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     q=message;
     for (x=0; x < (long) image->columns; x++)
     {
@@ -267,6 +269,10 @@ MagickExport unsigned int SignatureImage(Image *image)
       p++;
     }
     UpdateSignature(&signature_info,message,q-message);
+    if (QuantumTick(y,image->rows))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SignatureImageText,image->filename))
+        break;
   }
   FinalizeSignature(&signature_info);
   MagickFreeMemory(message);
@@ -368,19 +374,19 @@ MagickExport void TransformSignature(SignatureInfo *signature_info)
         {
           T=(*((unsigned long *) p));
           p+=8;
-          W[i]=((T << 24) & 0xff000000) | ((T << 8) & 0x00ff0000) |
-            ((T >> 8) & 0x0000ff00) | ((T >> 24) & 0x000000ff);
+          W[i]=((T << 24) & 0xff000000U) | ((T << 8) & 0x00ff0000U) |
+            ((T >> 8) & 0x0000ff00U) | ((T >> 24) & 0x000000ffU);
           T>>=shift;
-          W[i+1]=((T << 24) & 0xff000000) | ((T << 8) & 0x00ff0000) |
-            ((T >> 8) & 0x0000ff00) | ((T >> 24) & 0x000000ff);
+          W[i+1]=((T << 24) & 0xff000000U) | ((T << 8) & 0x00ff0000U) |
+            ((T >> 8) & 0x0000ff00U) | ((T >> 24) & 0x000000ffU);
         }
       else
         for (i=0; i < 16; i++)
         {
           T=(*((unsigned long *) p));
           p+=4;
-          W[i]=((T << 24) & 0xff000000) | ((T << 8) & 0x00ff0000) |
-            ((T >> 8) & 0x0000ff00) | ((T >> 24) & 0x000000ff);
+          W[i]=((T << 24) & 0xff000000U) | ((T << 8) & 0x00ff0000U) |
+            ((T >> 8) & 0x0000ff00U) | ((T >> 24) & 0x000000ffU);
         }
     }
   else

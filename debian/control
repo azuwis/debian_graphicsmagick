@@ -2,12 +2,12 @@ Source: graphicsmagick
 Section: graphics
 Priority: optional
 Maintainer: Daniel Kobras <kobras@debian.org>
-Build-Depends: debhelper (>= 5.0), libjpeg62-dev, libjasper-dev, liblcms1-dev, libwmf-dev (>= 0.2.8.4), libx11-dev, x11proto-core-dev | x-dev, libxml2-dev, libfreetype6-dev, libexif-dev, libbz2-dev, libtiff4-dev, zlib1g-dev | libz-dev, libpng12-dev, perl, ghostscript | gs, autotools-dev, transfig, sharutils
-Standards-Version: 3.7.3
+Build-Depends: debhelper (>= 5.0), libjpeg62-dev, libjasper-dev, liblcms1-dev, libwmf-dev (>= 0.2.8.4), libx11-dev, libsm-dev, libice-dev, libxext-dev, x11proto-core-dev, libxml2-dev, libfreetype6-dev, libexif-dev, libbz2-dev, libtiff4-dev, zlib1g-dev | libz-dev, libpng12-dev, perl, ghostscript, autotools-dev, transfig, sharutils, libltdl-dev, hardening-includes
+Standards-Version: 3.8.4
 
 Package: graphicsmagick
 Architecture: any
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Replaces: graphicsmagick-doc, imagemagick (<< 6:6.2.4.4)
 Suggests: graphicsmagick-dbg
 Description: collection of image processing tools
@@ -29,13 +29,13 @@ Description: collection of image processing tools
  graphicsmagick-imagemagick-compat to obtain a set of several executables
  that is compatible to ImageMagick's interface.
 
-Package: libgraphicsmagick1
+Package: libgraphicsmagick3
 Architecture: any
 Section: libs
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Conflicts: libgraphicsmagick
 Replaces: libgraphicsmagick
-Recommends: ghostscript | gs, gsfonts
+Recommends: ghostscript, gsfonts
 Suggests: graphicsmagick-dbg
 Description: format-independent image processing - C shared library
  GraphicsMagick provides libraries in several programming languages to read,
@@ -57,7 +57,7 @@ Description: format-independent image processing - C shared library
 Package: libgraphicsmagick1-dev
 Architecture: any
 Section: libdevel
-Depends: libgraphicsmagick1 (= ${binary:Version}), libjpeg62-dev, libjasper-dev, liblcms1-dev, libwmf-dev, libx11-dev, x11proto-core-dev | x-dev, libxml2-dev, libfreetype6-dev, libtiff4-dev, libc6-dev, zlib1g-dev | libz-dev, libpng12-dev, libexif-dev, libbz2-dev, libsm-dev, libice-dev, libxext-dev
+Depends: libgraphicsmagick3 (= ${binary:Version}), libjpeg62-dev, libjasper-dev, liblcms1-dev, libwmf-dev, libx11-dev, libsm-dev, libice-dev, libxext-dev, x11proto-core-dev, libxml2-dev, libfreetype6-dev, libtiff4-dev, libc6-dev, zlib1g-dev | libz-dev, libpng12-dev, libexif-dev, libbz2-dev, libltdl-dev, ${misc:Depends}
 Suggests: graphicsmagick
 Provides: libgraphicsmagick-dev
 Conflicts: libgraphicsmagick-dev
@@ -79,10 +79,10 @@ Description: format-independent image processing - C development files
  This package contains the C development headers and library files needed to
  compile programs using the GraphicsMagick library.
 
-Package: libgraphicsmagick++1
+Package: libgraphicsmagick++3
 Architecture: any
 Section: libs
-Depends: ${shlibs:Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
 Conflicts: libgraphicsmagick
 Replaces: libgraphicsmagick
 Suggests: graphicsmagick-dbg
@@ -106,7 +106,7 @@ Description: format-independent image processing - C++ shared library
 Package: libgraphicsmagick++1-dev
 Architecture: any
 Section: libdevel
-Depends: libgraphicsmagick++1 (= ${binary:Version}), libgraphicsmagick1-dev
+Depends: libgraphicsmagick++3 (= ${binary:Version}), libgraphicsmagick1-dev, ${misc:Depends}
 Suggests: graphicsmagick
 Provides: libgraphicsmagick++-dev
 Conflicts: libgraphicsmagick++-dev
@@ -131,7 +131,7 @@ Description: format-independent image processing - C++ development files
 Package: libgraphics-magick-perl
 Architecture: any
 Section: perl
-Depends: ${perl:Depends}, ${shlibs:Depends}
+Depends: ${perl:Depends}, ${shlibs:Depends}, ${misc:Depends}
 Suggests: graphicsmagick-dbg
 Description: format-independent image processing - perl interface
  GraphicsMagick provides libraries in several programming languages to read,
@@ -154,7 +154,7 @@ Description: format-independent image processing - perl interface
 Package: graphicsmagick-imagemagick-compat
 Architecture: all
 Priority: extra
-Depends: graphicsmagick
+Depends: graphicsmagick, ${misc:Depends}
 Provides: imagemagick
 Conflicts: imagemagick
 Replaces: imagemagick
@@ -170,10 +170,10 @@ Description: image processing tools providing ImageMagick interface
 Package: graphicsmagick-libmagick-dev-compat
 Architecture: all
 Priority: extra
-Depends: libgraphicsmagick1-dev, libgraphicsmagick++1-dev, libgraphics-magick-perl
+Depends: libgraphicsmagick1-dev, libgraphicsmagick++1-dev, libgraphics-magick-perl, ${misc:Depends}
 Provides: libmagick-dev, libmagick++-dev, perlmagick
-Conflicts: libmagick-dev, libmagick6-dev, libmagick9-dev, libmagick++-dev, libmagick++6-dev, libmagick++9-dev, perlmagick
-Replaces: libmagick-dev, libmagick6-dev, libmagick9-dev, libmagick++-dev, libmagick++6-dev, libmagick++9-dev, perlmagick
+Conflicts: libmagick-dev, libmagickcore-dev, libmagick6-dev, libmagick9-dev, libmagick++-dev, libmagick++6-dev, libmagick++9-dev, perlmagick
+Replaces: libmagick-dev, libmagickcore-dev, libmagick6-dev, libmagick9-dev, libmagick++-dev, libmagick++6-dev, libmagick++9-dev, perlmagick
 Description: image processing libraries providing ImageMagick interface
  GraphicsMagick provides libraries in several programming languages to read,
  write and manipulate image files across a large number of formats, from the
@@ -199,8 +199,9 @@ Description: image processing libraries providing ImageMagick interface
 
 Package: graphicsmagick-dbg
 Architecture: any
+Section: debug
 Priority: extra
-Depends: graphicsmagick (= ${binary:Version}), libgraphicsmagick1 (= ${binary:Version}), libgraphicsmagick++1 (= ${binary:Version}), libgraphics-magick-perl (= ${binary:Version})
+Depends: graphicsmagick (= ${binary:Version}), libgraphicsmagick3 (= ${binary:Version}), libgraphicsmagick++3 (= ${binary:Version}), libgraphics-magick-perl (= ${binary:Version}), ${misc:Depends}
 Description: format-independent image processing - debugging symbols
  GraphicsMagick provides libraries in several programming languages to read,
  write and manipulate image files across a large number of formats, from the

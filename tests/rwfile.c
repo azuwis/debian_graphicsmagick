@@ -11,19 +11,11 @@
  * enough) in order for the test to pass.
  * */
 
-#if !defined(_VISUALC_)
-#include <magick_config.h>
-#endif
+#include <magick/api.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#if defined(_VISUALC_)
-#include <stdlib.h>
-#include <sys\types.h>
-#endif
-#include <time.h>
-#include <magick/api.h>
 
 int main ( int argc, char **argv )
 {
@@ -35,10 +27,11 @@ int main ( int argc, char **argv )
     *magick_info;
 
   char
-    filename[80],
+    filename[MaxTextExtent],
     format[MaxTextExtent],
     infile[MaxTextExtent],
-    size[MaxTextExtent];
+    size[MaxTextExtent],
+    filespec[MaxTextExtent];
 
   int
     arg = 1,
@@ -46,6 +39,9 @@ int main ( int argc, char **argv )
     rows = 0,
     columns = 0,
     pause = 0;
+
+  MagickBool
+    check = MagickTrue;
 
   double
     fuzz_factor = 0;
@@ -63,6 +59,7 @@ int main ( int argc, char **argv )
 
   imageInfo=CloneImageInfo(0);
   GetExceptionInfo( &exception );
+  strcpy(filespec,"out_%d.%s");
 
   for (arg=1; arg < argc; arg++)
     {
@@ -91,12 +88,14 @@ int main ( int argc, char **argv )
               if (LocaleCompare("LZW",option) == 0)
                 imageInfo->compression=LZWCompression;
               if (LocaleCompare("RLE",option) == 0)
-                imageInfo->compression=RunlengthEncodedCompression;
+                imageInfo->compression=RLECompression;
               if (LocaleCompare("Zip",option) == 0)
                 imageInfo->compression=ZipCompression;
             }
           else if (LocaleCompare("debug",option+1) == 0)
-            (void) SetLogEventMask(argv[++arg]);
+            {
+              (void) SetLogEventMask(argv[++arg]);
+            }
           else if (LocaleCompare("depth",option+1) == 0)
             {
               imageInfo->depth=QuantumDepth;
@@ -116,10 +115,23 @@ int main ( int argc, char **argv )
                   goto program_exit;
                 }
             }
+	  else if (LocaleCompare("filespec",option+1) == 0)
+	    {
+	      (void) strcpy(filespec,argv[++arg]);
+	      (void) strcat(filespec,".%s");
+	    }
           else if (LocaleCompare("log",option+1) == 0)
-            (void) SetLogFormat(argv[++arg]);
+            {
+              (void) SetLogFormat(argv[++arg]);
+            }
+          else if (LocaleCompare("nocheck",option+1) == 0)
+            {
+              check=MagickFalse;
+            }
           else if (LocaleCompare("pause",option+1) == 0)
-            pause=1;
+            {
+              pause=1;
+            }
           else if (LocaleCompare("size",option+1) == 0)
             {
               arg++;
@@ -132,14 +144,20 @@ int main ( int argc, char **argv )
                 }
               (void) CloneString(&imageInfo->size,argv[arg]);
             }
+          else if (LocaleCompare("verbose",option+1) == 0)
+            {
+              imageInfo->verbose+=1;
+            }
         }
       else
-        break;
+        {
+          break;
+        }
     }
   if (arg != argc-2)
     {
       (void) printf("arg=%d, argc=%d\n", arg, argc);
-      (void) printf ( "Usage: %s [-compress algorithm -debug events -depth integer -log format -size geometry] infile format\n", argv[0] );
+      (void) printf ( "Usage: %s [-compress algorithm -debug events -depth integer -filespec spec -log format -nocheck -size geometry -verbose] infile format\n", argv[0] );
       (void) fflush(stdout);
       exit_status = 1;
       goto program_exit;
@@ -149,10 +167,10 @@ int main ( int argc, char **argv )
   arg++;
   (void) strncpy( format, argv[arg], MaxTextExtent-1 );
 
-/*   for (arg=0; arg < argc; arg++) */
-/*     (void) printf("%s ", argv[arg]); */
-/*   (void) printf("\n"); */
-/*   (void) fflush(stdout); */
+  /*   for (arg=0; arg < argc; arg++) */
+  /*     (void) printf("%s ", argv[arg]); */
+  /*   (void) printf("\n"); */
+  /*   (void) fflush(stdout); */
 
   /*
    * Read original image
@@ -191,7 +209,7 @@ int main ( int argc, char **argv )
   /*
    * Save image to file
    */
-  (void) sprintf( filename, "out_1.%s", format );
+  (void) sprintf( filename, filespec, 1, format );
   (void) strncpy( original->magick, format, MaxTextExtent-1 );
   (void) strncpy( original->filename, filename, MaxTextExtent-1 );
   original->delay = 10;
@@ -205,16 +223,16 @@ int main ( int argc, char **argv )
       goto program_exit;
     }
   imageInfo->depth=original->depth;
-  DestroyImage( original );
+  DestroyImageList( original );
   original = (Image*)NULL;
 
   /*
    * Read image back from file
    */
-  strncpy( imageInfo->magick, format, MaxTextExtent-1 );
+  (void) strncpy( imageInfo->magick, format, MaxTextExtent-1 );
   strncpy( imageInfo->filename, filename, MaxTextExtent-1 );
   if ( size[0] != '\0' )
-    CloneString( &imageInfo->size, size );
+    (void) CloneString( &imageInfo->size, size );
   (void) fflush(stdout);
   original = ReadImage ( imageInfo, &exception );
   if (exception.severity != UndefinedException)
@@ -235,7 +253,7 @@ int main ( int argc, char **argv )
   /*
    * Save image to file
    */
-  (void) sprintf( filename, "out_2.%s", format );
+  (void) sprintf( filename, filespec, 2, format );
   (void) strncpy( original->magick, format, MaxTextExtent-1 );
   (void) strncpy( original->filename, filename, MaxTextExtent-1 );
   original->delay = 10;
@@ -253,7 +271,7 @@ int main ( int argc, char **argv )
   (void) strncpy( imageInfo->magick, format, MaxTextExtent-1 );
   (void) strncpy( imageInfo->filename, filename, MaxTextExtent-1 );
   if ( size[0] != '\0' )
-    CloneString( &imageInfo->size, size );
+    (void) CloneString( &imageInfo->size, size );
   (void) fflush(stdout);
   (void) LogMagickEvent(CoderEvent,GetMagickModule(),
                         "Reading image %s", imageInfo->filename);
@@ -273,46 +291,50 @@ int main ( int argc, char **argv )
       goto program_exit;
     }
 
-  /*
-   * Check final output
-   */
-
-  if ( !strcmp( "DPX", format ) ||
-       !strcmp( "JPEG", format ) ||
-       !strcmp( "JNG", format ) ||
-       !strcmp( "JPG", format ) ||
-       !strcmp( "JPG24", format ) ||
-       !strcmp( "JP2", format ) ||
-       !strcmp( "PAL", format ) ||
-       !strcmp( "GRAY", format ) ||
-       !strcmp( "CMYK", format ) ||
-       !strcmp( "PCD", format ) ||
-       !strcmp( "PCDS", format ) ||
-       !strcmp( "UYVY", format ) ||
-       !strcmp( "YUV", format ) ||
-       (final->compression == JPEGCompression))
-    fuzz_factor = 0.06;
-
-  if ( !IsImagesEqual(original, final ) &&
-       (original->error.normalized_mean_error > fuzz_factor) )
+  if (check)
     {
-      (void) printf( "R/W file check for format \"%s\" failed: %u/%.6f/%.6fe\n",
-                     format,(unsigned int) original->error.mean_error_per_pixel,
-                     original->error.normalized_mean_error,
-                     original->error.normalized_maximum_error);
-      (void) fflush(stdout);
-      exit_status = 1;
-      goto program_exit;
+      /*
+       * Check final output
+       */
+
+      if ((!strcmp( "CIN", format ) && (QuantumDepth == 8)) ||
+          (!strcmp( "CMYK", format )) ||
+          (!strcmp( "GRAY", format )) ||
+          (!strcmp( "JNG", format )) ||
+          (!strcmp( "JP2", format )) ||
+          (!strcmp( "JPEG", format )) ||
+          (!strcmp( "JPG", format )) ||
+          (!strcmp( "JPG24", format )) ||
+          (!strcmp( "PAL", format )) ||
+          (!strcmp( "PCD", format )) ||
+          (!strcmp( "PCDS", format )) ||
+          (!strcmp( "UYVY", format )) ||
+          (!strcmp( "YUV", format )) ||
+          (final->compression == JPEGCompression))
+        fuzz_factor = 0.06;
+
+      if ( !IsImagesEqual(original, final ) &&
+           (original->error.normalized_mean_error > fuzz_factor) )
+        {
+          (void) printf( "R/W file check for format \"%s\" failed: %u/%.6f/%.6fe\n",
+                         format,(unsigned int) original->error.mean_error_per_pixel,
+                         original->error.normalized_mean_error,
+                         original->error.normalized_maximum_error);
+          (void) fflush(stdout);
+          exit_status = 1;
+          goto program_exit;
+        }
     }
 
  program_exit:
   if (original)
-    DestroyImage( original );
+    DestroyImageList( original );
   original = (Image*)NULL;
   if (final)
-    DestroyImage( final );
+    DestroyImageList( final );
   final = (Image*)NULL;
 
+  DestroyExceptionInfo(&exception);
   DestroyImageInfo( imageInfo );
   DestroyMagick();
 

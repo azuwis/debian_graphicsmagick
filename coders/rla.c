@@ -38,7 +38,8 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
+#include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -299,9 +300,127 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   /*
     Verify dimensions.
   */
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Active Window  : Left=%d Right=%d Top=%d, Bottom=%d",
+                          (int) rla_info.active_window.left,
+                          (int) rla_info.active_window.right,
+                          (int) rla_info.active_window.top,
+                          (int) rla_info.active_window.bottom);
   if ((((long) rla_info.active_window.right - rla_info.active_window.left) < 0) ||
       (((long) rla_info.active_window.top-rla_info.active_window.bottom) < 0))
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+
+  if (image->logging)
+    {
+      const char
+        *storage_type = "Unknown";
+      
+      switch (rla_info.storage_type)
+        {
+        case 0:
+          storage_type = "INT8";
+          break;
+        case 1:
+          storage_type = "INT16";
+          break;
+        case 2:
+          storage_type = "INT32";
+          break;
+        case 3:
+          storage_type = "FLOAT32";
+          break;
+        }
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Storage Type   : %s",storage_type);
+
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Color Channels : %u", (unsigned int) rla_info.number_channels);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Matte Channels : %u", (unsigned int) rla_info.number_matte_channels);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Aux Channels   : %u", (unsigned int) rla_info.number_auxiliary_channels);
+      if (is_rla3)
+        (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                              "Format Revision: 0x%04X", rla_info.revision);
+      else
+        (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                              "Aux Mask       : 0x%04X", rla_info.revision);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Gamma          : %.16s", rla_info.gamma);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Red Primary    : %.24s", rla_info.red_primary);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Green Primary  : %.24s", rla_info.green_primary);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Blue Primary   : %.24s", rla_info.blue_primary);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "White Point    : %.24s", rla_info.white_point);
+
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Job Number     : %u", (unsigned int) rla_info.job_number);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Name           : %.128s", rla_info.name);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Description    : %.128s", rla_info.description);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Program        : %.64s", rla_info.program);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Machine        : %.32s", rla_info.machine);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "User           : %.32s", rla_info.user);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Date           : %.20s", rla_info.date);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Aspect         : %.128s", rla_info.aspect);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Aspect Ratio   : %.8s", rla_info.aspect_ratio);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Colorspace     : %.32s", rla_info.chan);
+
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                            "Field          : %u",  (unsigned int) rla_info.field);
+
+      if (is_rla3)
+        {
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "Time           : %.12s", rla3_extra_info.time);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "Filter         : %.32s", rla3_extra_info.filter);
+          
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "BitsPerChannel : %u", rla3_extra_info.bits_per_channel);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "MatteType      : %u", rla3_extra_info.matte_type);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "MatteBits      : %u", rla3_extra_info.matte_bits);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "AuxType        : %u", rla3_extra_info.auxiliary_type);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "AuxBits        : %u", rla3_extra_info.auxiliary_bits);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "AuxData        : %.32s", rla3_extra_info.auxiliary);
+        }
+      else
+        {
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "FilterType     : %u", rlb_extra_info.filter_type);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "MagickNumber   : %u", rlb_extra_info.magic_number);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "LUT Size       : %u", rlb_extra_info.lut_size);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "User Space     : %u", rlb_extra_info.user_space_size);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "WF Space       : %u", rlb_extra_info.wf_space_size);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "LUT Type       : %u", rlb_extra_info.lut_type);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "MIX Type       : %u", rlb_extra_info.mix_type);
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "Encode Type    : %u", rlb_extra_info.encode_type);
+        }
+    }
 
   if ((rla_info.storage_type != 0) || (rla_info.storage_type > 3))
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
@@ -318,13 +437,18 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   image->matte=(rla_info.number_matte_channels != 0 ? MagickTrue: MagickFalse);
   image->columns=rla_info.active_window.right-rla_info.active_window.left+1;
   image->rows=rla_info.active_window.top-rla_info.active_window.bottom+1;
+
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                          "Dimensions     : %lux%lu",image->columns,image->rows);
+
   if (image_info->ping)
     {
       CloseBlob(image);
       return(image);
     }
   number_channels=rla_info.number_channels+rla_info.number_matte_channels;
-  scanlines=MagickAllocateMemoryElements(magick_uint32_t *,image->rows,sizeof(magick_uint32_t));
+  scanlines=MagickAllocateArray(magick_uint32_t *,image->rows,sizeof(magick_uint32_t));
   if (scanlines == (magick_uint32_t *) NULL)
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
   if (*rla_info.description != '\0')
@@ -333,7 +457,14 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
     Read offsets to each scanline data.
   */
   for (i=0; i < (long) image->rows; i++)
+    {
       scanlines[i]=(magick_uint32_t) ReadBlobMSBLong(image);
+#if 0
+      if (image->logging)
+        (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                              "scanline[%ld] = %lu",i,(unsigned long) scanlines[i]);
+#endif
+    }
   if (EOFBlob(image))
     ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
   /*
@@ -344,6 +475,10 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   {
     if (SeekBlob(image,scanlines[image->rows-y-1],SEEK_SET) == -1)
       {
+        if (image->logging)
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+                                "Failed seek to %lu",
+                                (unsigned long) image->rows-y-1);
         status=MagickFail;
         break;
       }
@@ -479,7 +614,9 @@ static Image *ReadRLAImage(const ImageInfo *image_info,ExceptionInfo *exception)
         break;
     }
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         {
           status=MagickFail;
           break;
@@ -524,8 +661,9 @@ ModuleExport void RegisterRLAImage(void)
   entry=SetMagickInfo("RLA");
   entry->decoder=(DecoderHandler) ReadRLAImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Alias/Wavefront image");
-  entry->module=AcquireString("RLA");
+  entry->description="Alias/Wavefront image";
+  entry->module="RLA";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 

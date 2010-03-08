@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003, 2004 GraphicsMagick Group
+% Copyright (C) 2003 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -36,13 +36,14 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -94,25 +95,25 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
   typedef struct _TGAInfo
   {
     unsigned char
-    id_length,       /* Size of Image ID field */
+      id_length,       /* Size of Image ID field */
       colormap_type,   /* Color map type */
       image_type;      /* Image type code */
 
     unsigned short
-    colormap_index,  /* Color map origin */
+      colormap_index,  /* Color map origin */
       colormap_length; /* Color map length */
 
     unsigned char
-    colormap_size;   /* Color map entry depth */
+      colormap_size;   /* Color map entry depth */
 
     unsigned short
-    x_origin,          /* X origin of image */
+      x_origin,        /* X origin of image */
       y_origin,        /* Y orgin of image */
       width,           /* Width of image */
       height;          /* Height of image */
 
     unsigned char
-    bits_per_pixel,  /* Image pixel size */
+      bits_per_pixel,  /* Image pixel size */
       attributes;      /* Image descriptor byte */
   } TGAInfo;
 
@@ -281,7 +282,7 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
             {
               image->colors=tga_info.colormap_length;
               (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-                                    "Using existing colormap with %lu colors.",image->colors);
+                                    "Using existing colormap with %u colors.",image->colors);
 
             }
           else
@@ -291,7 +292,7 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
               */
               image->colors=(0x01U << tga_info.bits_per_pixel);
               (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-                                    "Applying grayscale colormap with %lu colors.",image->colors);
+                                    "Applying grayscale colormap with %u colors.",image->colors);
               if (!AllocateImageColormap(image,image->colors))
                 ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
                                      image);
@@ -299,10 +300,10 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
         }
 
       (void) LogMagickEvent(CoderEvent,GetMagickModule(),
-                            "StorageClass=%s Matte=%s Depth=%lu Grayscale=%s",
+                            "StorageClass=%s Matte=%s Depth=%u Grayscale=%s",
                             ((image->storage_class == DirectClass) ? "DirectClass" : "PseduoClass"),
-                            (image->matte ? "True" : "False"), image->depth,
-                            (is_grayscale ? "True" : "False"));
+                            MagickBoolToString(image->matte), image->depth,
+                            MagickBoolToString(is_grayscale));
     
       if (tga_info.id_length != 0)
         {
@@ -312,7 +313,7 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
           /*
             TGA image comment.
           */
-          comment=MagickAllocateMemory(char *,tga_info.id_length+1);
+          comment=MagickAllocateMemory(char *,(size_t) tga_info.id_length+1);
           if (comment == (char *) NULL)
             ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
                                  image);
@@ -406,7 +407,7 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,(long) real,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < (long) image->columns; x++)
             {
               if ((tga_info.image_type == TGARLEColormap) ||
@@ -530,7 +531,9 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
           image->is_grayscale=is_grayscale;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
       if (EOFBlob(image))
@@ -566,7 +569,9 @@ static Image *ReadTGAImage(const ImageInfo *image_info,ExceptionInfo *exception)
               return((Image *) NULL);
             }
           image=SyncNextImageInList(image);
-          if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+          if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                      exception,LoadImagesText,
+                                      image->filename))
             break;
         }
     } while (status == True);
@@ -607,26 +612,29 @@ ModuleExport void RegisterTGAImage(void)
   entry=SetMagickInfo("ICB");
   entry->decoder=(DecoderHandler) ReadTGAImage;
   entry->encoder=(EncoderHandler) WriteTGAImage;
-  entry->description=AcquireString("Truevision Targa image");
-  entry->module=AcquireString("TGA");
+  entry->description="Truevision Targa image";
+  entry->module="TGA";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("TGA");
   entry->decoder=(DecoderHandler) ReadTGAImage;
   entry->encoder=(EncoderHandler) WriteTGAImage;
-  entry->description=AcquireString("Truevision Targa image");
-  entry->module=AcquireString("TGA");
+  entry->description="Truevision Targa image";
+  entry->module="TGA";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("VDA");
   entry->decoder=(DecoderHandler) ReadTGAImage;
   entry->encoder=(EncoderHandler) WriteTGAImage;
-  entry->description=AcquireString("Truevision Targa image");
-  entry->module=AcquireString("TGA");
+  entry->description="Truevision Targa image";
+  entry->module="TGA";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("VST");
   entry->decoder=(DecoderHandler) ReadTGAImage;
   entry->encoder=(EncoderHandler) WriteTGAImage;
-  entry->description=AcquireString("Truevision Targa image");
-  entry->module=AcquireString("TGA");
+  entry->description="Truevision Targa image";
+  entry->module="TGA";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -724,14 +732,16 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
   const ImageAttribute
     *attribute;
 
+  size_t
+    count;
+
   long
-    count,
     y;
 
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -769,6 +779,9 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
   scene=0;
   do
     {
+      ImageCharacteristics
+        characteristics;        
+
       write_grayscale=False;
 
       /*
@@ -784,6 +797,13 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
       (void) TransformColorspace(image,RGBColorspace);
 
       /*
+        Analyze image to be written.
+      */
+      (void) GetImageCharacteristics(image,&characteristics,
+                                     (OptimizeType == image_info->type),
+                                     &image->exception);
+
+      /*
         If some other type has not been requested and the image is
         grayscale, then write a grayscale image unless the image
         contains an alpha channel.
@@ -792,7 +812,7 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
            (image_info->type != TrueColorMatteType) &&
            (image_info->type != PaletteType) &&
            (image->matte == False)) &&
-          IsGrayImage(image,&image->exception))
+          (characteristics.grayscale))
         write_grayscale=True;
 
       /*
@@ -804,7 +824,7 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
            (image->colors > 256)) ||
           (image->matte == True))
         {
-          SyncImage(image);
+          /* (void) SyncImage(image); */
           image->storage_class=DirectClass;
         }
 
@@ -893,8 +913,8 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
           /*
             Dump colormap to file (blue, green, red byte order).
           */
-          targa_colormap=MagickAllocateMemory(unsigned char *,
-                                              3*targa_info.colormap_length);
+          targa_colormap=MagickAllocateArray(unsigned char *,
+                                             targa_info.colormap_length,3);
           if (targa_colormap == (unsigned char *) NULL)
             ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,
                                  image);
@@ -912,7 +932,7 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
       /*
         Convert MIFF to TGA raster pixels.
       */
-      count=(long) ((targa_info.bits_per_pixel*targa_info.width) >> 3);
+      count=(size_t) ((targa_info.bits_per_pixel*targa_info.width) >> 3);
       targa_pixels=MagickAllocateMemory(unsigned char *,count);
       if (targa_pixels == (unsigned char *) NULL)
         ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
@@ -922,7 +942,7 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
           if (p == (const PixelPacket *) NULL)
             break;
           q=targa_pixels;
-          indexes=GetIndexes(image);
+          indexes=AccessImmutableIndexes(image);
           for (x=0; x < (long) image->columns; x++)
             {
               if (targa_info.image_type == TargaColormap)
@@ -964,14 +984,18 @@ static unsigned int WriteTGAImage(const ImageInfo *image_info,Image *image)
           (void) WriteBlob(image,q-targa_pixels,(char *) targa_pixels);
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
       MagickFreeMemory(targa_pixels);
       if (image->next == (Image *) NULL)
         break;
       image=SyncNextImageInList(image);
-      if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+      if (!MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename))
         break;
     } while (image_info->adjoin);
   if (image_info->adjoin)

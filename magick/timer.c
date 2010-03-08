@@ -40,9 +40,6 @@
 /*
   Define declarations.
 */
-#if defined(macintosh)
-#define CLK_TCK  CLOCKS_PER_SEC
-#endif
 #if !defined(CLK_TCK)
 #define CLK_TCK  sysconf(_SC_CLK_TCK)
 #endif
@@ -123,7 +120,7 @@ static double ElapsedTime(void)
 
   return((double) times(&timer)/CLK_TCK);
 #else
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   return(NTElapsedTime());
 #else
   return((double) clock()/CLK_TCK);
@@ -198,6 +195,37 @@ MagickExport void GetTimerInfo(TimerInfo *time_info)
   time_info->state=UndefinedTimerState;
   time_info->signature=MagickSignature;
   StartTimer(time_info,True);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   G e t T i m e r R e s o l u t i o n                                       %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Obtain the measurement resolution of the timer.
+%
+%  The format of the GetTimerResolution method is:
+%
+%      void GetTimerInfo(TimerInfo *time_info)
+%
+%  A description of each parameter follows.
+%
+%    o  time_info: Timer statistics structure.
+%
+*/
+MagickExport double GetTimerResolution(void)
+{
+#if defined(MSWINDOWS)
+  return (0.02);
+#else
+  return (1.0/CLK_TCK);
+#endif
 }
 
 /*
@@ -378,7 +406,7 @@ static double UserTime(void)
   (void) times(&timer);
   return((double) (timer.tms_utime+timer.tms_stime)/CLK_TCK);
 #else
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   return(NTUserTime());
 #else
   return((double) clock()/CLK_TCK);

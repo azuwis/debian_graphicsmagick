@@ -36,9 +36,11 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
+#include "magick/channel.h"
 #include "magick/color.h"
 #include "magick/compress.h"
 #include "magick/constitute.h"
@@ -170,22 +172,25 @@ static unsigned int SerializeHuffman2DImage(const ImageInfo *image_info,
   */
   huffman_image->compression=Group4Compression;
 
-  SetImageType(huffman_image,BilevelType);
+  (void) SetImageType(huffman_image,BilevelType);
   FormatString(huffman_image->filename,"tiff:%s",filename);
   clone_info=CloneImageInfo(image_info);
   clone_info->compression=Group4Compression;
+  clone_info->type=BilevelType;
+  (void) AddDefinitions(clone_info,"tiff:fill-order=msb2lsb",
+                        &image->exception);
   status=WriteImage(clone_info,huffman_image);
   DestroyImageInfo(clone_info);
   DestroyImage(huffman_image);
   if (status == False)
     {
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       return(False);
     }
   tiff=TIFFOpen(filename,"rb");
   if (tiff == (TIFF *) NULL)
     {
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       ThrowBinaryException(FileOpenError,UnableToOpenFile,
         image_info->filename)
     }
@@ -204,7 +209,7 @@ static unsigned int SerializeHuffman2DImage(const ImageInfo *image_info,
   if (buffer == (unsigned char *) NULL)
     {
       TIFFClose(tiff);
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       ThrowBinaryException(ResourceLimitError,MemoryAllocationFailed,
         (char *) NULL)
     }
@@ -213,7 +218,7 @@ static unsigned int SerializeHuffman2DImage(const ImageInfo *image_info,
     {
       MagickFreeMemory(buffer);
       TIFFClose(tiff);
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       ThrowBinaryException(ResourceLimitError,MemoryAllocationFailed,
         (char *) NULL)
     }
@@ -230,7 +235,7 @@ static unsigned int SerializeHuffman2DImage(const ImageInfo *image_info,
   }
   MagickFreeMemory(buffer);
   TIFFClose(tiff);
-  LiberateTemporaryFile(filename);
+  (void) LiberateTemporaryFile(filename);
   return(True);
 }
 
@@ -240,7 +245,7 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   size_t
     length;
 
-  register long
+  register unsigned long
     i;
 
   unsigned char
@@ -284,7 +289,6 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
 }
 #endif
 
-#if defined(HasJPEG)
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -313,51 +317,36 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
 %    o image: The image.
 %
 */
-static unsigned int JPEGEncodeImage(const ImageInfo *image_info,
+static MagickPassFail JPEGEncodeImage(const ImageInfo *image_info,
   Image *image)
 {
-  Image
-    *jpeg_image;
-
-  size_t
-    i,
-    length;
-
-  register const unsigned char
-    *p;
-
-  void
+  unsigned char
     *blob;
 
-  /*
-    Write image as JPEG image to a temporary file.
-  */
-  jpeg_image=CloneImage(image,0,0,True,&image->exception);
-  if (jpeg_image == (Image *) NULL)
-    ThrowWriterException2(CoderError,image->exception.reason,image);
-  (void) strcpy(jpeg_image->magick,"JPEG");
-  blob=ImageToBlob(image_info,jpeg_image,&length,&image->exception);
-  if (blob == (void *) NULL)
-    ThrowWriterException2(CoderError,image->exception.reason,image);
+  size_t
+    length;
 
-  Ascii85Initialize(image);
-  for (p=blob,i=0; i < length; i++)
-    Ascii85Encode(image,(unsigned long) p[i]);
-  Ascii85Flush(image);
-  DestroyImage(jpeg_image);
-  MagickFreeMemory(blob);
-  return(True);
+  MagickPassFail
+    status=MagickFail;
+  
+  blob=ImageToJPEGBlob(image,image_info,&length,&image->exception);
+  if (blob != (unsigned char *) NULL)
+    {
+      register const unsigned char
+	*p;
+
+      register size_t
+	i;
+
+        Ascii85Initialize(image);
+      for (p=(const unsigned char*) blob,i=0; i < length; i++)
+	Ascii85Encode(image,(unsigned long) p[i]);
+      Ascii85Flush(image);
+      MagickFreeMemory(blob);
+      status=MagickPass;
+    }
+  return status;
 }
-#else
-static unsigned int JPEGEncodeImage(const ImageInfo *image_info,
-  Image *image)
-{
-  assert(image != (Image *) NULL);
-  assert(image->signature == MagickSignature);
-  ThrowBinaryException(MissingDelegateError,JPEGLibraryIsNotAvailable,image->filename)
-  return(False);
-}
-#endif
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -389,13 +378,16 @@ ModuleExport void RegisterPS3Image(void)
 
   entry=SetMagickInfo("EPS3");
   entry->encoder=(EncoderHandler) WritePS3Image;
-  entry->description=AcquireString("Adobe Level III Encapsulated PostScript");
-  entry->module=AcquireString("PS3");
+  entry->description="Adobe Level III Encapsulated PostScript";
+  entry->module="PS3";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PS3");
   entry->encoder=(EncoderHandler) WritePS3Image;
-  entry->description=AcquireString("Adobe Level III PostScript");
-  entry->module=AcquireString("PS3");
+  entry->description="Adobe Level III PostScript";
+  entry->module="PS3";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -445,7 +437,7 @@ static unsigned int SerializePseudoClassImage(const ImageInfo *image_info,
   int
     status;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   assert(image != (Image *) NULL);
@@ -461,13 +453,15 @@ static unsigned int SerializePseudoClassImage(const ImageInfo *image_info,
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     for (x=0; x < (long) image->columns; x++)
       *q++=indexes[x];
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
         {
-          status=MagickMonitor(SaveImageText,y,image->rows,&image->exception);
+          status=MagickMonitorFormatted(y,image->rows,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows);
           if (status == False)
             break;
         }
@@ -558,7 +552,9 @@ static unsigned int SerializeMultiChannelImage(const ImageInfo *image_info,
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
         {
-          status=MagickMonitor(SaveImageText,y,image->rows,&image->exception);
+          status=MagickMonitorFormatted(y,image->rows,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows);
           if (status == False)
             break;
         }
@@ -595,15 +591,17 @@ static unsigned int SerializeMultiChannelImage(const ImageInfo *image_info,
 %    o image: The image for which the RGB or CMYK channels should be
 %             serialized.
 %
+%    o characteristics: Already populated image characteristics.
+%
 %    o pixels: the serialized image channels.
 %
 %    o length: the length of the pixels mamory area.
 %
 */
 static unsigned int SerializeSingleChannelImage(const ImageInfo *image_info,
-  Image *image, unsigned char **pixels, size_t *length)
+  Image *image,unsigned char **pixels, size_t *length)
 {
-  long
+  unsigned long
     x,
     y;
 
@@ -637,14 +635,14 @@ static unsigned int SerializeSingleChannelImage(const ImageInfo *image_info,
       image);
 
   q=(*pixels);
-  for (y=0; y < (long) image->rows; y++)
+  for (y=0; y < image->rows; y++)
   {
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
     if (pack == 1)
     {
-      for (x=0; x < (long) image->columns; x++)
+      for (x=0; x < image->columns; x++)
       {
         *q++=ScaleQuantumToChar(PixelIntensityToQuantum(p));
         p++;
@@ -653,7 +651,7 @@ static unsigned int SerializeSingleChannelImage(const ImageInfo *image_info,
     else
     {
       code=0;
-      for (x=0; x < (long) padded_columns; x++)
+      for (x=0; x < padded_columns; x++)
       {
         bit=0x00;
         if (x < image->columns)
@@ -670,8 +668,10 @@ static unsigned int SerializeSingleChannelImage(const ImageInfo *image_info,
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
         {
-          status=MagickMonitor(SaveImageText,y,image->rows,
-            &image->exception);
+          status=MagickMonitorFormatted(y,image->rows,
+                                        &image->exception,SaveImageText,
+                                        image->filename,
+					image->columns,image->rows);
           if (status == False)
             break;
         }
@@ -742,7 +742,7 @@ typedef struct WriteByteHookInfo_
     *image;
 } WriteByteHookInfo;
 
-static unsigned int MaskWriteByteHook(Image *mask_image,
+static unsigned int MaskWriteByteHook(Image *ARGUNUSED(mask_image),
   const magick_uint8_t code, void *info)
 {
   Ascii85Encode(((WriteByteHookInfo *)info)->image, (unsigned long)code);
@@ -831,7 +831,7 @@ static unsigned int WritePS3MaskImage(const ImageInfo *image_info,Image *image)
     DestroyImage(mask_image);
     return(False);
   }
-  SetImageType(mask_image, BilevelType);
+  (void) SetImageType(mask_image, BilevelType);
   mask_image->matte=False;
 
   /* Only lossless compressions for the mask */
@@ -1200,12 +1200,12 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
   RectangleInfo
     geometry;
 
-  register long
+  register unsigned int
     i,
     j;
 
   SegmentInfo
-    bounds;
+    bounds={0.0,0.0,0.0,0.0};
 
   size_t
     length;
@@ -1244,14 +1244,6 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
       break;
     }
 #endif
-#if !defined(HasLZW)
-    case LZWCompression:
-    {
-      compression=RLECompression;
-      ThrowException(&image->exception,MissingDelegateError,LZWEncodingNotEnabled,image->filename);
-      break;
-    }
-#endif
 #if !defined(HasZLIB)
     case ZipCompression:
     {
@@ -1281,7 +1273,7 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
     FormatString(page_geometry,"%lux%lu",image->columns,image->rows);
     if (image_info->page != (char *) NULL)
       {
-        (void) strncpy(page_geometry,image_info->page,MaxTextExtent-1);
+        (void) strlcpy(page_geometry,image_info->page,MaxTextExtent);
       }
     else
       {
@@ -1304,7 +1296,7 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
     dy_resolution=72.0;
     x_resolution=72.0;
     (void) strcpy(density,PSDensityGeometry);
-    count=GetMagickDimension(density,&x_resolution,&y_resolution);
+    count=GetMagickDimension(density,&x_resolution,&y_resolution,NULL,NULL);
     if (count != 2)
       y_resolution=x_resolution;
     if (image_info->density != (char *) NULL)
@@ -1315,7 +1307,7 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
         unit_conversion=
           image_info->units == PixelsPerCentimeterResolution ? 2.54 : 1.0;
         count=GetMagickDimension(image_info->density,&x_resolution,
-          &y_resolution);
+          &y_resolution,NULL,NULL);
         x_resolution*=unit_conversion;
         if (count != 2)
           y_resolution=x_resolution;
@@ -1363,7 +1355,7 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
         /* File creation timestamp */
         timer=time((time_t *) NULL);
         (void) localtime(&timer);
-        (void) strncpy(date,ctime(&timer),MaxTextExtent-1);
+        (void) strlcpy(date,ctime(&timer),MaxTextExtent);
         date[strlen(date)-1]='\0';
         FormatString(buffer,"%%%%CreationDate: %.1024s\n",date);
         (void) WriteBlobString(image,buffer);
@@ -1437,14 +1429,17 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
         attribute=GetImageAttribute(image,"label");
         if (attribute != (const ImageAttribute *) NULL)
           {
+            long
+              si;
+
             (void) WriteBlobString(image,"\n  % LABELS\n  /Helvetica "
               "findfont pointsize scalefont setfont\n");
-            for (i=(long) MultilineCensus(attribute->value)-1; i >= 0; i--)
+            for (si=(long) MultilineCensus(attribute->value)-1; si >= 0; si--)
               {
                 (void) WriteBlobString(image,
                   "  currentfile buffer readline pop token pop\n");
                 FormatString(buffer,"  0 y %g add moveto show pop\n",
-                  i*image_info->pointsize+12);
+                  si*image_info->pointsize+12);
                 (void) WriteBlobString(image,buffer);
               }
           }
@@ -1571,7 +1566,7 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
   
     /* Compression seems to take precedence over anyting */
     if (compression == FaxCompression)
-      SetImageType(image, BilevelType);
+      (void) SetImageType(image, BilevelType);
 
     /* Showpage for non-EPS. */
     (void) WriteBlobString(image,
@@ -1651,15 +1646,15 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
       /* Image data. Always ASCII85 encoded. */
       if (compression == JPEGCompression)
         {
-            status=JPEGEncodeImage(image_info,image);
+	  status=JPEGEncodeImage(image_info,image);
         }
       else
         if (compression == FaxCompression)
           {
-              if (LocaleCompare(CCITTParam,"0") == 0)
-                status=HuffmanEncodeImage(image_info,image);
-              else
-                status=Huffman2DEncodeImage(image_info,image);
+	    if (LocaleCompare(CCITTParam,"0") == 0)
+	      status=HuffmanEncodeImage(image_info,image);
+	    else
+	      status=Huffman2DEncodeImage(image_info,image);
           }
         else
           {
@@ -1795,12 +1790,12 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
           }
           
           /* Number of colors in color map */
-          FormatString(buffer,"%lu\n",image->colors);
+          FormatString(buffer,"%u\n",image->colors);
           (void) WriteBlobString(image,buffer);
 
           /* Color map - uncompressed, ascii85 encoded */
           Ascii85Initialize(image);
-          for (i=0; i < (long) image->colors; i++)
+          for (i=0; i < image->colors; i++)
           {
             Ascii85Encode(image, (unsigned long)image->colormap[i].red);
             Ascii85Encode(image, (unsigned long)image->colormap[i].green);
@@ -1863,8 +1858,9 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
     scene++;
@@ -1931,6 +1927,18 @@ static unsigned int WritePS3Image(const ImageInfo *image_info,Image *image)
 %
 %
 */
+
+static voidpf ZLIBAllocFunc(voidpf opaque, uInt items, uInt size)
+{
+  ARG_NOT_USED(opaque);
+  return MagickMallocCleared((size_t) items*size);
+}
+static void ZLIBFreeFunc(voidpf opaque, voidpf address)
+{
+  ARG_NOT_USED(opaque);
+  MagickFree(address);
+}
+
 static unsigned int ZLIBEncode2Image(Image *image,const size_t length,
   const unsigned long quality,unsigned char *pixels,WriteByteHook write_byte,
   void *info)
@@ -1961,8 +1969,8 @@ static unsigned int ZLIBEncode2Image(Image *image,const size_t length,
   stream.avail_in=(unsigned int) length;
   stream.next_out=compressed_pixels;
   stream.avail_out=(unsigned int) compressed_packets;
-  stream.zalloc=(alloc_func) NULL;
-  stream.zfree=(free_func) NULL;
+  stream.zalloc=ZLIBAllocFunc;
+  stream.zfree=ZLIBFreeFunc;
   stream.opaque=(voidpf) NULL;
   status=deflateInit(&stream,(int) Min(quality/10,9));
   if (status == Z_OK)

@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -254,7 +255,7 @@ static Image *ReadXBMImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if ((image->columns % 16) && ((image->columns % 16) < 9)  && (version == 10))
     padding=1;
   bytes_per_line=(image->columns+7)/8+padding;
-  data=MagickAllocateMemoryElements(unsigned char *,image->rows,bytes_per_line);
+  data=MagickAllocateArray(unsigned char *,image->rows,bytes_per_line);
   if (data == (unsigned char *) NULL)
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
   /*
@@ -329,7 +330,7 @@ static Image *ReadXBMImage(const ImageInfo *image_info,ExceptionInfo *exception)
     q=SetImagePixels(image,0,y,image->columns,1);
     if (q == (PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessMutableIndexes(image);
     bit=0;
     byte=0;
     for (x=0; x < (long) image->columns; x++)
@@ -345,11 +346,13 @@ static Image *ReadXBMImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-       if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,
+                                  LoadImageText,image->filename,
+				  image->columns,image->rows))
          break;
   }
   MagickFreeMemory(data);
-  SyncImage(image);
+  (void) SyncImage(image);
   CloseBlob(image);
   return(image);
 }
@@ -387,9 +390,8 @@ ModuleExport void RegisterXBMImage(void)
   entry->encoder=(EncoderHandler) WriteXBMImage;
   entry->magick=(MagickHandler) IsXBM;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("X Windows system bitmap (black and white)");
-  entry->module=AcquireString("XBM");
+  entry->description="X Windows system bitmap (black/white)";
+  entry->module="XBM";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -461,7 +463,7 @@ static unsigned int WriteXBMImage(const ImageInfo *image_info,Image *image)
   register long
     x;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   unsigned char
@@ -485,7 +487,7 @@ static unsigned int WriteXBMImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   /*
     Write X bitmap header.
   */
@@ -501,7 +503,7 @@ static unsigned int WriteXBMImage(const ImageInfo *image_info,Image *image)
   /*
     Convert MIFF to X bitmap pixels.
   */
-  SetImageType(image,BilevelType);
+  (void) SetImageType(image,BilevelType);
   polarity=(PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2));
   if (image->colors == 2)
     polarity=(PixelIntensityToQuantum(&image->colormap[0]) <
@@ -518,7 +520,7 @@ static unsigned int WriteXBMImage(const ImageInfo *image_info,Image *image)
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     for (x=0; x < (long) image->columns; x++)
     {
       byte>>=1;
@@ -563,7 +565,9 @@ static unsigned int WriteXBMImage(const ImageInfo *image_info,Image *image)
         byte=0;
       };
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   (void) strcpy(buffer,"};\n");

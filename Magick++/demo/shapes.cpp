@@ -79,7 +79,7 @@ int main( int /*argc*/, char ** argv)
     //
     // Floodfill object with blue
     //
-    image.colorFuzz( 80 );
+    image.colorFuzz( MaxRGB*0.8 ); // 80%
     image.floodFillColor( "+132+62", "blue" );
 
     //
@@ -107,7 +107,8 @@ int main( int /*argc*/, char ** argv)
     //
 
     cout << "Writing image \"shapes_out.miff\" ..." << endl;
-    image.compressType( RunlengthEncodedCompression );
+    image.depth( 8 );
+    image.compressType( RLECompression );
     image.write( "shapes_out.miff" );
 
     // cout << "Display image..." << endl;

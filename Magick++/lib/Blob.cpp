@@ -6,6 +6,7 @@
 //
 
 #define MAGICK_IMPLEMENTATION
+#define MAGICK_PLUSPLUS_IMPLEMENTATION
 
 #include "Magick++/Include.h"
 #include "Magick++/Blob.h"
@@ -104,7 +105,7 @@ std::string Magick::Blob::base64 ( void )
   if(encoded)
     {
       std::string result(encoded,encoded_length);
-      LiberateMemory(reinterpret_cast<void **>(&encoded));
+      MagickFreeMemory(encoded);
       return result;
     }
 

@@ -1,34 +1,201 @@
-graphicsmagick (1.1.11-3.2+lenny1) stable-security; urgency=high
+graphicsmagick (1.3.12-1) unstable; urgency=low
 
-  * Non-maintainer upload by the Security Team.
-  * Fixed CVE-2008-3134: Multiple errors within the processing of various
-    formats can be exploited to crash the application (Closes: 491439)
-  * Fixed CVE-2008-6070: Multiple heap-based buffer underflows in the
-    ReadPALMImage function
-  * Fixed CVE-2008-6071: Heap-based buffer overflow in the DecodeImage function
-  * Fixed CVE-2008-6072: Multiple errors within the processing of XCF and
-    CINEON images can be exploited to crash the application.
-  * Fixed CVE-2008-6621: Multiple errors within the processing of DPX images
-    can be exploited to crash the application.
-  * Fixed CVE-2009-1882: Integer overflow in the XMakeImage function
-    (Closes: 530946)
+  * New upstream version 1.3.12.
+    + Fixes writing to standard output. Closes: #571719
+  * magick/effect.c: Disable OpenMP threading on Sparc for MedianFilterImage()
+    and ReduceNoiseImage() as it seems to cause eccessively long runtimes.
+    Should prevent build failures due to the testsuite timing out on the
+    Sparc buildds. Advice from upstream.
 
- -- Giuseppe Iuculano <iuculano@debian.org>  Mon, 05 Oct 2009 22:11:23 +0200
+ -- Daniel Kobras <kobras@debian.org>  Mon, 08 Mar 2010 22:05:19 +0100
 
-graphicsmagick (1.1.11-3.2) unstable; urgency=high
+graphicsmagick (1.3.11-1) unstable; urgency=low
 
-  * Non-maintainer upload by the Security Team:
-  * Fix CVE-2008-1096 (patch taken from Red Hat)
+  * New upstream version 1.3.11.
+    + Merges or supersedes most Debian-specific patches, apart from
+      Hurd PATH_MAX fix, added DPS stubs, and tweaks to
+      GraphicsMagick-config.
+    + Fixes display option -update to work without -delay. Closes: #414779
+    + Adjusts selection of output file when option -adjoin is given.
+      Closes: #552998
+    + No longer crashes when a convolution operation has failed.
+      Closes: #539251
+    + Fixes conversion of transparent images to XPM. Closes: #560232
+  * debian/control: Package compiles with version 3.8.4 of Debian policy.
+  * debian/control: Add debhelper substitution variable misc:Depends to
+    all Depends lines to placate lintian.
+  * debian/copyright: Resync with Copyright.txt and www/authors.rst from
+    upstream distribution.
+  * debian/libgraphicsmagick3.symbols: Add two new symbols in 1.3.11.
+  * debian/rules: Add logfile output if testsuite has failed.
 
- -- Moritz Muehlenhoff <jmm@debian.org>  Sat, 11 Oct 2008 00:32:44 +0200
+ -- Daniel Kobras <kobras@debian.org>  Mon, 22 Feb 2010 19:33:44 +0100
 
-graphicsmagick (1.1.11-3.1) unstable; urgency=low
+graphicsmagick (1.3.8-1) unstable; urgency=low
 
-  * Non-maintainer upload from the Cambridge BSP.
-  * libgraphicsmagick1-dev: depend on libice-dev, libsm-dev, libxext-dev
-    (closes: #486985)
+  * New upstream version 1.3.8.
+  * magick/image.c, magick/studio.h: Revert an upstream change that defined
+    four global string constants as macros, causing an involuntary ABI
+    change.
+  * magick/static.c: Add stub definitions for registration functions of
+    DPS module to ensure a stable ABI.
+  * magick/xwindow.c: Debian-specific patch for CVE-2009-1882 superseded
+    with upstream change.
+  * debian/control: Complies with version 3.8.3 of Debian policy.
+  * debian/control: Build-depend on package hardening-includes.
+  * debian/libgraphicsmagick3.symbols: Add 65 new symbols in 1.3.8.
+  * debian/rules: Replace homebrew hardening flags with generic version
+    imported from hardening-includes.
+  * debian/rules: Perl binding is no longer built by default. Adjust make
+    calls.
 
- -- Simon McVittie <smcv@debian.org>  Sat, 28 Jun 2008 14:47:20 +0000
+ -- Daniel Kobras <kobras@debian.org>  Fri, 29 Jan 2010 00:52:41 +0100
+
+graphicsmagick (1.3.5-6) unstable; urgency=high
+
+  * debian/control: Build-depend on libltdl-dev to link with system-wide
+    library. Avoid security bug in included convenience copy. (CVE-2009-3736)
+    Closes: #559811
+  * debian/control: Include libltdl-dev as a dependency to
+    libgraphicsmagick3-dev.
+  * debian/libgraphicsmagick3.symbols: Remove ltdl symbols that now get
+    pulled in via a library dependency. Closes: #533410
+
+ -- Daniel Kobras <kobras@debian.org>  Thu, 10 Dec 2009 22:00:16 +0100
+
+graphicsmagick (1.3.5-5.2) unstable; urgency=low
+
+  * Non-maintainer upload.
+  * Applied patch to fix FTBFS on hurd-i386, by Barry deFreese and Samuel
+    Thibault. Closes: #533513. 
+
+ -- Michael Banck <mbanck@debian.org>  Mon, 28 Sep 2009 23:02:18 +0200
+
+graphicsmagick (1.3.5-5.1) unstable; urgency=high
+
+  * Non-maintainer upload.
+  * Fixed integer overflow in XMakeImage function in xwindow.c
+    (Closes: #530946) (CVE-2009-1882)
+
+ -- Giuseppe Iuculano <giuseppe@iuculano.it>  Thu, 10 Sep 2009 19:08:13 +0200
+
+graphicsmagick (1.3.5-5) unstable; urgency=high
+
+  * debian/control: Update Conflicts/Replaces of -dev-compat package to
+    follow libmagick-dev package split. Closes: #526482
+  * magick/GraphicsMagick-config.{in,1}: Do not expose compiler options
+    used to build the library itself via GraphicsMagick-config. Only
+    provide options that are actually useful to depending applications.
+    Adjust documentation accordingly. Closes: #523596
+
+ -- Daniel Kobras <kobras@debian.org>  Thu, 07 May 2009 20:09:28 +0200
+
+graphicsmagick (1.3.5-4) unstable; urgency=low
+
+  * debian/libgraphicsmagick++3.symbols*: Maintaining symbols files
+    for a C++ ABI does not appear to be a good idea at present as
+    arch- and optimisation-dependent symbols from instantiated standard
+    templates tend to slip in. Turn off generation of symbols files
+    for the C++ bindings, but keep respective files with suffix
+    ".disabled" for potential later re-use. As a side-effect, this
+    change also fixes the build failures on i386 and armel.
+    Closes: #522706
+  * debian/control: graphicsmagick-dbg has been moved to section debug.
+    Adapt control file accordingly.
+
+ -- Daniel Kobras <kobras@debian.org>  Wed, 08 Apr 2009 19:37:57 +0200
+
+graphicsmagick (1.3.5-3) unstable; urgency=low
+
+  * debian/rules: On some archs, -z relro has to be passed explicitly
+    as a linker option to gcc.
+  * debian/libgraphicsmagick++3.symbols.*.in: Strip Debian revision
+    that slipped into some symbol versions.
+
+ -- Daniel Kobras <kobras@debian.org>  Thu, 02 Apr 2009 21:51:06 +0200
+
+graphicsmagick (1.3.5-2) unstable; urgency=low
+
+  * debian/changelog: Previous upload ended up in unstable by mistake.
+    Correct distribution field in changelog entry accordingly.
+  * debian/libgraphicsmagick++3.symbols*: Handle architecture-dependent
+    differences in exported symbols of C++ bindings.
+  * debian/rules: Restrict hardening options to OS/architecture combinations
+    where they actually work.
+
+ -- Daniel Kobras <kobras@debian.org>  Tue, 31 Mar 2009 18:00:49 +0200
+
+graphicsmagick (1.3.5-1) unstable; urgency=low
+
+  * New upstream version 1.3.5. Closes: #516909
+    + SONAME versions of C and C++ shared libraries change from 2 to 3.
+  * magick/command.c: Avoid double free() error when calling
+    "gm import" with option "-frame". Closes: #506473
+  * utilities/gm.1: Quote one more single tick in gm(1) man page. Thanks
+    to Vincent Mauge.
+  * debian/changelog: Add information about security problems fixed in
+    1.2.4 upstream release to previous changelog entry.
+  * debian/control: Adjust for SONAME changes.
+  * debian/control: Remove obsolete alternative dependencies on x-dev and
+    gs.
+  * debian/copyright: Updated list of authors in line with
+    www/authors.html
+  * debian/graphicsmagick.docs: Most documentation has moved below www
+    and doesn't have to be installed separately. Trim file list
+    accordingly.
+  * debian/graphicsmagick.install: images subdirectory has moved below
+    www, so doesn't have to be installed separately.
+  * debian/libgraphicsmagick{,++}2.install: Renamed to
+    libgraphicsmagick{,++}3.install.
+  * debian/libgraphicsmagick{,_++}3.symbols: Add list of current library
+    symbols for C and C++ bindings.
+  * debian/rules: Adjust for SONAME changes.
+  * debian/rules: Make use of improved security features in gcc and ld,
+    unless DEB_BUILD_OPTIONS contain the "noharden" keyword.
+  * debian/rules: Packages comply with version 3.8.1 of Debian policy.
+
+ -- Daniel Kobras <kobras@debian.org>  Sun, 29 Mar 2009 18:23:02 +0200
+
+graphicsmagick (1.2.4-1) experimental; urgency=low
+
+  * New upstream version 1.2.4.
+    + Fixes DoS vulnerabilities in various coders (CVE-2008-3134).
+      Closes: #491439
+  * debian/control: Add build-time dependencies on libsm-dev, libice-dev,
+    and libxext-dev as required by AC_PATH_XTRA autoconf macro. Also add
+    the above as dependencies to libgraphicsmagick1-dev for consistency
+    with output of (deprecated) script GraphicsMagick-config. Thanks to
+    Simon McVittie for the initial fix. Closes: #486985
+
+ -- Daniel Kobras <kobras@debian.org>  Sun, 06 Jul 2008 19:55:04 +0200
+
+graphicsmagick (1.2.3-1) experimental; urgency=low
+
+  * New upstream version 1.2.3.
+    + Includes remaining fixes for all reported lower-impact
+      denial-of-service problems in several coders. Closes: #414370
+  * debian/rules: Disable workaround for arm stack overflow in drawtest as
+    toolchains problems appear to be fixed.
+  * debian/rules: Explicitly configure desired docdir.
+
+ -- Daniel Kobras <kobras@debian.org>  Sun, 22 Jun 2008 15:06:52 +0200
+
+graphicsmagick (1.2.1-1) experimental; urgency=low
+
+  * New upstream version 1.2.1.
+    + Binary interface is incompatible with 1.1.x releases, library
+      SONAME has been changed accordingly.
+    + Includes fix for missing cstring include in Geometry.cpp,
+      Debian-specific patch dropped.
+    + Implements different method to avoid failures of WMF testsuite due
+      to rendering changes in libwmf, Debian-specific patch dropped.
+  * debian/control, debian/rules: Bump SONAME version of library packages
+    from 1 to 2. -dev package names remain unchanged.
+  * debian/copyright: Update from upstream's Copyright.txt and AUTHORS.txt.
+  * debian/graphicsmagick.docs: Update to current list of documentation
+    provided in upstream release.
+
+ -- Daniel Kobras <kobras@debian.org>  Fri, 09 May 2008 16:15:24 +0200
 
 graphicsmagick (1.1.11-3) unstable; urgency=high
 

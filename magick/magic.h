@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003 - 2009 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
@@ -16,47 +16,33 @@ extern "C" {
 #endif
 
 /*
-  Typedef declarations.
-*/
-typedef struct _MagicInfo
-{  
-  char
-    *path,
-    *name,
-    *target;
-
-  unsigned char
-    *magic;
-
-  unsigned long
-    length,
-    offset;
-
-  unsigned int
-    stealth;
-
-  unsigned long
-    signature;
-
-  struct _MagicInfo
-    *previous,
-    *next;
-} MagicInfo;
-
-/*
   Method declarations.
 */
-extern MagickExport const MagicInfo
-  *GetMagicInfo(const unsigned char *,const size_t,ExceptionInfo *);
+extern MagickExport MagickPassFail
+  GetMagickFileFormat(const unsigned char *header,const size_t header_length,
+     char *format,const size_t format_length,ExceptionInfo *exception),
+  ListMagicInfo(FILE *file,ExceptionInfo *exception);
 
-extern MagickExport unsigned int
-  ListMagicInfo(FILE *,ExceptionInfo *);
+#if defined(MAGICK_IMPLEMENTATION)
+
+extern MagickExport MagickPassFail
+  InitializeMagicInfo(void);
 
 extern MagickExport void
   DestroyMagicInfo(void);
+
+#endif /* MAGICK_IMPLEMENTATION */
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
-#endif
+#endif /* _MAGICK_MAGIC_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

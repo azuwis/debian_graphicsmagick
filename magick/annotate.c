@@ -39,12 +39,15 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
+#include "magick/alpha_composite.h"
+#include "magick/analyze.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
 #include "magick/composite.h"
 #include "magick/constitute.h"
 #include "magick/gem.h"
 #include "magick/log.h"
+#include "magick/pixel_cache.h"
 #include "magick/render.h"
 #include "magick/tempfile.h"
 #include "magick/transform.h"
@@ -154,7 +157,7 @@ static unsigned int
 %
 %
 */
-MagickExport unsigned int AnnotateImage(Image *image,const DrawInfo *draw_info)
+MagickExport MagickPassFail AnnotateImage(Image *image,const DrawInfo *draw_info)
 {
   char
     primitive[MaxTextExtent],
@@ -181,8 +184,10 @@ MagickExport unsigned int AnnotateImage(Image *image,const DrawInfo *draw_info)
     metrics;
 
   unsigned int
-    matte,
-    status;
+    matte;
+
+  MagickPassFail
+    status=MagickPass;
 
   unsigned long
     height,
@@ -196,9 +201,9 @@ MagickExport unsigned int AnnotateImage(Image *image,const DrawInfo *draw_info)
   assert(draw_info != (DrawInfo *) NULL);
   assert(draw_info->signature == MagickSignature);
   if (draw_info->text == (char *) NULL)
-    return(False);
+    return(MagickFail);
   if (*draw_info->text == '\0')
-    return(False);
+    return(MagickFail);
   text=TranslateText((ImageInfo *) NULL,image,draw_info->text);
   if (text == (char *) NULL)
     ThrowBinaryException3(ResourceLimitError,MemoryAllocationFailed,
@@ -206,7 +211,7 @@ MagickExport unsigned int AnnotateImage(Image *image,const DrawInfo *draw_info)
   textlist=StringToList(text);
   MagickFreeMemory(text);
   if (textlist == (char **) NULL)
-    return(False);
+    return(MagickFail);
   length=strlen(textlist[0]);
   for (i=1; textlist[i] != (char *) NULL; i++)
     if (strlen(textlist[i]) > length)
@@ -385,7 +390,7 @@ MagickExport unsigned int AnnotateImage(Image *image,const DrawInfo *draw_info)
       Annotate image with text.
     */
     status=RenderType(image,annotate,&offset,&metrics);
-    if (status == False)
+    if (status == MagickFail)
       break;
     if (annotate->decorate == LineThroughDecoration)
       {
@@ -732,7 +737,7 @@ static unsigned short *EncodeUnicode(const char *text,size_t *count)
 %
 %
 */
-MagickExport unsigned int GetTypeMetrics(Image *image,const DrawInfo *draw_info,
+MagickExport MagickPassFail GetTypeMetrics(Image *image,const DrawInfo *draw_info,
   TypeMetric *metrics)
 {
   DrawInfo
@@ -741,7 +746,7 @@ MagickExport unsigned int GetTypeMetrics(Image *image,const DrawInfo *draw_info,
   PointInfo
     offset;
 
-  unsigned int
+  MagickPassFail
     status;
 
   assert(draw_info != (DrawInfo *) NULL);
@@ -749,7 +754,7 @@ MagickExport unsigned int GetTypeMetrics(Image *image,const DrawInfo *draw_info,
   assert(draw_info->signature == MagickSignature);
   clone_info=CloneDrawInfo((ImageInfo *) NULL,draw_info);
   clone_info->render=False;
-  memset(metrics,0,sizeof(TypeMetric));
+  (void) memset(metrics,0,sizeof(TypeMetric));
   offset.x=0.0;
   offset.y=0.0;
   status=RenderType(image,clone_info,&offset,metrics);
@@ -791,7 +796,7 @@ MagickExport unsigned int GetTypeMetrics(Image *image,const DrawInfo *draw_info,
 %
 %
 */
-static unsigned int RenderType(Image *image,const DrawInfo *draw_info,
+static MagickPassFail RenderType(Image *image,const DrawInfo *draw_info,
   const PointInfo *offset,TypeMetric *metrics)
 {
   const TypeInfo
@@ -800,7 +805,7 @@ static unsigned int RenderType(Image *image,const DrawInfo *draw_info,
   DrawInfo
    *clone_info;
 
-  unsigned int
+  MagickPassFail
     status;
 
   type_info=(const TypeInfo *) NULL;
@@ -865,29 +870,6 @@ static unsigned int RenderType(Image *image,const DrawInfo *draw_info,
 %
 */
 
-static inline PixelPacket AlphaComposite(const PixelPacket *p,
-  const double alpha,const PixelPacket *q,const double beta)
-{
-  PixelPacket
-    composite;
-
-  double
-    MaxRGB_alpha,
-    MaxRGB_beta;
-
-  MaxRGB_alpha=MaxRGB-alpha;
-  MaxRGB_beta=MaxRGB-beta;
-  composite.red=(Quantum)
-    ((MaxRGB_alpha*p->red+alpha*MaxRGB_beta*q->red/MaxRGB)/MaxRGB+0.5);
-  composite.green=(Quantum)
-    ((MaxRGB_alpha*p->green+alpha*MaxRGB_beta*q->green/MaxRGB)/MaxRGB+0.5);
-  composite.blue=(Quantum)
-    ((MaxRGB_alpha*p->blue+alpha*MaxRGB_beta*q->blue/MaxRGB)/MaxRGB+0.5);
-  composite.opacity=(Quantum)
-    (MaxRGB-(MaxRGB_alpha+alpha*MaxRGB_beta/MaxRGB)+0.5);
-  return(composite);
-}
-
 #if defined(HasTTF)
 static int TraceCubicBezier(FT_Vector *p,FT_Vector *q,FT_Vector *to,
   DrawInfo *draw_info)
@@ -950,7 +932,7 @@ static int TraceQuadraticBezier(FT_Vector *control,FT_Vector *to,
   return(0);
 }
 
-static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
+static MagickPassFail RenderFreetype(Image *image,const DrawInfo *draw_info,
   const char *encoding,const PointInfo *offset,TypeMetric *metrics)
 {
   typedef struct _GlyphInfo
@@ -1041,6 +1023,9 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
   unsigned short
     *text;
 
+  glyph.image=(FT_Glyph) 0;
+  last_glyph.image=(FT_Glyph) 0;
+
   /*
     Initialize Truetype library.
   */
@@ -1101,7 +1086,7 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
   resolution.y=72.0;
   if (draw_info->density != (char *) NULL)
     {
-      i=GetMagickDimension(draw_info->density,&resolution.x,&resolution.y);
+      i=GetMagickDimension(draw_info->density,&resolution.x,&resolution.y,NULL,NULL);
       if (i != 2)
         resolution.y=resolution.x;
     }
@@ -1210,13 +1195,13 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
       exact bounding box but may be slightly larger in some
       situations.
     */
-    FT_Glyph_Get_CBox(glyph.image,FT_GLYPH_BBOX_SUBPIXELS,&bounds);
+    (void) FT_Glyph_Get_CBox(glyph.image,FT_GLYPH_BBOX_SUBPIXELS,&bounds);
 #else
     /*
       Compute exact bounding box for scaled outline. If necessary, the
       outline Bezier arcs are walked over to extract their extrema.
     */
-    FT_Outline_Get_BBox(&((FT_OutlineGlyph) glyph.image)->outline,&bounds);
+    (void) FT_Outline_Get_BBox(&((FT_OutlineGlyph) glyph.image)->outline,&bounds);
 #endif
     if ((i == 0) || (bounds.xMin < metrics->bounds.x1))
       metrics->bounds.x1=bounds.xMin;
@@ -1257,6 +1242,7 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
             point.x=offset->x+bitmap->left;
             point.y=offset->y-bitmap->top;
             p=bitmap->bitmap.buffer;
+            /* FIXME: OpenMP */
             for (y=0; y < (long) bitmap->bitmap.rows; y++)
             {
               if ((ceil(point.y+y-0.5) < 0) ||
@@ -1283,7 +1269,7 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
                   opacity=((*p) < 127 ? OpaqueOpacity : TransparentOpacity);
                 fill_color=draw_info->fill;
                 if (pattern != (Image *) NULL)
-                  fill_color=AcquireOnePixel(pattern,
+                  (void) AcquireOnePixelByReference(pattern,&fill_color,
                     (long) (point.x+x-pattern->tile_info.x) % pattern->columns,
                     (long) (point.y+y-pattern->tile_info.y) % pattern->rows,
                             &image->exception);
@@ -1297,8 +1283,8 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
                     q++;
                     continue;
                   }
-                *q=AlphaComposite(&fill_color,opacity,q,
-                                  image->matte ? q->opacity : OpaqueOpacity);
+                AlphaCompositePixel(q,&fill_color,opacity,q,
+                                    image->matte ? q->opacity : OpaqueOpacity);
                 if (!active)
                   (void) SyncImagePixels(image);
                 p++;
@@ -1341,11 +1327,12 @@ static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
   DestroyDrawInfo(clone_info);
   (void) FT_Done_Face(face);
   (void) FT_Done_FreeType(library);
-  return(True);
+  return(MagickPass);
 }
 #else
 static unsigned int RenderFreetype(Image *image,const DrawInfo *draw_info,
-  const char *encoding,const PointInfo *offset,TypeMetric *metrics)
+  const char * ARGUNUSED(encoding),const PointInfo * ARGUNUSED(offset),
+  TypeMetric * ARGUNUSED(metrics))
 {
   ThrowBinaryException(MissingDelegateError,FreeTypeLibraryIsNotAvailable,
     draw_info->font)
@@ -1417,7 +1404,7 @@ static char *EscapeParenthesis(const char *text)
   return(buffer);
 }
 
-static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
+static MagickPassFail RenderPostscript(Image *image,const DrawInfo *draw_info,
   const PointInfo *offset,TypeMetric *metrics)
 {
   char
@@ -1523,7 +1510,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
     MagickError2(image->exception.severity,image->exception.reason,
       image->exception.description);
   DestroyImageInfo(clone_info);
-  LiberateTemporaryFile(filename);
+  (void) LiberateTemporaryFile(filename);
   if (annotate_image == (Image *) NULL)
     return(False);
   resolution.x=72.0;
@@ -1533,7 +1520,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
       int
         count;
 
-      count=GetMagickDimension(draw_info->density,&resolution.x,&resolution.y);
+      count=GetMagickDimension(draw_info->density,&resolution.x,&resolution.y,NULL,NULL);
       if (count != 2)
         resolution.y=resolution.x;
     }
@@ -1579,7 +1566,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
       /*
         Render fill color.
       */
-      SetImageType(annotate_image,TrueColorMatteType);
+      (void) SetImageType(annotate_image,TrueColorMatteType);
       fill_color=draw_info->fill;
       pattern=draw_info->fill_pattern;
       for (y=0; y < (long) annotate_image->rows; y++)
@@ -1590,7 +1577,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
         for (x=0; x < (long) annotate_image->columns; x++)
         {
           if (pattern != (Image *) NULL)
-            fill_color=AcquireOnePixel(pattern,
+            (void) AcquireOnePixelByReference(pattern,&fill_color,
               (long) (x-pattern->tile_info.x) % pattern->columns,
               (long) (y-pattern->tile_info.y) % pattern->rows,
               &image->exception);
@@ -1610,7 +1597,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
         metrics->descent)-0.5));
     }
   DestroyImage(annotate_image);
-  return(True);
+  return(MagickPass);
 }
 
 /*
@@ -1648,7 +1635,7 @@ static unsigned int RenderPostscript(Image *image,const DrawInfo *draw_info,
 %
 */
 #if defined(HasX11)
-static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
+static MagickPassFail RenderX11(Image *image,const DrawInfo *draw_info,
   const PointInfo *offset,TypeMetric *metrics)
 {
   static DrawInfo
@@ -1657,16 +1644,16 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
   static Display
     *display = (Display *) NULL;
 
-  static XAnnotateInfo
+  static MagickXAnnotateInfo
     annotate_info;
 
   static XFontStruct
     *font_info;
 
-  static XPixelInfo
+  static MagickXPixelInfo
     pixel;
 
-  static XResourceInfo
+  static MagickXResourceInfo
     resource_info;
 
   static XrmDatabase
@@ -1678,7 +1665,7 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
   static XVisualInfo
     *visual_info;
 
-  unsigned int
+  MagickPassFail
     status;
 
   unsigned long
@@ -1687,7 +1674,7 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
 
   if (display == (Display *) NULL)
     {
-      char
+      const char
         *client_name;
 
       /*
@@ -1700,10 +1687,10 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
       /*
         Get user defaults from X resource database.
       */
-      (void) XSetErrorHandler(XError);
-      client_name=SetClientName((char *) NULL);
-      resource_database=XGetResourceDatabase(display,client_name);
-      XGetResourceInfo(resource_database,client_name,&resource_info);
+      (void) XSetErrorHandler(MagickXError);
+      client_name=GetClientName();
+      resource_database=MagickXGetResourceDatabase(display,client_name);
+      MagickXGetResourceInfo(resource_database,client_name,&resource_info);
       resource_info.close_server=False;
       resource_info.colormap=PrivateColormap;
       resource_info.font=AllocateString(draw_info->font);
@@ -1716,7 +1703,7 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
       /*
         Initialize visual info.
       */
-      visual_info=XBestVisualInfo(display,map_info,&resource_info);
+      visual_info=MagickXBestVisualInfo(display,map_info,&resource_info);
       if (visual_info == (XVisualInfo *) NULL)
         ThrowBinaryException(XServerError,UnableToGetVisual,
           draw_info->server_name);
@@ -1725,23 +1712,23 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
       /*
         Initialize Standard Colormap info.
       */
-      XGetMapInfo(visual_info,XDefaultColormap(display,visual_info->screen),
+      MagickXGetMapInfo(visual_info,XDefaultColormap(display,visual_info->screen),
         map_info);
-      XGetPixelPacket(display,visual_info,map_info,&resource_info,
+      MagickXGetPixelPacket(display,visual_info,map_info,&resource_info,
         (Image *) NULL,&pixel);
       pixel.annotate_context=XDefaultGC(display,visual_info->screen);
       /*
         Initialize font info.
       */
-      font_info=XBestFont(display,&resource_info,False);
+      font_info=MagickXBestFont(display,&resource_info,False);
       if (font_info == (XFontStruct *) NULL)
         ThrowBinaryException(XServerError,UnableToLoadFont,draw_info->font);
       if ((map_info == (XStandardColormap *) NULL) ||
           (visual_info == (XVisualInfo *) NULL) ||
           (font_info == (XFontStruct *) NULL))
         {
-          XFreeResources(display,visual_info,map_info,&pixel,font_info,
-            &resource_info,(XWindowInfo *) NULL);
+          MagickXFreeResources(display,visual_info,map_info,&pixel,font_info,
+            &resource_info,(MagickXWindowInfo *) NULL);
           ThrowBinaryException(XServerError,UnableToLoadFont,
             draw_info->server_name)
         }
@@ -1750,7 +1737,7 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
   /*
     Initialize annotate info.
   */
-  XGetAnnotateInfo(&annotate_info);
+  MagickXGetAnnotateInfo(&annotate_info);
   annotate_info.stencil=ForegroundStencil;
   if (cache_info.font != draw_info->font)
     {
@@ -1759,7 +1746,7 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
       */
       (void) XFreeFont(display,font_info);
       (void) CloneString(&resource_info.font,draw_info->font);
-      font_info=XBestFont(display,&resource_info,False);
+      font_info=MagickXBestFont(display,&resource_info,False);
       if (font_info == (XFontStruct *) NULL)
         ThrowBinaryException(XServerError,UnableToLoadFont,draw_info->font);
     }
@@ -1786,9 +1773,9 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
   metrics->underline_position=(-2.0);
   metrics->underline_thickness=1.0;
   if (!draw_info->render)
-    return(True);
+    return(MagickPass);
   if (draw_info->fill.opacity == TransparentOpacity)
-    return(True);
+    return(MagickPass);
   /*
     Render fill color.
   */
@@ -1807,15 +1794,15 @@ static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
   pixel.pen_color.red=ScaleQuantumToShort(draw_info->fill.red);
   pixel.pen_color.green=ScaleQuantumToShort(draw_info->fill.green);
   pixel.pen_color.blue=ScaleQuantumToShort(draw_info->fill.blue);
-  status=XAnnotateImage(display,&pixel,&annotate_info,image);
+  status=MagickXAnnotateImage(display,&pixel,&annotate_info,image);
   if (status == 0)
     ThrowBinaryException3(ResourceLimitError,MemoryAllocationFailed,
       UnableToAnnotateImage);
-  return(True);
+  return(MagickPass);
 }
 #else
-static unsigned int RenderX11(Image *image,const DrawInfo *draw_info,
-  const PointInfo *offset,TypeMetric *metrics)
+static MagickPassFail RenderX11(Image *image,const DrawInfo *draw_info,
+  const PointInfo *ARGUNUSED(offset),TypeMetric *ARGUNUSED(metrics))
 {
   ThrowBinaryException(MissingDelegateError,XWindowLibraryIsNotAvailable,
     draw_info->font);

@@ -100,7 +100,11 @@ MagickExport unsigned int ExecuteModuleProcess(const char *tag,
       LogMagickEvent(CoderEvent,GetMagickModule(),
         "Returned from \"%.1024s\" filter module",tag);
     }
-
+#else
+  ARG_NOT_USED(tag);
+  ARG_NOT_USED(image);
+  ARG_NOT_USED(argc);
+  ARG_NOT_USED(argv);
 #endif /* !defined(BuildMagickModules) */
   return(status);
 }
@@ -132,29 +136,49 @@ MagickExport void RegisterStaticModules(void)
   RegisterAVIImage();
   RegisterAVSImage();
   RegisterBMPImage();
+  RegisterCALSImage();
   RegisterCAPTIONImage();
   RegisterCINEONImage();
+#if defined(HasWINGDI32)
   RegisterCLIPBOARDImage();
+#endif
   RegisterCMYKImage();
   RegisterCUTImage();
   RegisterDCMImage();
+  RegisterDCRAWImage();
   RegisterDIBImage();
+#if defined(HasDPS)
   RegisterDPSImage();
+#endif
   RegisterDPXImage();
+#if defined(HasWINGDI32)
   RegisterEMFImage();
+#endif
+#if defined(HasTIFF)
   RegisterEPTImage();
+#endif
   RegisterFAXImage();
   RegisterFITSImage();
+#if defined(HasFPX)
   RegisterFPXImage();
+#endif
   RegisterGIFImage();
   RegisterGRAYImage();
   RegisterGRADIENTImage();
   RegisterHISTOGRAMImage();
+  RegisterHRZImage();
   RegisterHTMLImage();
   RegisterICONImage();
+  RegisterIDENTITYImage();
+#if defined(HasJBIG)
   RegisterJBIGImage();
+#endif
+#if defined(HasJPEG)
   RegisterJPEGImage();
+#endif
+#if defined(HasJP2)
   RegisterJP2Image();
+#endif
   RegisterLABELImage();
   RegisterLOCALEImage();
   RegisterLOGOImage();
@@ -181,7 +205,9 @@ MagickExport void RegisterStaticModules(void)
   RegisterPICTImage();
   RegisterPIXImage();
   RegisterPLASMAImage();
+#if defined(HasPNG)
   RegisterPNGImage();
+#endif
   RegisterPNMImage();
   RegisterPREVIEWImage();
   RegisterPSImage();
@@ -199,7 +225,9 @@ MagickExport void RegisterStaticModules(void)
   RegisterSUNImage();
   RegisterSVGImage();
   RegisterTGAImage();
+#if defined(HasTIFF)
   RegisterTIFFImage();
+#endif
   RegisterTILEImage();
   RegisterTIMImage();
   RegisterTOPOLImage();
@@ -214,7 +242,9 @@ MagickExport void RegisterStaticModules(void)
   RegisterWBMPImage();
   RegisterWMFImage();
   RegisterWPGImage();
+#if defined(HasX11)
   RegisterXImage();
+#endif /* defined(HasX11) */
   RegisterXBMImage();
   RegisterXCImage();
   RegisterXCFImage();
@@ -222,7 +252,9 @@ MagickExport void RegisterStaticModules(void)
 #if defined(_VISUALC_)
   RegisterXTRNImage();
 #endif /* defined(_VISUALC_) */
+#if defined(HasX11)
   RegisterXWDImage();
+#endif /* defined(HasX11) */
   RegisterYUVImage();
 #endif /* !defined(BuildMagickModules) */
 }
@@ -254,29 +286,49 @@ MagickExport void UnregisterStaticModules(void)
   UnregisterAVIImage();
   UnregisterAVSImage();
   UnregisterBMPImage();
+  UnregisterCALSImage();
   UnregisterCAPTIONImage();
   UnregisterCINEONImage();
+#if defined(HasWINGDI32)
   UnregisterCLIPBOARDImage();
+#endif
   UnregisterCMYKImage();
   UnregisterCUTImage();
   UnregisterDCMImage();
+  UnregisterDCRAWImage();
   UnregisterDIBImage();
+#if defined(HasDPS)
   UnregisterDPSImage();
+#endif
   UnregisterDPXImage();
+#if defined(HasWINGDI32)
   UnregisterEMFImage();
+#endif
+#if defined(HasTIFF)
   UnregisterEPTImage();
+#endif
   UnregisterFAXImage();
   UnregisterFITSImage();
+#if defined(HasFPX)
   UnregisterFPXImage();
+#endif
   UnregisterGIFImage();
   UnregisterGRAYImage();
   UnregisterGRADIENTImage();
   UnregisterHISTOGRAMImage();
+  UnregisterHRZImage();
   UnregisterHTMLImage();
   UnregisterICONImage();
+  UnregisterIDENTITYImage();
+#if defined(HasJBIG)
   UnregisterJBIGImage();
+#endif
+#if defined(HasJPEG)
   UnregisterJPEGImage();
+#endif
+#if defined(HasJP2)
   UnregisterJP2Image();
+#endif
   UnregisterLABELImage();
   UnregisterLOCALEImage();
   UnregisterLOGOImage();
@@ -303,7 +355,9 @@ MagickExport void UnregisterStaticModules(void)
   UnregisterPICTImage();
   UnregisterPIXImage();
   UnregisterPLASMAImage();
+#if defined(HasPNG)
   UnregisterPNGImage();
+#endif
   UnregisterPNMImage();
   UnregisterPREVIEWImage();
   UnregisterPSImage();
@@ -321,7 +375,9 @@ MagickExport void UnregisterStaticModules(void)
   UnregisterSUNImage();
   UnregisterSVGImage();
   UnregisterTGAImage();
+#if defined(HasTIFF)
   UnregisterTIFFImage();
+#endif
   UnregisterTILEImage();
   UnregisterTIMImage();
   UnregisterTOPOLImage();
@@ -336,7 +392,9 @@ MagickExport void UnregisterStaticModules(void)
   UnregisterWBMPImage();
   UnregisterWMFImage();
   UnregisterWPGImage();
+#if defined(HasX11)
   UnregisterXImage();
+#endif /* defined(HasX11) */
   UnregisterXBMImage();
   UnregisterXCImage();
   UnregisterXCFImage();
@@ -344,7 +402,22 @@ MagickExport void UnregisterStaticModules(void)
 #if defined(_VISUALC_)
   UnregisterXTRNImage();
 #endif /* defined(_VISUALC_) */
+#if defined(HasX11)
   UnregisterXWDImage();
+#endif /* defined(HasX11) */
   UnregisterYUVImage();
 #endif /* !defined(BuildMagickModules) */
 }
+
+#define AddStub(module) \
+  MagickExport void Register##module##Image(void) { return; } \
+  MagickExport void Unregister##module##Image(void) { return; }
+
+/* Add stub definitions to ensure ABI doesn't change whether certain libs
+   are available or not. */
+#if !defined(BuildMagickModules)
+/* So far we only care about DPS. Other should be added as necessary. */
+# if !defined(HasDPS)
+AddStub(DPS)
+# endif
+#endif /* !defined(BuildMagickModules) */

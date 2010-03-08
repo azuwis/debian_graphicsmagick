@@ -13,8 +13,8 @@
 # Contributed by Bob Friesenhahn <bfriesen@simple.dallas.tx.us
 #
 
-BEGIN { $| = 1; $testnr=1; print "1..3\n"; }
-END {print "not ok $testnr\n" unless $loaded;}
+BEGIN { $| = 1; $test=1; print "1..3\n"; }
+END {print "not ok $test\n" unless $loaded;}
 use Graphics::Magick;
 $loaded=1;
 
@@ -25,8 +25,7 @@ chdir 't/ttf' || die 'Cd failed';
 #
 # 1) Test default ImageMagick read operation on font
 #
-$test="$testnr - Read and render TTF file # TODO Not robust against freetype changes";
-print("Default ImageMagick read ...\n");
+print("Default GraphicsMagick read ...\n");
 testReadCompare('input.ttf', '../reference/ttf/read.miff',
                 q/size=>'512x512', depth=>8/,
                 0.16, 1.0);
@@ -34,8 +33,7 @@ testReadCompare('input.ttf', '../reference/ttf/read.miff',
 #
 # 2) Test drawing text using font
 #
-++$testnr;
-$test="$testnr - Draw ttf text using label # TODO Not robust against freetype changes";
+++$test;
 print("Draw text using label: ...\n");
 testReadCompare(q!label:The quick brown fox jumps over the lazy dog.!,
                 q!../reference/ttf/label.miff!,
@@ -45,8 +43,7 @@ testReadCompare(q!label:The quick brown fox jumps over the lazy dog.!,
 #
 # 3) Test drawing text using annotate
 #
-++$testnr;
-$test="$testnr - Draw ttf text using annotate # TODO Not robust against freetype changes";
+++$test;
 print("Draw text using annotate ...\n");
 testFilterCompare('xc:#FFFFFF',
                   q!size=>'250x20', depth=>8!,
@@ -58,5 +55,5 @@ testFilterCompare('xc:#FFFFFF',
                   font=>'input.ttf',
                   fill=>'#FF0000',
                   pointsize=>14!,
-                  0.16, 1.0);
+                  0.17, 1.0);
 1;

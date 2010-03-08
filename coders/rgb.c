@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,8 +37,9 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/constitute.h"
+#include "magick/enum_strings.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -104,8 +105,12 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
   unsigned int
     status;
 
-  unsigned long
-    packet_size;
+  unsigned int
+    packet_size,
+    quantum_size;
+
+  ImportPixelAreaOptions
+    import_options;
 
   assert(image_info != (const ImageInfo *) NULL);
   assert(image_info->signature == MagickSignature);
@@ -123,21 +128,56 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
       if (status == False)
         ThrowReaderException(FileOpenError,UnableToOpenFile,image);
       for (i=0; i < image->offset; i++)
-        (void) ReadBlobByte(image);
+        {
+          if (EOF == ReadBlobByte(image))
+            ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                           image->filename);
+        }
     }
+
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			  "Tile %lux%lu%+ld%+ld",
+			  image->tile_info.width,image->tile_info.height,
+			  image->tile_info.x,image->tile_info.y);
+
   /*
     Allocate memory for a scanline.
   */
-  packet_size=image->depth > 8 ? 6 : 3;
+  if (image->depth <= 8)
+    quantum_size=8;
+  else if (image->depth <= 16)
+    quantum_size=16;
+  else
+    quantum_size=32;
+
+  packet_size=(quantum_size*3)/8;
   if (LocaleCompare(image_info->magick,"RGBA") == 0)
     {
       image->matte=True;
-      packet_size=image->depth > 8 ? 8 : 4;
+      packet_size=(quantum_size*4)/8;
     }
-  scanline=MagickAllocateMemory(unsigned char *,
-    packet_size*image->tile_info.width);
+
+  scanline=MagickAllocateArray(unsigned char *,
+			       packet_size,image->tile_info.width);
   if (scanline == (unsigned char *) NULL)
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+  /*
+    Initialize import options.
+  */
+  ImportPixelAreaOptionsInit(&import_options);
+  if (image_info->endian != UndefinedEndian)
+    import_options.endian=image_info->endian;
+
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			  "Depth %u bits, Endian %s, Interlace %s",
+			  quantum_size,
+			  EndianTypeToString(import_options.endian),
+			  InterlaceTypeToString(image_info->interlace));
+  /*
+    Support starting at intermediate image frame.
+  */
   if (image_info->subrange != 0)
     while (image->scene < image_info->subimage)
     {
@@ -162,9 +202,13 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
       case NoInterlace:
       default:
       {
+	QuantumType
+	  quantum_type;
+
         /*
           No interlacing:  RGBRGBRGBRGBRGBRGB...
         */
+	quantum_type=(image->matte ? RGBAQuantum : RGBQuantum);
         for (y=0; y < image->tile_info.y; y++)
           (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
         for (y=0; y < (long) image->rows; y++)
@@ -174,15 +218,15 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          if (!image->matte)
-            (void) PushImagePixels(image,RGBQuantum,scanline+x);
-          else
-            (void) PushImagePixels(image,RGBAQuantum,scanline+x);
+	  (void) ImportImagePixelArea(image,quantum_type,quantum_size,scanline+x,
+				      &import_options,0);
           if (!SyncImagePixels(image))
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         count=image->tile_info.height-image->rows-image->tile_info.y;
@@ -195,7 +239,7 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
         /*
           Line interlacing:  RRR...GGG...BBB...RRR...GGG...BBB...
         */
-        packet_size=image->depth > 8 ? 2 : 1;
+        packet_size=(quantum_size)/8;
         for (y=0; y < image->tile_info.y; y++)
           (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
         for (y=0; y < (long) image->rows; y++)
@@ -205,22 +249,28 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          (void) PushImagePixels(image,RedQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,RedQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
-          (void) PushImagePixels(image,GreenQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,GreenQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
-          (void) PushImagePixels(image,BlueQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,BlueQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           if (image->matte)
             {
               (void) ReadBlob(image,packet_size*image->tile_info.width,
                 scanline);
-              (void) PushImagePixels(image,AlphaQuantum,scanline+x);
+              (void) ImportImagePixelArea(image,AlphaQuantum,quantum_size,scanline+x,
+					  &import_options,0);
             }
           if (!SyncImagePixels(image))
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         count=image->tile_info.height-image->rows-image->tile_info.y;
@@ -244,7 +294,7 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
             if (status == False)
               ThrowReaderException(FileOpenError,UnableToOpenFile,image);
           }
-        packet_size=image->depth > 8 ? 2 : 1;
+        packet_size=(quantum_size)/8;
         for (y=0; y < image->tile_info.y; y++)
           (void) ReadBlob(image,packet_size*image->tile_info.width,scanline);
         i=0;
@@ -256,12 +306,15 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          (void) PushImagePixels(image,RedQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,RedQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           if (!SyncImagePixels(image))
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(i,span))
-              if (!MagickMonitor(LoadImageText,i,span,&image->exception))
+              if (!MagickMonitorFormatted(i,span,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
           i++;
         }
@@ -284,12 +337,15 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=GetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          (void) PushImagePixels(image,GreenQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,GreenQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           if (!SyncImagePixels(image))
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(i,span))
-              if (!MagickMonitor(LoadImageText,i,span,&image->exception))
+              if (!MagickMonitorFormatted(i,span,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
           i++;
         }
@@ -312,12 +368,15 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=GetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          (void) PushImagePixels(image,BlueQuantum,scanline+x);
+          (void) ImportImagePixelArea(image,BlueQuantum,quantum_size,scanline+x,
+				      &import_options,0);
           if (!SyncImagePixels(image))
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(i,span))
-              if (!MagickMonitor(LoadImageText,i,span,&image->exception))
+              if (!MagickMonitorFormatted(i,span,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
           i++;
         }
@@ -347,12 +406,15 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=GetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              (void) PushImagePixels(image,AlphaQuantum,scanline+x);
+              (void) ImportImagePixelArea(image,AlphaQuantum,quantum_size,scanline+x,
+					  &import_options,0);
               if (!SyncImagePixels(image))
                 break;
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(i,span))
-                  if (!MagickMonitor(LoadImageText,i,span,&image->exception))
+                  if (!MagickMonitorFormatted(i,span,&image->exception,
+                                              LoadImageText,image->filename,
+					      image->columns,image->rows))
                     break;
               i++;
             }
@@ -362,7 +424,7 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 scanline);
           }
         if (image_info->interlace == PartitionInterlace)
-          (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+          (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
         break;
       }
     }
@@ -393,7 +455,9 @@ static Image *ReadRGBImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                    exception,LoadImagesText,
+                                    image->filename))
           break;
       }
   } while (count != 0);
@@ -436,15 +500,16 @@ ModuleExport void RegisterRGBImage(void)
   entry->decoder=(DecoderHandler) ReadRGBImage;
   entry->encoder=(EncoderHandler) WriteRGBImage;
   entry->raw=True;
-  entry->description=AcquireString("Raw red, green, and blue samples");
-  entry->module=AcquireString("RGB");
+  entry->description="Raw red, green, and blue samples";
+  entry->module="RGB";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("RGBA");
   entry->decoder=(DecoderHandler) ReadRGBImage;
   entry->encoder=(EncoderHandler) WriteRGBImage;
   entry->raw=True;
-  entry->description=AcquireString("Raw red, green, blue, and matte samples");
-  entry->module=AcquireString("RGB");
+  entry->description="Raw red, green, blue, and matte samples";
+  entry->module="RGB";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -517,9 +582,16 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
   unsigned int
     status;
 
-  unsigned long
+  unsigned int
     packet_size,
+    quantum_size,
     scene;
+
+  ExportPixelAreaOptions
+    export_options;
+
+  ExportPixelAreaInfo
+    export_info;
 
   /*
     Allocate memory for pixels.
@@ -528,10 +600,18 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
   assert(image_info->signature == MagickSignature);
   assert(image != (Image *) NULL);
   assert(image->signature == MagickSignature);
-  packet_size=image->depth > 8 ? 6 : 3;
+
+  if (image->depth <= 8)
+    quantum_size=8;
+  else if (image->depth <= 16)
+    quantum_size=16;
+  else
+    quantum_size=32;
+
+  packet_size=(quantum_size*3)/8;
   if (LocaleCompare(image_info->magick,"RGBA") == 0)
-    packet_size=image->depth > 8 ? 8 : 4;
-  pixels=MagickAllocateMemory(unsigned char *,packet_size*image->columns);
+    packet_size=(quantum_size*4)/8;
+  pixels=MagickAllocateArray(unsigned char *,packet_size,image->columns);
   if (pixels == (unsigned char *) NULL)
     ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
   if (image_info->interlace != PartitionInterlace)
@@ -544,12 +624,26 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
         ThrowWriterException(FileOpenError,UnableToOpenFile,image);
     }
   scene=0;
+  /*
+    Initialize export options.
+  */
+  ExportPixelAreaOptionsInit(&export_options);
+  if (image->endian != UndefinedEndian)
+    export_options.endian=image->endian;
+  else if (image_info->endian != UndefinedEndian)
+    export_options.endian=image_info->endian;
+  if (image->logging)
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),
+			  "Depth %u bits, Endian %s, Interlace %s",
+			  quantum_size,
+			  EndianTypeToString(export_options.endian),
+			  InterlaceTypeToString(image_info->interlace));
   do
   {
     /*
       Convert MIFF to RGB raster pixels.
     */
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
     if (LocaleCompare(image_info->magick,"RGBA") == 0)
       if (!image->matte)
         SetImageOpacity(image,OpaqueOpacity);
@@ -558,27 +652,28 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
       case NoInterlace:
       default:
       {
+	QuantumType
+	  quantum_type;
+
         /*
           No interlacing:  RGBRGBRGBRGBRGBRGB...
         */
+	quantum_type=RGBQuantum;
+	if (LocaleCompare(image_info->magick,"RGBA") == 0)
+	  quantum_type=RGBAQuantum;
         for (y=0; y < (long) image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          if (LocaleCompare(image_info->magick,"RGBA") != 0)
-            {
-              (void) PopImagePixels(image,RGBQuantum,pixels);
-              (void) WriteBlob(image,packet_size*image->columns,pixels);
-            }
-          else
-            {
-              (void) PopImagePixels(image,RGBAQuantum,pixels);
-              (void) WriteBlob(image,packet_size*image->columns,pixels);
-            }
+	  (void) ExportImagePixelArea(image,quantum_type,quantum_size,pixels,
+				      &export_options,&export_info);
+	  (void) WriteBlob(image,export_info.bytes_exported,pixels);
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -593,19 +688,25 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          (void) PopImagePixels(image,RedQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
-          (void) PopImagePixels(image,GreenQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
-          (void) PopImagePixels(image,BlueQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
+          (void) ExportImagePixelArea(image,RedQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
+          (void) ExportImagePixelArea(image,GreenQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
+          (void) ExportImagePixelArea(image,BlueQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
           if (LocaleCompare(image_info->magick,"RGBA") == 0)
             {
-              (void) PopImagePixels(image,AlphaQuantum,pixels);
-              (void) WriteBlob(image,image->columns,pixels);
+              (void) ExportImagePixelArea(image,AlphaQuantum,quantum_size,pixels,
+					  &export_options,&export_info);
+              (void) WriteBlob(image,export_info.bytes_exported,pixels);
             }
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+            if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows))
               break;
         }
         break;
@@ -628,8 +729,9 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          (void) PopImagePixels(image,RedQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
+          (void) ExportImagePixelArea(image,RedQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
         }
         if (image_info->interlace == PartitionInterlace)
           {
@@ -639,15 +741,18 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
             if (status == False)
               ThrowWriterException(FileOpenError,UnableToOpenFile,image);
           }
-        if (!MagickMonitor(SaveImageText,100,400,&image->exception))
+        if (!MagickMonitorFormatted(100,400,&image->exception,SaveImageText,
+                                    image->filename,
+				    image->columns,image->rows))
           break;
         for (y=0; y < (long) image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          (void) PopImagePixels(image,GreenQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
+          (void) ExportImagePixelArea(image,GreenQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
         }
         if (image_info->interlace == PartitionInterlace)
           {
@@ -657,19 +762,24 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
             if (status == False)
               ThrowWriterException(FileOpenError,UnableToOpenFile,image);
           }
-        if (!MagickMonitor(SaveImageText,200,400,&image->exception))
+        if (!MagickMonitorFormatted(200,400,&image->exception,SaveImageText,
+                                    image->filename,
+				    image->columns,image->rows))
           break;
         for (y=0; y < (long) image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          (void) PopImagePixels(image,BlueQuantum,pixels);
-          (void) WriteBlob(image,image->columns,pixels);
+          (void) ExportImagePixelArea(image,BlueQuantum,quantum_size,pixels,
+				      &export_options,&export_info);
+          (void) WriteBlob(image,export_info.bytes_exported,pixels);
         }
         if (LocaleCompare(image_info->magick,"RGBA") == 0)
           {
-            if (!MagickMonitor(SaveImageText,300,400,&image->exception))
+            if (!MagickMonitorFormatted(300,400,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows))
               break;
             if (image_info->interlace == PartitionInterlace)
               {
@@ -686,13 +796,16 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
                 &image->exception);
               if (p == (const PixelPacket *) NULL)
                 break;
-              (void) PopImagePixels(image,AlphaQuantum,pixels);
-              (void) WriteBlob(image,image->columns,pixels);
+              (void) ExportImagePixelArea(image,AlphaQuantum,quantum_size,pixels,
+					  &export_options,&export_info);
+              (void) WriteBlob(image,export_info.bytes_exported,pixels);
             }
           }
         if (image_info->interlace == PartitionInterlace)
-          (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
-        if (!MagickMonitor(SaveImageText,400,400,&image->exception))
+          (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
+        if (!MagickMonitorFormatted(400,400,&image->exception,SaveImageText,
+                                    image->filename,
+				    image->columns,image->rows))
           break;
         break;
       }
@@ -700,7 +813,9 @@ static unsigned int WriteRGBImage(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+    if (!MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                &image->exception,SaveImagesText,
+                                image->filename))
       break;
   } while (image_info->adjoin);
   MagickFreeMemory(pixels);

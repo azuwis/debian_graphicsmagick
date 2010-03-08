@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003, 2007 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,9 +37,11 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
+#include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -92,21 +94,12 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
   Image
     *image;
 
-  IndexPacket
-    index;
-
   int
     status;
 
-  long
+  unsigned long
     length,
     y;
-
-  register IndexPacket
-    *indexes;
-
-  register long
-    x;
 
   register PixelPacket
     *q;
@@ -121,11 +114,7 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
     jbig_info;
 
   unsigned char
-    bit,
     *buffer;
-
-  unsigned int
-    byte;
 
   /*
     Open image file.
@@ -146,9 +135,7 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
     (unsigned long) image->rows);
   image->columns= jbg_dec_getwidth(&jbig_info);
   image->rows= jbg_dec_getheight(&jbig_info);
-  image->depth=8;
-  image->storage_class=PseudoClass;
-  image->colors=2;
+  image->depth=1;
   /*
     Read JBIG file.
   */
@@ -175,53 +162,60 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
   */
   image->columns=jbg_dec_getwidth(&jbig_info);
   image->rows=jbg_dec_getheight(&jbig_info);
-  if (!AllocateImageColormap(image,2))
+  if ((image_info->type != GrayscaleType) &&
+      (image_info->type != TrueColorType))
     {
-      MagickFreeMemory(buffer);
-      ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image)
+      if (!AllocateImageColormap(image,2))
+        {
+          MagickFreeMemory(buffer);
+          ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image)
+            }
+      image->colormap[0].red=0;
+      image->colormap[0].green=0;
+      image->colormap[0].blue=0;
+      image->colormap[1].red=MaxRGB;
+      image->colormap[1].green=MaxRGB;
+      image->colormap[1].blue=MaxRGB;
     }
-  image->colormap[0].red=0;
-  image->colormap[0].green=0;
-  image->colormap[0].blue=0;
-  image->colormap[1].red=MaxRGB;
-  image->colormap[1].green=MaxRGB;
-  image->colormap[1].blue=MaxRGB;
   image->x_resolution=300;
   image->y_resolution=300;
+  image->is_grayscale=MagickTrue;
+  image->is_monochrome=MagickTrue;
+  image->colorspace=GRAYColorspace;
   if (image_info->ping)
     {
       CloseBlob(image);
       return(image);
     }
   /*
-    Convert X bitmap image to pixel packets.
+    Convert bitmap image to pixel packets.
   */
+  {
+    ImportPixelAreaOptions
+      import_options;
+    
+    ImportPixelAreaInfo
+      import_info;
+
+  ImportPixelAreaOptionsInit(&import_options);
+  import_options.grayscale_miniswhite=MagickTrue;
   p=jbg_dec_getimage(&jbig_info,0);
-  for (y=0; y < (long) image->rows; y++)
+  for (y=0; y < image->rows; y++)
   {
     q=SetImagePixels(image,0,y,image->columns,1);
     if (q == (PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
-    bit=0;
-    byte=0;
-    for (x=0; x < (long) image->columns; x++)
-    {
-      if (bit == 0)
-        byte=(*p++);
-      index=(byte & 0x80) ? 0 : 1;
-      bit++;
-      byte<<=1;
-      if (bit == 8)
-        bit=0;
-      indexes[x]=index;
-      *q++=image->colormap[index];
-    }
+    if (!ImportImagePixelArea(image,GrayQuantum,1,p,&import_options,&import_info))
+      break;
+    p+=import_info.bytes_imported;
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
+  }
   }
   /*
     Free scale resource.
@@ -229,6 +223,8 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
   jbg_dec_free(&jbig_info);
   MagickFreeMemory(buffer);
   CloseBlob(image);
+  image->is_grayscale=MagickTrue;
+  image->is_monochrome=MagickTrue;
   return(image);
 }
 #endif
@@ -258,9 +254,10 @@ static Image *ReadJBIGImage(const ImageInfo *image_info,
 */
 ModuleExport void RegisterJBIGImage(void)
 {
-#define JBIGDescription  "Joint Bi-level Image experts Group interchange format"
+  static const char
+    *description="Joint Bi-level Image experts Group interchange format";
 
-  char
+  static char
     version[MaxTextExtent];
 
   MagickInfo
@@ -268,7 +265,7 @@ ModuleExport void RegisterJBIGImage(void)
 
   *version='\0';
 #if defined(JBG_VERSION)
-  (void) strncpy(version,JBG_VERSION,MaxTextExtent-1);
+  (void) strlcpy(version,JBG_VERSION,MaxTextExtent);
 #endif
   entry=SetMagickInfo("BIE");
 #if defined(HasJBIG)
@@ -276,30 +273,35 @@ ModuleExport void RegisterJBIGImage(void)
   entry->encoder=(EncoderHandler) WriteJBIGImage;
 #endif
   entry->adjoin=False;
-  entry->description=AcquireString(JBIGDescription);
+  entry->description=description;
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("JBIG");
+    entry->version=version;
+  entry->module="JBIG";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("JBG");
 #if defined(HasJBIG)
   entry->decoder=(DecoderHandler) ReadJBIGImage;
   entry->encoder=(EncoderHandler) WriteJBIGImage;
 #endif
-  entry->description=AcquireString(JBIGDescription);
+  entry->description=description;
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("JBIG");
+    entry->version=version;
+  entry->module="JBIG";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("JBIG");
 #if defined(HasJBIG)
   entry->decoder=(DecoderHandler) ReadJBIGImage;
   entry->encoder=(EncoderHandler) WriteJBIGImage;
 #endif
-  entry->description=AcquireString(JBIGDescription);
+  entry->description=description;
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("JBIG");
+    entry->version=version;
+  entry->module="JBIG";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -374,17 +376,11 @@ static unsigned int WriteJBIGImage(const ImageInfo *image_info,Image *image)
   double
     jbig_lib_version;
 
-  long
+  unsigned long
     y;
 
   register const PixelPacket
     *p;
-
-  register IndexPacket
-    *indexes;
-
-  register long
-    x;
 
   register unsigned char
     *q;
@@ -393,10 +389,10 @@ static unsigned int WriteJBIGImage(const ImageInfo *image_info,Image *image)
     jbig_info;
 
   unsigned char
-    bit,
-    byte,
-    *pixels,
-    polarity;
+    *pixels;
+
+  size_t
+    bytes_per_row;
 
   unsigned int
     status;
@@ -420,48 +416,46 @@ static unsigned int WriteJBIGImage(const ImageInfo *image_info,Image *image)
   do
   {
     /*
+      Ensure that image is in an RGB space.
+    */
+    (void) TransformColorspace(image,RGBColorspace);
+    /*
       Allocate pixel data.
     */
-    TransformColorspace(image,RGBColorspace);
-    number_packets=((image->columns+7) >> 3)*image->rows;
+    bytes_per_row=((image->columns+7) >> 3);
+    number_packets=bytes_per_row*image->rows;
     pixels=MagickAllocateMemory(unsigned char *,number_packets);
     if (pixels == (unsigned char *) NULL)
       ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
     /*
       Convert pixels to a bitmap.
     */
-    SetImageType(image,BilevelType);
-    polarity=PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2);
-    if (image->colors == 2)
-      polarity=PixelIntensityToQuantum(&image->colormap[0]) >
-        PixelIntensityToQuantum(&image->colormap[1]);
-    q=pixels;
-    for (y=0; y < (long) image->rows; y++)
     {
-      p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
-      if (p == (const PixelPacket *) NULL)
-        break;
-      indexes=GetIndexes(image);
-      bit=0;
-      byte=0;
-      for (x=0; x < (long) image->columns; x++)
-      {
-        byte<<=1;
-        if (indexes[x] == polarity)
-          byte|=0x01;
-        bit++;
-        if (bit == 8)
-          {
-            *q++=byte;
-            bit=0;
-            byte=0;
-          }
-       }
-      if (bit != 0)
-        *q++=byte << (8-bit);
-      if (QuantumTick(y,image->rows))
-        if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
-          break;
+      ExportPixelAreaOptions
+        export_options;
+
+      ExportPixelAreaInfo
+        export_info;
+
+      ExportPixelAreaOptionsInit(&export_options);
+      export_options.grayscale_miniswhite=MagickTrue;
+      q=pixels;
+      for (y=0; y < image->rows; y++)
+        {
+          p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+          if (p == (const PixelPacket *) NULL)
+            break;
+          if (ExportImagePixelArea(image,GrayQuantum,1,q,
+                                   &export_options,&export_info) == MagickFail)
+            break;
+          q+=export_info.bytes_exported;
+          if (image->previous == (Image *) NULL)
+            if (QuantumTick(y,image->rows))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
+                break;
+        }
     }
     /*
       Initialize JBIG info structure.
@@ -504,7 +498,9 @@ static unsigned int WriteJBIGImage(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+    if (!MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                &image->exception,SaveImagesText,
+                                image->filename))
       break;
   } while (image_info->adjoin);
   if (image_info->adjoin)
