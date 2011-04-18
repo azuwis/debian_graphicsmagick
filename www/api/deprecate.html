@@ -1,0 +1,350 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>deprecate - Methods which should no longer be used</title>
+<link rev="made" href="mailto:bfriesen@blade.simplesystems.org" />
+</head>
+
+<body style="background-color: white">
+
+<P><a name="__index__"></a></P>
+<!-- INDEX BEGIN -->
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#function_descriptions">FUNCTION DESCRIPTIONS</a></li>
+	<ul>
+
+		<li><a href="#deleteimagelist">DeleteImageList</a></li>
+		<li><a href="#destroyimages">DestroyImages</a></li>
+		<li><a href="#getimagelist">GetImageList</a></li>
+		<li><a href="#getimagelistindex">GetImageListIndex</a></li>
+		<li><a href="#getimagelistsize">GetImageListSize</a></li>
+		<li><a href="#getnextimage">GetNextImage</a></li>
+		<li><a href="#getnumberscenes">GetNumberScenes</a></li>
+		<li><a href="#getpreviousimage">GetPreviousImage</a></li>
+		<li><a href="#popimagelist">PopImageList</a></li>
+		<li><a href="#postscriptgeometry">PostscriptGeometry</a></li>
+		<li><a href="#pushimagelist">PushImageList</a></li>
+		<li><a href="#setimagelist">SetImageList</a></li>
+		<li><a href="#shiftimagelist">ShiftImageList</a></li>
+		<li><a href="#spliceimagelist">SpliceImageList</a></li>
+		<li><a href="#unshiftimagelist">UnshiftImageList</a></li>
+	</ul>
+
+</ul>
+<!-- INDEX END -->
+
+<hr />
+<P>
+</P>
+<h1><a name="name">NAME</a></h1>
+<P>deprecate - Methods which should no longer be used</P>
+<P>
+</P>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<P>unsigned int  <strong>DeleteImageList</strong>( Image *images, const long offset );</P>
+<P>void  <strong>DestroyImages</strong>( Image *image );</P>
+<P>Image * <strong>GetImageList</strong>( const Image *images, const long offset, ExceptionInfo *exception );</P>
+<P>long  <strong>GetImageListIndex</strong>( const Image *images );</P>
+<P>unsigned long  <strong>GetImageListSize</strong>( const Image *images );</P>
+<P>Image * <strong>GetNextImage</strong>( const Image *images );</P>
+<P>unsigned int  <strong>GetNumberScenes</strong>( const Image *images );</P>
+<P>Image * <strong>GetPreviousImage</strong>( const Image *images );</P>
+<P>Image * <strong>PopImageList</strong>( Image ** images );</P>
+<P>char * <strong>PostscriptGeometry</strong>( const char *page );</P>
+<P>unsigned int  <strong>PushImageList</strong>( Image *images, const Image *image, ExceptionInfo *exception );</P>
+<P>unsigned int  <strong>SetImageList</strong>( Image *images, const Image *image, const long offset, ExceptionInfo *exception );</P>
+<P>Image * <strong>ShiftImageList</strong>( Image ** images );</P>
+<P>Image * <strong>SpliceImageList</strong>( Image *images, const long offset, const unsigned long length, const Image *splices, ExceptionInfo *exception );</P>
+<P>unsigned int  <strong>UnshiftImageList</strong>( Image *images, const Image *image, ExceptionInfo *exception );</P>
+<P>
+</P>
+<hr />
+<h1><a name="function_descriptions">FUNCTION DESCRIPTIONS</a></h1>
+<P>
+</P>
+<h2><a name="deleteimagelist">DeleteImageList</a></h2>
+<blockquote>DeleteImageList() deletes an image at the specified position in the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the DeleteImageList method is:</P>
+<blockquote>unsigned int DeleteImageList ( <A HREF="types.html#Image">Image</A> *images, const long offset ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong><a name="item_o_images_3a">images:</a></strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_offset_3a">offset:</a></strong><br />
+</dt>
+<DD>
+The position within the list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="destroyimages">DestroyImages</a></h2>
+<blockquote>DestroyImages() destroys an image list. </blockquote><P>This method is deprecated as of version 5.4.3.</P>
+<P>The format of the DestroyImages method is:</P>
+<blockquote>void DestroyImages ( <A HREF="types.html#Image">Image</A> *image ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong><a name="item_o_image_3a">image:</a></strong><br />
+</dt>
+<DD>
+The image sequence.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getimagelist">GetImageList</a></h2>
+<blockquote>GetImageList() returns an image at the specified position in the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetImageList method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *GetImageList ( const <A HREF="types.html#Image">Image</A> *images, const long offset, <A HREF="types.html#ExceptionInfo">ExceptionInfo</A> *exception ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong>offset:</strong><br />
+</dt>
+<DD>
+The position within the list.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_exception_3a">exception:</a></strong><br />
+</dt>
+<DD>
+Return any errors or warnings in this structure.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getimagelistindex">GetImageListIndex</a></h2>
+<blockquote>GetImageListIndex() returns the position in the list of the specified image. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetImageListIndex method is:</P>
+<blockquote>long GetImageListIndex ( const <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getimagelistsize">GetImageListSize</a></h2>
+<blockquote>GetImageListSize() returns the number of images in the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetImageListSize method is:</P>
+<blockquote>unsigned long GetImageListSize ( const <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getnextimage">GetNextImage</a></h2>
+<blockquote>GetNextImage() returns the next image in a list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetNextImage method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *GetNextImage ( const <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getnumberscenes">GetNumberScenes</a></h2>
+<blockquote>GetNumberScenes() returns the number of images in the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetNumberScenes method is:</P>
+<blockquote>unsigned int GetNumberScenes ( const <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="getpreviousimage">GetPreviousImage</a></h2>
+<blockquote>GetPreviousImage() returns the previous image in a list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the GetPreviousImage method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *GetPreviousImage ( const <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="popimagelist">PopImageList</a></h2>
+<blockquote>PopImageList() removes the last image in the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the PopImageList method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *PopImageList ( <A HREF="types.html#Image">Image</A> **images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="postscriptgeometry">PostscriptGeometry</a></h2>
+<blockquote>PostscriptGeometry() replaces any page mneumonic with the equivalent size in picas. </blockquote><P>This method is deprecated as of version 5.5.1.</P>
+<P>The format of the PostscriptGeometry method is:</P>
+<blockquote>char *PostscriptGeometry ( const char *page ); </blockquote><P>A description of each parameter follows.</P>
+<dl>
+<dt><strong><a name="item_o_page_3a">page:</a></strong><br />
+</dt>
+<DD>
+Specifies a pointer to an array of characters.  The string is either a Postscript page name (e.g.  A4) or a postscript page geometry (e.g.  612x792+36+36).
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="pushimagelist">PushImageList</a></h2>
+<blockquote>PushImageList() adds an image to the end of the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the PushImageList method is:</P>
+<blockquote>unsigned int PushImageList ( <A HREF="types.html#Image">Image</A> *images, const <A HREF="types.html#Image">Image</A> *image, <A HREF="types.html#ExceptionInfo">ExceptionInfo</A> *exception ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong>image:</strong><br />
+</dt>
+<DD>
+The image.
+</dd>
+<P></P>
+<dt><strong>exception:</strong><br />
+</dt>
+<DD>
+Return any errors or warnings in this structure.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="setimagelist">SetImageList</a></h2>
+<blockquote>SetImageList() inserts an image into the list at the specified position. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the SetImageList method is:</P>
+<blockquote>unsigned int SetImageList ( <A HREF="types.html#Image">Image</A> *images, const <A HREF="types.html#Image">Image</A> *image, const long offset, <A HREF="types.html#ExceptionInfo">ExceptionInfo</A> *exception ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong>image:</strong><br />
+</dt>
+<DD>
+The image.
+</dd>
+<P></P>
+<dt><strong>offset:</strong><br />
+</dt>
+<DD>
+The position within the list.
+</dd>
+<P></P>
+<dt><strong>exception:</strong><br />
+</dt>
+<DD>
+Return any errors or warnings in this structure.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="shiftimagelist">ShiftImageList</a></h2>
+<blockquote>ShiftImageList() removes an image from the beginning of the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the ShiftImageList method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *ShiftImageList ( <A HREF="types.html#Image">Image</A> **images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="spliceimagelist">SpliceImageList</a></h2>
+<blockquote>SpliceImageList() removes the images designated by offset and length from the list and replaces them with the specified list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the SpliceImageList method is:</P>
+<blockquote><A HREF="types.html#Image">Image</A> *SpliceImageList ( <A HREF="types.html#Image">Image</A> *images, const long offset, const unsigned long length, const <A HREF="types.html#Image">Image</A> *splices, <A HREF="types.html#ExceptionInfo">ExceptionInfo</A> *exception ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong>offset:</strong><br />
+</dt>
+<DD>
+The position within the list.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_length_3a">length:</a></strong><br />
+</dt>
+<DD>
+The length of the image list to remove.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_splice_3a">splice:</a></strong><br />
+</dt>
+<DD>
+Replace the removed image list with this list.
+</dd>
+<P></P>
+<dt><strong>exception:</strong><br />
+</dt>
+<DD>
+Return any errors or warnings in this structure.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="unshiftimagelist">UnshiftImageList</a></h2>
+<blockquote>UnshiftImageList() adds the image to the beginning of the list. </blockquote><P>This method is deprecated as of version 5.5.2.</P>
+<P>The format of the UnshiftImageList method is:</P>
+<blockquote>unsigned int UnshiftImageList ( <A HREF="types.html#Image">Image</A> *images, const <A HREF="types.html#Image">Image</A> *image, <A HREF="types.html#ExceptionInfo">ExceptionInfo</A> *exception ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P>
+<dt><strong>image:</strong><br />
+</dt>
+<DD>
+The image.
+</dd>
+<P></P>
+<dt><strong>exception:</strong><br />
+</dt>
+<DD>
+Return any errors or warnings in this structure.
+</dd>
+</dl>
+
+</body>
+
+</html>

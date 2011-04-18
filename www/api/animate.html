@@ -1,0 +1,108 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<title>animate - Interactively animate an image sequence</title>
+<link rev="made" href="mailto:bfriesen@blade.simplesystems.org" />
+</head>
+
+<body style="background-color: white">
+
+<P><a name="__index__"></a></P>
+<!-- INDEX BEGIN -->
+
+<ul>
+
+	<li><a href="#name">NAME</a></li>
+	<li><a href="#synopsis">SYNOPSIS</a></li>
+	<li><a href="#function_descriptions">FUNCTION DESCRIPTIONS</a></li>
+	<ul>
+
+		<li><a href="#xanimatebackgroundimage">XAnimateBackgroundImage</a></li>
+		<li><a href="#xanimateimage">XAnimateImage</a></li>
+	</ul>
+
+</ul>
+<!-- INDEX END -->
+
+<hr />
+<P>
+</P>
+<h1><a name="name">NAME</a></h1>
+<P>animate - Interactively animate an image sequence</P>
+<P>
+</P>
+<hr />
+<h1><a name="synopsis">SYNOPSIS</a></h1>
+<P>void  <strong>XAnimateBackgroundImage</strong>( Display *display, XResourceInfo *resource_info, Image *images );</P>
+<P>
+</P>
+<hr />
+<h1><a name="function_descriptions">FUNCTION DESCRIPTIONS</a></h1>
+<P>
+</P>
+<h2><a name="xanimatebackgroundimage">XAnimateBackgroundImage</a></h2>
+<blockquote>XAnimateBackgroundImage() animates an image sequence in the background of a window. </blockquote><P>The format of the XAnimateBackgroundImage method is:</P>
+<blockquote>void XAnimateBackgroundImage ( Display *display, <A HREF="types.html#XResourceInfo">XResourceInfo</A> *resource_info, <A HREF="types.html#Image">Image</A> *images ); </blockquote><P>A description of each parameter follows:</P>
+<dl>
+<dt><strong><a name="item_o_display_3a">display:</a></strong><br />
+</dt>
+<DD>
+Specifies a connection to an X server; returned from XOpenDisplay.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_resource_info_3a">resource_info:</a></strong><br />
+</dt>
+<DD>
+Specifies a pointer to a X11 XResourceInfo structure.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_images_3a">images:</a></strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+<P></P></dl>
+<P>
+</P>
+<h2><a name="xanimateimage">XAnimateImage</a></h2>
+<P><code>XAnimateImages()</code> displays an image via X11.</P>
+<P>The format of the XAnimateImages method is:</P>
+<pre>
+    Image *XAnimateImages(Display *display,XResourceInfo *resource_info,
+      char **argv,const int argc,Image *images)</pre>
+<P>A description of each parameter follows:</P>
+<dl>
+<dt><strong>display:</strong><br />
+</dt>
+<DD>
+Specifies a connection to an X server; returned from XOpenDisplay.
+</dd>
+<P></P>
+<dt><strong>resource_info:</strong><br />
+</dt>
+<DD>
+Specifies a pointer to a X11 XResourceInfo structure.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_argv_3a">argv:</a></strong><br />
+</dt>
+<DD>
+Specifies the application's argument list.
+</dd>
+<P></P>
+<dt><strong><a name="item_o_argc_3a">argc:</a></strong><br />
+</dt>
+<DD>
+Specifies the number of arguments.
+</dd>
+<P></P>
+<dt><strong>images:</strong><br />
+</dt>
+<DD>
+The image list.
+</dd>
+</dl>
+
+</body>
+
+</html>

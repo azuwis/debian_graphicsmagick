@@ -1,0 +1,12 @@
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+libdir=@libdir@
+includedir=@includedir@/GraphicsMagick
+
+
+Name: GraphicsMagick
+Version: @PACKAGE_VERSION@
+Description: GraphicsMagick image processing library
+Requires:
+Libs: @MAGICK_API_LDFLAGS@ @MAGICK_API_LIBS@
+Cflags: -I${includedir} @MAGICK_API_CPPFLAGS@
