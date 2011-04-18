@@ -1,3 +1,9 @@
+graphicsmagick (1.1.11-3.2+lenny1+netease1) stable-security; urgency=low
+
+  * Add -DNDEBUG to CFLAGS
+
+ -- Zhong Jianxin (azuwis) <azuwis@gmail.com>  Mon, 18 Apr 2011 17:07:42 +0800
+
 graphicsmagick (1.1.11-3.2+lenny1) stable-security; urgency=high
 
   * Non-maintainer upload by the Security Team.
