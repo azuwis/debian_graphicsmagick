@@ -33,7 +33,7 @@ CHECK_FAILED_ACTION:= { \
 	}
 endif
 
-CFLAGS = -Wall -g -fno-strict-aliasing
+CFLAGS = -Wall -g -fno-strict-aliasing -DNDEBUG
 LDFLAGS =
 
 include /usr/share/hardening-includes/hardening.make
