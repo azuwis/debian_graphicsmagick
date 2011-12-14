@@ -28,6 +28,9 @@ use Config;
 #  Visual Studio 7.1 default install:
 #   libpth='"C:\Program Files\Microsoft Visual Studio .NET 2003\Vc7\lib" "C:\Perl\lib\CORE"'
 #
+#  Visual Studio 9.0 default install (C:\Perl\lib\Config.pm):
+#   libpth='"C:\Program Files\Microsoft Visual Studio 9.0\VC\lib" "C:\Perl\lib\CORE"'
+#
 WriteMakefile(
     'ABSTRACT'  => 'GraphicsMagick PERL Extension',
     'AUTHOR'    => 'GraphicsMagick Group',
@@ -131,27 +134,28 @@ sub MY::test
    package MY; # so that "SUPER" works right
    my $inherited = shift->SUPER::test(@_);
    my $delegate_tests=
+    " t/setattribute.t" .
+    " t/getattribute.t" .
     " t/filter.t" .
     " t/read.t" .
     " t/montage.t" .
-    " t/jpeg/read.t" .
-    " t/jpeg/write.t" .
+    " t/write.t" .
     " t/jbig/read.t" .
     " t/jbig/write.t" .
-    " t/hpgl/read.t" .
-    " t/ttf/read.t" .
+    " t/jng/read.t" .
+    " t/jng/write.t" .
+    " t/jpeg/read.t" .
+    " t/jpeg/write.t" .
     " t/png/read.t" .
     " t/png/write.t" .
-    " t/tiff/read.t" .
-    " t/tiff/write.t" .
-    " t/zlib/read.t" .
-    " t/zlib/write.t" .
     " t/ps/read.t" .
     " t/ps/write.t" .
+    " t/tiff/read.t" .
+    " t/tiff/write.t" .
+    " t/ttf/read.t" .
     " t/wmf/read.t" .
-    " t/write.t" .
-    " t/setattribute.t" .
-    " t/getattribute.t";
+    " t/zlib/read.t" .
+    " t/zlib/write.t";
    if ( defined $ENV{'DISPLAY'} ) {
     $delegate_tests .= " t/x/write.t t/x/read.t";
    }

@@ -37,10 +37,11 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -219,17 +220,17 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
           Assign a value to the specified keyword.
         */
         if (LocaleCompare(keyword,"Label_RECORDS") == 0)
-          length=atol(value);
+          length=MagickAtoL(value);
         if (LocaleCompare(keyword,"LBLSIZE") == 0)
-          length=atol(value);
+          length=MagickAtoL(value);
         if (LocaleCompare(keyword,"RECORD_BYTES") == 0)
-          image->columns= atol(value);
+          image->columns= MagickAtoL(value);
         if (LocaleCompare(keyword,"NS") == 0)
-          image->columns= atol(value);
+          image->columns= MagickAtoL(value);
         if (LocaleCompare(keyword,"LINES") == 0)
-          image->rows= atol(value);
+          image->rows= MagickAtoL(value);
         if (LocaleCompare(keyword,"NL") == 0)
-          image->rows= atol(value);
+          image->rows= MagickAtoL(value);
       }
     while (isspace(c))
     {
@@ -263,11 +264,13 @@ static Image *ReadVICARImage(const ImageInfo *image_info,
     if (!SetImagePixels(image,0,y,image->columns,1))
       break;
     (void) ReadBlob(image,image->columns,scanline);
-    (void) PushImagePixels(image,GrayQuantum,scanline);
+    (void) ImportImagePixelArea(image,GrayQuantum,image->depth,scanline,0,0);
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
   }
   MagickFreeMemory(scanline);
@@ -311,8 +314,8 @@ ModuleExport void RegisterVICARImage(void)
   entry->encoder=(EncoderHandler) WriteVICARImage;
   entry->magick=(MagickHandler) IsVICAR;
   entry->adjoin=False;
-  entry->description=AcquireString("VICAR rasterfile format");
-  entry->module=AcquireString("VICAR");
+  entry->description="VICAR rasterfile format";
+  entry->module="VICAR";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -400,7 +403,7 @@ static unsigned int WriteVICARImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   /*
     Write header.
   */
@@ -419,16 +422,17 @@ static unsigned int WriteVICARImage(const ImageInfo *image_info,Image *image)
   /*
     Write VICAR scanline.
   */
-  image->depth=8;
   for (y=0; y < (long) image->rows; y++)
   {
     if (!AcquireImagePixels(image,0,y,image->columns,1,&image->exception))
       break;
-    (void) PopImagePixels(image,GrayQuantum,scanline);
+    (void) ExportImagePixelArea(image,GrayQuantum,8,scanline,0,0);
     (void) WriteBlob(image,image->columns,scanline);
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
-        if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+        if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                    SaveImageText,image->filename,
+				    image->columns,image->rows))
           break;
   }
   MagickFreeMemory(scanline);

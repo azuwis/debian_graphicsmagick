@@ -29,8 +29,8 @@
 */
 #include "magick/studio.h"
 #include "magick/attribute.h"
-#include "magick/cache.h"
 #include "magick/gem.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -58,7 +58,7 @@
 */
 #define PRECISION "%.0f"
 ModuleExport unsigned int AnalyzeImage(Image **image,
-  const int argc,char **argv)
+  const int ARGUNUSED(argc),char **ARGUNUSED(argv))
 {
   double
     bsumX = 0.0,
@@ -76,10 +76,10 @@ ModuleExport unsigned int AnalyzeImage(Image **image,
     hue,
     saturation;
 
-  int
+  long
     y;
 
-  register int
+  register long
     x;
 
   register PixelPacket
@@ -100,12 +100,12 @@ ModuleExport unsigned int AnalyzeImage(Image **image,
         FormatString(text,"#%02x%02x%02x",p->red,p->green,p->blue);
         (void) SetImageAttribute((*image),"TopLeftColor",text);
       }
-    if (y == ((*image)->rows-1))
+    if (y == (long) ((*image)->rows-1))
       {
         FormatString(text,"#%02x%02x%02x",p->red,p->green,p->blue);
         (void) SetImageAttribute((*image),"BottomLeftColor",text);
       }
-    for (x=0; x < (*image)->columns; x++)
+    for (x=0; x < (long) (*image)->columns; x++)
     {
       TransformHSL(p->red,p->green,p->blue,&hue,&saturation,&brightness);
       brightness *= MaxRGB;
@@ -123,7 +123,7 @@ ModuleExport unsigned int AnalyzeImage(Image **image,
         FormatString(text,"#%02x%02x%02x",p->red,p->green,p->blue);
         (void) SetImageAttribute((*image),"TopRightColor",text);
       }
-    if (y == ((*image)->rows-1))
+    if (y == (long) ((*image)->rows-1))
       {
         FormatString(text,"#%02x%02x%02x",p->red,p->green,p->blue);
         (void) SetImageAttribute((*image),"BottomRightColor",text);

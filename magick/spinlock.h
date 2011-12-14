@@ -16,16 +16,31 @@
 #ifndef _SPINLOCKS_H
 #define _SPINLOCKS_H
 
-#if defined(WIN32)
+#if defined(MSWINDOWS)
 
 #define SPINLOCK_DELAY_MILLI_SECS 10
 
-static int
+static LONG volatile
   spinlock_mutex = 0;
 
 /* Wait for spin lock */
-static void _spinlock_wait (int *sl)
+static void _spinlock_wait (LONG volatile *sl)
 {
+  /*
+    LONG InterlockedCompareExchange(LONG volatile* dest, LONG xchg,
+    LONG compare)
+
+    Performs an atomic compare-and-exchange operation on the specified
+    values. The function compares two specified 32-bit values and
+    exchanges with another 32-bit value based on the outcome of the
+    comparison.
+
+    If you are exchanging pointer values, this function has been
+    superseded by the InterlockedCompareExchangePointer function.
+
+    To operate on 64-bit values, use the InterlockedCompareExchange64
+    function.
+  */
   while (InterlockedCompareExchange (sl, 1, 0) != 0)
   {
     /* slight delay - just in case OS does not giveup CPU */
@@ -33,14 +48,26 @@ static void _spinlock_wait (int *sl)
   }
 }
 /* Release spin lock */
-static void _spinlock_release (int *sl)
+static void _spinlock_release (LONG volatile *sl)
 {
+  /*
+    LONG InterlockedExchange (LONG volatile* dest, LONG val)
+
+    Sets a 32-bit variable to the specified value as an atomic
+    operation.
+
+    To operate on a pointer variable, use the
+    InterlockedExchangePointer function.
+    
+    To operate on a 64-bit variable, use the InterlockedExchange64
+    function.
+  */
   InterlockedExchange (sl, 0);
 }
 #define SPINLOCK_WAIT _spinlock_wait(&spinlock_mutex)
 #define SPINLOCK_RELEASE _spinlock_release(&spinlock_mutex)
 
-#else /* not WIN32 */
+#else /* not MSWINDOWS */
 
 #if defined(HAVE_PTHREAD)
 
@@ -56,5 +83,13 @@ static pthread_mutex_t
 
 #endif /* HAVE_PTHREAD */
 
-#endif /* WIN32 */
+#endif /* MSWINDOWS */
 #endif /* _SPINLOCKS_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

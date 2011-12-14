@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003, 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -38,15 +38,17 @@
 #include "magick/studio.h"
 #if defined(HasXML)
 #include "magick/blob.h"
+#include "magick/confirm_access.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/tempfile.h"
 #include "magick/utility.h"
-#if defined(WIN32)
+#if defined(MSWINDOWS)
 #  if defined(__MINGW32__)
 #    define _MSC_VER
+#  else
+#    include <win32config.h>
 #  endif
-#  include <win32config.h>
 #endif
 #include <libxml/parser.h>
 #include <libxml/xmlmemory.h>
@@ -126,21 +128,37 @@ static Image *ReadURLImage(const ImageInfo *image_info,ExceptionInfo *exception)
   void
     *context;
 
+  ConfirmAccessMode
+    access_mode=UndefinedConfirmAccessMode;
+
   image=(Image *) NULL;
+
+  if (LocaleCompare(image_info->magick,"ftp") == 0)
+    access_mode=URLGetFTPConfirmAccessMode;
+  else if (LocaleCompare(image_info->magick,"http") == 0)
+    access_mode=URLGetHTTPConfirmAccessMode;
+  else if (LocaleCompare(image_info->magick,"file") == 0)
+    access_mode=URLGetFileConfirmAccessMode;
+
+  (void) strlcpy(filename,image_info->magick,MaxTextExtent);
+  (void) strlcat(filename,":",MaxTextExtent);
+  LocaleLower(filename);
+  (void) strlcat(filename,image_info->filename,MaxTextExtent);
+
+  if (MagickConfirmAccess(access_mode,filename,exception)
+      == MagickFail)
+    return image;
+
   clone_info=CloneImageInfo(image_info);
   clone_info->blob=(void *) NULL;
   clone_info->length=0;
   file=AcquireTemporaryFileStream(clone_info->filename,BinaryFileIOMode);
   if (file == (FILE *) NULL)
     {
-      strcpy(filename,clone_info->filename);
+      (void) strcpy(filename,clone_info->filename);
       DestroyImageInfo(clone_info);
       ThrowReaderTemporaryFileException(filename)
     }
-  (void) strncpy(filename,image_info->magick,MaxTextExtent-1);
-  (void) strcat(filename,":");
-  LocaleLower(filename);
-  (void) strcat(filename,image_info->filename);
   if (LocaleCompare(clone_info->magick,"ftp") != 0)
     {
       char
@@ -175,7 +193,7 @@ static Image *ReadURLImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) fclose(file);
   if (!IsAccessibleAndNotEmpty(clone_info->filename))
     {
-      LiberateTemporaryFile(clone_info->filename);
+      (void) LiberateTemporaryFile(clone_info->filename);
       ThrowException(exception,CoderError,NoDataReturned,filename);
     }
   else
@@ -183,7 +201,7 @@ static Image *ReadURLImage(const ImageInfo *image_info,ExceptionInfo *exception)
       *clone_info->magick='\0';
       image=ReadImage(clone_info,exception);
     }
-  LiberateTemporaryFile(clone_info->filename);
+  (void) LiberateTemporaryFile(clone_info->filename);
   DestroyImageInfo(clone_info);
   return(image);
 }
@@ -220,21 +238,26 @@ ModuleExport void RegisterURLImage(void)
 
   entry=SetMagickInfo("HTTP");
   entry->decoder=(DecoderHandler) ReadURLImage;
-  entry->description=AcquireString("Uniform Resource Locator (http://)");
-  entry->module=AcquireString("URL");
+  entry->description="Uniform Resource Locator (http://)";
+  entry->module="URL";
   entry->stealth=True;
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("FTP");
   entry->decoder=(DecoderHandler) ReadURLImage;
-  entry->description=AcquireString("Uniform Resource Locator (ftp://)");
-  entry->module=AcquireString("URL");
+  entry->description="Uniform Resource Locator (ftp://)";
+  entry->module="URL";
   entry->stealth=True;
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("FILE");
   entry->decoder=(DecoderHandler) ReadURLImage;
-  entry->description=AcquireString("Uniform Resource Locator (file://)");
-  entry->module=AcquireString("URL");
+  entry->description="Uniform Resource Locator (file://)";
+  entry->module="URL";
   entry->stealth=True;
+  entry->coder_class=StableCoderClass;
   (void) RegisterMagickInfo(entry);
 #endif /* defined(HasXML) */
 }

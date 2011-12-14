@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
 #include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -154,11 +155,11 @@ static Image *ReadMAPImage(const ImageInfo *image_info,ExceptionInfo *exception)
   else
     for (i=0; i < (long) image->colors; i++)
     {
-      image->colormap[i].red=(*p++ << 8);
+      image->colormap[i].red=(*p++ << 8U);
       image->colormap[i].red|=(*p++);
-      image->colormap[i].green=(*p++ << 8);
+      image->colormap[i].green=(*p++ << 8U);
       image->colormap[i].green|=(*p++);
-      image->colormap[i].blue=(*p++ << 8);
+      image->colormap[i].blue=(*p++ << 8U);
       image->colormap[i].blue|=(*p++);
     }
   MagickFreeMemory(colormap);
@@ -177,7 +178,7 @@ static Image *ReadMAPImage(const ImageInfo *image_info,ExceptionInfo *exception)
     q=SetImagePixels(image,0,y,image->columns,1);
     if (q == (PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessMutableIndexes(image);
     (void) ReadBlob(image,packet_size*image->columns,(char *) pixels);
     for (x=0; x < (long) image->columns; x++)
     {
@@ -235,8 +236,10 @@ ModuleExport void RegisterMAPImage(void)
   entry->encoder=(EncoderHandler) WriteMAPImage;
   entry->adjoin=False;
   entry->raw=True;
-  entry->description=AcquireString("Colormap intensities and indices");
-  entry->module=AcquireString("MAP");
+  entry->description="Colormap intensities and indices";
+  entry->module="MAP";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=ObeyExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -299,7 +302,7 @@ static unsigned int WriteMAPImage(const ImageInfo *image_info,Image *image)
   long
     y;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register const PixelPacket
@@ -332,12 +335,12 @@ static unsigned int WriteMAPImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   /*
     Allocate colormap.
   */
   if (!IsPaletteImage(image,&image->exception))
-    SetImageType(image,PaletteType);
+    (void) SetImageType(image,PaletteType);
   packet_size=image->depth > 8 ? 2 : 1;
   pixels=MagickAllocateMemory(unsigned char *,image->columns*packet_size);
   packet_size=image->colors > 256 ? 6 : 3;
@@ -356,6 +359,7 @@ static unsigned int WriteMAPImage(const ImageInfo *image_info,Image *image)
       *q++=image->colormap[i].green;
       *q++=image->colormap[i].blue;
     }
+#if QuantumDepth > 8
   else
     for (i=0; i < (long) image->colors; i++)
     {
@@ -366,6 +370,7 @@ static unsigned int WriteMAPImage(const ImageInfo *image_info,Image *image)
       *q++=image->colormap[i].blue >> 8;
       *q++=image->colormap[i].blue & 0xff;
     }
+#endif /* QuantumDepth > 8 */
   (void) WriteBlob(image,packet_size*image->colors,(char *) colormap);
   MagickFreeMemory(colormap);
   /*
@@ -376,12 +381,14 @@ static unsigned int WriteMAPImage(const ImageInfo *image_info,Image *image)
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     q=pixels;
     for (x=0; x < (long) image->columns; x++)
     {
+#if QuantumDepth > 8
       if (image->colors > 256)
         *q++=indexes[x] >> 8;
+#endif /* QuantumDepth > 8 */
       *q++=indexes[x];
     }
     (void) WriteBlob(image,q-pixels,(char *) pixels);

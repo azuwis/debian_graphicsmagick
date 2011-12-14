@@ -1,10 +1,12 @@
 .*\.gdbinit$
 .*core$
+.*\.cvsignore
 /output.*$
 /test_.+_out\..+$
 Magick\.bs$
 Magick\.c$
 Magick\.o$
+Makefile.old$
 \.bak$
 \.cvsignore$
 \.old$

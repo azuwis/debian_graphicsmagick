@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003, 2007 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
@@ -17,6 +17,10 @@ extern "C" {
 
 extern MagickExport unsigned int
   AnimateImageCommand(ImageInfo *image_info,int argc,char **argv,
+                      char **metadata,ExceptionInfo *exception),
+  BenchmarkImageCommand(ImageInfo *image_info,int argc,char **argv,
+                      char **metadata,ExceptionInfo *exception),
+  CompareImageCommand(ImageInfo *image_info,int argc,char **argv,
                       char **metadata,ExceptionInfo *exception),
   CompositeImageCommand(ImageInfo *image_info,int argc,char **argv,
                         char **metadata,ExceptionInfo *exception),
@@ -37,21 +41,33 @@ extern MagickExport unsigned int
                       char **metadata,ExceptionInfo *exception),
   MogrifyImages(const ImageInfo *,int,char **,Image **),
   MontageImageCommand(ImageInfo *image_info,int argc,char **argv,
-                      char **metadata,ExceptionInfo *exception);
+                      char **metadata,ExceptionInfo *exception),
+  TimeImageCommand(ImageInfo *image_info,int argc,char **argv,
+		   char **metadata,ExceptionInfo *exception);
 
-extern MagickExport void
-  AnimateUsage(void),
-  CompositeUsage(void),
-  ConjureUsage(void),
-  ConvertUsage(void),
-  DisplayUsage(void),
-  IdentifyUsage(void),
-  ImportUsage(void),
-  MogrifyUsage(void),
-  MontageUsage(void);
+extern MagickExport int
+  GMCommand(int argc,char **argv);
+
+#if defined(MAGICK_IMPLEMENTATION)
+
+extern void
+  MagickDestroyCommandInfo(void);
+
+extern MagickPassFail
+  MagickInitializeCommandInfo(void);
+
+#endif /* defined(MAGICK_IMPLEMENTATION) */
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

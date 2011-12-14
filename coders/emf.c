@@ -34,7 +34,7 @@
 
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
 #if defined(HasWINGDI32)
@@ -89,8 +89,7 @@
 static HENHMETAFILE ReadEnhMetaFile(const char *szFileName,long *width,
   long *height)
 {
-#pragma pack( push )
-#pragma pack( 2 )
+#pragma pack( push, 2 )
   typedef struct
   {
     DWORD dwKey;
@@ -440,16 +439,17 @@ ModuleExport void RegisterEMFImage(void)
     *entry;
 
   entry = SetMagickInfo("EMF");
-  entry->decoder = ReadEMFImage;
-  entry->description = AcquireString("Windows WIN32 API rendered Enhanced Meta File");
-  entry->blob_support = False;
-  entry->module = AcquireString("WMF");
+  entry->decoder=ReadEMFImage;
+  entry->description="Windows WIN32 API rendered Enhanced Meta File";
+  entry->blob_support=False;
+  entry->module="WMF";
   (void) RegisterMagickInfo(entry);
+
   entry = SetMagickInfo("WMFWIN32");
-  entry->decoder = ReadEMFImage;
-  entry->description = AcquireString("Windows WIN32 API rendered Meta File");
-  entry->blob_support = False;
-  entry->module = AcquireString("WMFWIN32");
+  entry->decoder=ReadEMFImage;
+  entry->description="Windows WIN32 API rendered Meta File";
+  entry->blob_support=False;
+  entry->module="WMFWIN32";
   (void) RegisterMagickInfo(entry);
 #endif /* HasWINGDI32 */
 }

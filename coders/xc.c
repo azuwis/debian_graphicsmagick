@@ -38,6 +38,8 @@
 #include "magick/studio.h"
 #include "magick/blob.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
+#include "magick/colormap.h"
 #include "magick/composite.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
@@ -79,7 +81,7 @@ static Image *ReadXCImage(const ImageInfo *image_info,ExceptionInfo *exception)
   Image
     *image;
 
-  unsigned int
+  MagickPassFail
     status;
 
   /*
@@ -94,22 +96,36 @@ static Image *ReadXCImage(const ImageInfo *image_info,ExceptionInfo *exception)
     image->columns=1;
   if (image->rows == 0)
     image->rows=1;
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
   status=QueryColorDatabase((char *) image_info->filename,
     &image->background_color,exception);
-  if (status == False)
+  if (status == MagickFail)
     {
       DestroyImage(image);
-      return((Image *) NULL);
+      return ((Image *) NULL);
     }
-  if (!AllocateImageColormap(image,1))
-    ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
-  image->colormap[0]=image->background_color;
+  /*
+    Create a colormap if image is not DirectClass type.
+  */
+  if ((TrueColorType != image_info->type) &&
+      (TrueColorMatteType != image_info->type))
+    {
+      if (!AllocateImageColormap(image,1))
+        ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+      image->colormap[0]=image->background_color;
+    }
   /*
     Initialize image pixels to the value of image->background_color
   */
-  SetImage(image,image->background_color.opacity);
-  return(image);
+  status=SetImage(image,image->background_color.opacity);
+  if (status == MagickFail)
+    {
+      CopyException(exception,&image->exception);
+      DestroyImage(image);
+      image=(Image *) NULL;
+    }
+
+  return image;
 }
 
 /*
@@ -144,8 +160,10 @@ ModuleExport void RegisterXCImage(void)
   entry->decoder=(DecoderHandler) ReadXCImage;
   entry->adjoin=False;
   entry->raw=True;
-  entry->description=AcquireString("Constant image uniform color");
-  entry->module=AcquireString("XC");
+  entry->description="Constant image uniform color";
+  entry->module="XC";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

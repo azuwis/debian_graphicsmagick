@@ -117,7 +117,7 @@ sub testCompositeCompare {
     }
 
   $background->set(depth=>8);
-#  if ("$composite_options" =~ /Xor/) {
+#  if ("$composite_options" =~ /Dissolve/) {
 #    $background->write(filename=>"$refimage_name", compression=>'None');
 #    $background->Display();
 #  }
@@ -180,10 +180,10 @@ sub testCompositeCompare {
 }
 
 #
-# Test reading a 16-bit file in which two signatures are possible,
-# depending on whether 16-bit pixels data has been enabled
+# Test reading a file in which several signatures are possible,
+# depending on available image depth.
 #
-# Usage: testRead( read filename, expected ref_8 [, expected ref_16] );
+# Usage: testRead( read filename, expected ref_8 [, expected ref_16] [, expected ref_32] );
 #
 sub testRead {
   my( $infile, $ref_8, $ref_16, $ref_32 ) =  @_;
@@ -381,14 +381,6 @@ sub testReadCompare {
         }
     }
 
-  $status=$srcimage->Compare($refimage);
-  if ("$status")
-    {
-      $errorinfo = "Compare($refimage_name): $status";
-      warn("$errorinfo");
-      goto COMPARE_RUNTIME_ERROR;
-    }
-
   $normalized_mean_error=0;
   $normalized_mean_error=$srcimage->GetAttribute('mean-error');
   if ( !defined($normalized_mean_error) )
@@ -420,6 +412,8 @@ sub testReadCompare {
   return 0;
 
  COMPARE_RUNTIME_ERROR:
+  $srcimage->Display();
+  $refimage->Display();
   undef $srcimage;
   undef $refimage;
   print "not ok $test\n";
@@ -1067,7 +1061,7 @@ sub testMontage {
     print "not ok $test\n";
   } else {
     # Check REF_8 signature
-    #$montage->Display();
+    # $montage->Display();
     $signature=$montage->GetAttribute('signature');
     if ( defined( $signature ) ) {
       if ( $signature ne $ref_signature ) {

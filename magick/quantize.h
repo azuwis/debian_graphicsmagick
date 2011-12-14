@@ -55,7 +55,6 @@ extern MagickExport unsigned int
   MapImage(Image *,const Image *,const unsigned int),
   MapImages(Image *,const Image *,const unsigned int),
   OrderedDitherImage(Image *),
-  QuantizationError(Image *),
   QuantizeImage(const QuantizeInfo *,Image *),
   QuantizeImages(const QuantizeInfo *,Image *),
   SegmentImage(Image *,const ColorspaceType,const unsigned int,const double,
@@ -64,10 +63,19 @@ extern MagickExport unsigned int
 extern MagickExport void
   CompressImageColormap(Image *),
   DestroyQuantizeInfo(QuantizeInfo *),
-  GetQuantizeInfo(QuantizeInfo *);
+  GetQuantizeInfo(QuantizeInfo *),
+  GrayscalePseudoClassImage(Image *,unsigned int);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

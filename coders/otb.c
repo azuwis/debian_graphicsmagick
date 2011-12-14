@@ -35,9 +35,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -152,7 +153,7 @@ static Image *ReadOTBImage(const ImageInfo *image_info,ExceptionInfo *exception)
     q=SetImagePixels(image,0,y,image->columns,1);
     if (q == (PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessMutableIndexes(image);
     bit=0;
     byte=0;
     for (x=0; x < (long) image->columns; x++)
@@ -171,10 +172,12 @@ static Image *ReadOTBImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
   }
-  SyncImage(image);
+  (void) SyncImage(image);
   if (EOFBlob(image))
     ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
       image->filename);
@@ -214,8 +217,8 @@ ModuleExport void RegisterOTBImage(void)
   entry->decoder=(DecoderHandler) ReadOTBImage;
   entry->encoder=(EncoderHandler) WriteOTBImage;
   entry->adjoin=False;
-  entry->description=AcquireString("On-the-air bitmap");
-  entry->module=AcquireString("OTB");
+  entry->description="On-the-air bitmap";
+  entry->module="OTB";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -284,7 +287,7 @@ static unsigned int WriteOTBImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -309,11 +312,11 @@ static unsigned int WriteOTBImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
   /*
     Convert image to a bi-level image.
   */
-  SetImageType(image,BilevelType);
+  (void) SetImageType(image,BilevelType);
   polarity=PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2);
   if (image->colors == 2)
     polarity=PixelIntensityToQuantum(&image->colormap[0]) <
@@ -338,7 +341,7 @@ static unsigned int WriteOTBImage(const ImageInfo *image_info,Image *image)
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
+    indexes=AccessImmutableIndexes(image);
     bit=0;
     byte=0;
     for (x=0; x < (long) image->columns; x++)
@@ -356,7 +359,9 @@ static unsigned int WriteOTBImage(const ImageInfo *image_info,Image *image)
     if (bit != 0)
       (void) WriteBlobByte(image,byte);
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   CloseBlob(image);

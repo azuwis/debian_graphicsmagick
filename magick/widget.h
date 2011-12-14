@@ -33,7 +33,7 @@ typedef enum
 /*
   Typedef declarations.
 */
-typedef struct _XWidgetInfo
+typedef struct _MagickXWidgetInfo
 {
   char
     *cursor,
@@ -60,31 +60,31 @@ typedef struct _XWidgetInfo
     center,
     trough,
     highlight;
-} XWidgetInfo;
+} MagickXWidgetInfo;
 
 /*
   X utilities routines.
 */
 extern MagickExport int
-  XCommandWidget(Display *,XWindows *,const char **,XEvent *),
-  XConfirmWidget(Display *,XWindows *,const char *,const char *),
-  XDialogWidget(Display *,XWindows *,const char *,const char *,char *),
-  XMenuWidget(Display *,XWindows *,const char *,const char **,char *);
+  MagickXCommandWidget(Display *,MagickXWindows *,const char **,XEvent *),
+  MagickXConfirmWidget(Display *,MagickXWindows *,const char *,const char *),
+  MagickXDialogWidget(Display *,MagickXWindows *,const char *,const char *,char *),
+  MagickXMenuWidget(Display *,MagickXWindows *,const char *,const char **,char *);
 
 extern MagickExport unsigned int
-  XPreferencesWidget(Display *,XResourceInfo *,XWindows *);
+  MagickXPreferencesWidget(Display *,MagickXResourceInfo *,MagickXWindows *);
 
 extern MagickExport void
-  XColorBrowserWidget(Display *,XWindows *,const char *,char *),
-  XFileBrowserWidget(Display *,XWindows *,const char *,char *),
-  XFontBrowserWidget(Display *,XWindows *,const char *,char *),
-  XInfoWidget(Display *,XWindows *,const char *),
-  XListBrowserWidget(Display *,XWindows *,XWindowInfo *,const char **,
+  MagickXColorBrowserWidget(Display *,MagickXWindows *,const char *,char *),
+  MagickXFileBrowserWidget(Display *,MagickXWindows *,const char *,char *),
+  MagickXFontBrowserWidget(Display *,MagickXWindows *,const char *,char *),
+  MagickXInfoWidget(Display *,MagickXWindows *,const char *),
+  MagickXListBrowserWidget(Display *,MagickXWindows *,MagickXWindowInfo *,const char **,
     const char *,const char *,char *),
-  XMonitorWidget(Display *display,XWindows *windows,const char *task,
+  MagickXMonitorWidget(Display *display,MagickXWindows *windows,const char *task,
     const magick_int64_t quantum,const magick_uint64_t span),
-  XNoticeWidget(Display *,XWindows *,const char *,const char *),
-  XTextViewWidget(Display *,const XResourceInfo *,XWindows *,const unsigned int,
+  MagickXNoticeWidget(Display *,MagickXWindows *,const char *,const char *),
+  MagickXTextViewWidget(Display *,const MagickXResourceInfo *,MagickXWindows *,const unsigned int,
     const char *,const char **);
 
 #if defined(__cplusplus) || defined(c_plusplus)
@@ -92,3 +92,11 @@ extern MagickExport void
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

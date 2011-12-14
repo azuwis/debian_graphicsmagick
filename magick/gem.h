@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003 GraphicsMagick Group
+  Copyright (C) 2003-2009 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
@@ -11,6 +11,8 @@
 #ifndef _MAGICK_GEM_H
 #define _MAGICK_GEM_H
 
+#include "magick/random.h"
+
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
 #endif
@@ -19,15 +21,15 @@ extern "C" {
   Graphic gems define declarations.
 */
 extern MagickExport double
-  ExpandAffine(const AffineMatrix *);
+  ExpandAffine(const AffineMatrix *),
+  GenerateDifferentialNoise(const Quantum pixel,const NoiseType noise_type,
+    MagickRandomKernel *kernel);
 
 extern MagickExport int
   GetOptimalKernelWidth(const double,const double),
   GetOptimalKernelWidth1D(const double,const double),
   GetOptimalKernelWidth2D(const double,const double);
 
-extern MagickExport PixelPacket
-  InterpolateColor(const Image *,const double,const double,ExceptionInfo *);
 
 extern MagickExport Quantum
   GenerateNoise(const Quantum,const NoiseType);
@@ -46,12 +48,18 @@ extern MagickExport void
   TransformHSL(const Quantum,const Quantum,const Quantum,double *,double *,
     double *),
   TransformHWB(const Quantum,const Quantum,const Quantum,double *,double *,
-    double *),
-  Upsample(const unsigned long,const unsigned long,const unsigned long,
-    unsigned char *);
+    double *);
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

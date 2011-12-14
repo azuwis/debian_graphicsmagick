@@ -136,17 +136,20 @@ ModuleExport void RegisterMPRImage(void)
   entry->encoder=(EncoderHandler) WriteMPRImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Magick Persistent Registry");
-  entry->module=AcquireString("MPR");
+  entry->description="Magick Persistent Registry";
+  entry->module="MPR";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("MPRI");
   entry->decoder=(DecoderHandler) ReadMPRImage;
   entry->encoder=(EncoderHandler) WriteMPRImage;
   entry->stealth=True;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Magick Persistent Registry");
-  entry->module=AcquireString("MPRI");
+  entry->description="Magick Persistent Registry";
+  entry->module="MPRI";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -226,7 +229,7 @@ static unsigned int WriteMPRImage(const ImageInfo *image_info,Image *image)
   DestroyExceptionInfo(&exception);
   if (registry_image != (Image *) NULL)
     {
-      DeleteMagickRegistry(id);
+      (void) DeleteMagickRegistry(id);
       DestroyImage(registry_image);
     }
   id=SetMagickRegistry(ImageRegistryType,image,sizeof(Image),&image->exception);

@@ -31,13 +31,23 @@
 %
 %
 */
+
+/*
+  The Scitex HandShake data format is specified in the document
+
+  HandShake Foreign File Transfer Protocol, Scitex Corporation, Ltd.,
+  Revision A: April 1988, Document No. 788-37898A, Catalog No. 399Z37898
+
+  http://www.oreilly.com/www/centers/gff/formats/scitex/
+*/
+
 
 /*
   Include declarations.
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -166,9 +176,9 @@ static Image *ReadSCTImage(const ImageInfo *image_info,ExceptionInfo *exception)
   */
   (void) ReadBlob(image,32,(char *) buffer);
   (void) ReadBlob(image,14,(char *) buffer);
-  image->rows=atol(buffer);
+  image->rows=MagickAtoL(buffer);
   (void) ReadBlob(image,14,(char *) buffer);
-  image->columns=atol(buffer);
+  image->columns=MagickAtoL(buffer);
   (void) ReadBlob(image,196,(char *) buffer);
   (void) ReadBlob(image,768,(char *) buffer);
   image->colorspace=CMYKColorspace;
@@ -225,7 +235,9 @@ static Image *ReadSCTImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if ((image->columns % 2) != 0)
       (void) ReadBlobByte(image);  /* pad */
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
   }
   if (EOFBlob(image))
@@ -267,8 +279,9 @@ ModuleExport void RegisterSCTImage(void)
   entry->decoder=(DecoderHandler) ReadSCTImage;
   entry->magick=(MagickHandler) IsSCT;
   entry->adjoin=False;
-  entry->description=AcquireString("Scitex HandShake");
-  entry->module=AcquireString("SCT");
+  entry->description="Scitex HandShake";
+  entry->module="SCT";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 

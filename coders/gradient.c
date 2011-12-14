@@ -37,7 +37,8 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/color.h"
+#include "magick/color_lookup.h"
+#include "magick/gradient.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
 #include "magick/studio.h"
@@ -98,9 +99,9 @@ static Image *ReadGRADIENTImage(const ImageInfo *image_info,
   image=AllocateImage(image_info);
   if ((image->columns == 0) || (image->rows == 0))
     ThrowReaderException(OptionError,MustSpecifyImageSize,image);
-  SetImage(image,OpaqueOpacity);
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
-  (void) strncpy(colorname,image_info->filename,MaxTextExtent-1);
+  (void) SetImage(image,OpaqueOpacity);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
+  (void) strlcpy(colorname,image_info->filename,MaxTextExtent);
   (void) sscanf(image_info->filename,"%[^-]",colorname);
   if (!QueryColorDatabase(colorname,&start_color,exception))
     {
@@ -152,8 +153,10 @@ ModuleExport void RegisterGRADIENTImage(void)
   entry->decoder=(DecoderHandler) ReadGRADIENTImage;
   entry->adjoin=False;
   entry->raw=True;
-  entry->description=AcquireString("Gradual passing from one shade to another");
-  entry->module=AcquireString("GRADIENT");
+  entry->description="Gradual passing from one shade to another";
+  entry->module="GRADIENT";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

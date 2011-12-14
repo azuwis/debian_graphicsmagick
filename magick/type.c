@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -35,13 +35,15 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#if defined(WIN32) || defined(__CYGWIN__)
+#if defined(MSWINDOWS) || defined(__CYGWIN__)
 # include "magick/nt_feature.h"
 #endif
 #include "magick/blob.h"
+#include "magick/enum_strings.h"
 #include "magick/log.h"
 #include "magick/render.h"
 #include "magick/semaphore.h"
+#include "magick/type.h"
 #include "magick/utility.h"
 
 /*
@@ -101,7 +103,6 @@ MagickExport void DestroyTypeInfo(void)
   TypeInfo
     *type_info;
 
-  AcquireSemaphoreInfo(&type_semaphore);
   for (p=type_list; p != (TypeInfo *) NULL; )
   {
     type_info=p;
@@ -127,7 +128,6 @@ MagickExport void DestroyTypeInfo(void)
     MagickFreeMemory(type_info);
   }
   type_list=(TypeInfo *) NULL;
-  LiberateSemaphoreInfo(&type_semaphore);
   DestroySemaphoreInfo(&type_semaphore);
 }
 
@@ -168,11 +168,11 @@ MagickExport const TypeInfo *GetTypeInfo(const char *name,
 
   if (type_list == (TypeInfo *) NULL)
     {
-      AcquireSemaphoreInfo(&type_semaphore);
+      LockSemaphoreInfo(type_semaphore);
       if (type_list == (TypeInfo *) NULL)
         {
           (void) ReadTypeConfigureFile(TypeFilename,0,exception);
-#if defined(WIN32) || defined(__CYGWIN__)
+#if defined(MSWINDOWS) || defined(__CYGWIN__)
           {
             TypeInfo
               *type_info;
@@ -195,14 +195,14 @@ MagickExport const TypeInfo *GetTypeInfo(const char *name,
           }
 #endif
         }
-      LiberateSemaphoreInfo(&type_semaphore);
+      UnlockSemaphoreInfo(type_semaphore);
     }
   if ((name == (const char *) NULL) || (LocaleCompare(name,"*") == 0))
     return((const TypeInfo *) type_list);
   /*
     Search for requested type.
   */
-  AcquireSemaphoreInfo(&type_semaphore);
+  LockSemaphoreInfo(type_semaphore);
   for (p=type_list; p != (TypeInfo *) NULL; p=p->next)
     if ((p->name != (char *) NULL) && (LocaleCompare(p->name,name) == 0))
       break;
@@ -221,7 +221,7 @@ MagickExport const TypeInfo *GetTypeInfo(const char *name,
         type_list->previous=p;
         type_list=p;
       }
-  LiberateSemaphoreInfo(&type_semaphore);
+  UnlockSemaphoreInfo(type_semaphore);
   return((const TypeInfo *) p);
 }
 
@@ -480,6 +480,33 @@ MagickExport char **GetTypeList(const char *pattern,unsigned long *number_types)
 %                                                                             %
 %                                                                             %
 %                                                                             %
++   I n i t i a l i z e T y p e I n f o                                       %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Method InitializeTypeInfo initializes the type facility
+%
+%  The format of the InitializeTypeInfo method is:
+%
+%      MagickPassFail InitializeTypeInfo(void)
+%
+%
+*/
+MagickPassFail
+InitializeTypeInfo(void)
+{
+  assert(type_semaphore == (SemaphoreInfo *) NULL);
+  type_semaphore=AllocateSemaphoreInfo();
+  return MagickPass;
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %  L i s t T y p e I n f o                                                    %
 %                                                                             %
 %                                                                             %
@@ -501,38 +528,6 @@ MagickExport char **GetTypeList(const char *pattern,unsigned long *number_types)
 %
 */
 
-static const char *StretchTypeToString(StretchType stretch)
-{
-  switch(stretch)
-  {
-    case NormalStretch: return("normal");
-    case UltraCondensedStretch: return("ultra-condensed");
-    case ExtraCondensedStretch: return("extra-condensed");
-    case CondensedStretch: return("condensed");
-    case SemiCondensedStretch: return("semi-condensed");
-    case SemiExpandedStretch: return("semi-expanded");
-    case ExpandedStretch: return("expanded");
-    case ExtraExpandedStretch: return("extra-expanded");
-    case UltraExpandedStretch: return("ultra-expanded");
-    case AnyStretch: return("any");
-    default: break;
-  }
-  return("unknown");
-}
-
-static const char *StyleTypeToString(StyleType style)
-{
-  switch(style)
-  {
-    case NormalStyle: return("normal");
-    case ItalicStyle: return("italic");
-    case ObliqueStyle: return("oblique");
-    case AnyStyle: return("any");
-    default:  break;
-  }
-  return("unknown");
-}
-
 MagickExport unsigned int ListTypeInfo(FILE *file,ExceptionInfo *exception)
 {
   char
@@ -550,7 +545,7 @@ MagickExport unsigned int ListTypeInfo(FILE *file,ExceptionInfo *exception)
   if (file == (FILE *) NULL)
     file=stdout;
   (void) GetTypeInfo("*",exception);
-  AcquireSemaphoreInfo(&type_semaphore);
+  LockSemaphoreInfo(type_semaphore);
   for (p=type_list; p != (const TypeInfo *) NULL; p=p->next)
   {
     if ((p->previous == (TypeInfo *) NULL) ||
@@ -580,7 +575,7 @@ MagickExport unsigned int ListTypeInfo(FILE *file,ExceptionInfo *exception)
       name,family,style,stretch,weight);
   }
   (void) fflush(file);
-  LiberateSemaphoreInfo(&type_semaphore);
+  UnlockSemaphoreInfo(type_semaphore);
   return(True);
 }
 
@@ -626,7 +621,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
     *token,
     *xml;
 
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   char
     GhostscriptFontDir[MaxTextExtent];
 #endif
@@ -640,7 +635,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
   (void) LogMagickEvent(ConfigureEvent,GetMagickModule(),
     "File path=\"%.1024s\", recursion depth=%lu",basename,depth);
   (void) strcpy(path,basename);
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   /*
     For Windows, cache the location of the Ghostscript fonts.
   */
@@ -677,7 +672,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
     GetToken(q,&q,token);
     if (*token == '\0')
       break;
-    (void) strncpy(keyword,token,MaxTextExtent-1);
+    (void) strlcpy(keyword,token,MaxTextExtent);
     if (LocaleNCompare(keyword,"<!--",4) == 0)
       {
         /*
@@ -694,7 +689,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
         */
         while ( (*token != '/' && *(token+1)  != '>') && (*q != '\0'))
         {
-          (void) strncpy(keyword,token,MaxTextExtent-1);
+          (void) strlcpy(keyword,token,MaxTextExtent);
           GetToken(q,&q,token);
           if (*token != '=')
             continue;
@@ -710,10 +705,8 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
 
                   GetPathComponent(path,HeadPath,filename);
                   if (filename[0] != '\0')
-                    (void) strcat(filename,DirectorySeparator);
-                  (void) strncat(filename,token,MaxTextExtent-
-                    strlen(filename)-1);
-                  filename[sizeof(filename)-1]='\0';
+                    (void) strlcat(filename,DirectorySeparator,sizeof(filename));
+                  (void) strlcat(filename,token,sizeof(filename));
                   (void) ReadTypeConfigureFile(filename,depth+1,exception);
                 }
               if (type_list != (TypeInfo *) NULL)
@@ -806,8 +799,8 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
               *glyphs;
 
             glyphs=(char *) NULL;
-            CloneString(&glyphs,token);
-#if defined(WIN32)
+            (void) CloneString(&glyphs,token);
+#if defined(MSWINDOWS)
             if (strchr(glyphs,'@') != (char *) NULL)
               SubstituteString(&glyphs,"@ghostscript_font_dir@",GhostscriptFontDir);
 #endif
@@ -825,7 +818,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
               *metrics;
 
             metrics=AcquireString(token);
-#if defined(WIN32)
+#if defined(MSWINDOWS)
             if (strchr(metrics,'@') != (char *) NULL)
               SubstituteString(&metrics,"@ghostscript_font_dir@",GhostscriptFontDir);
 #endif
@@ -891,7 +884,7 @@ static unsigned int ReadTypeConfigureFile(const char *basename,
       {
         if (LocaleCompare((char *) keyword,"weight") == 0)
           {
-            type_list->weight=atol(token);
+            type_list->weight=MagickAtoL(token);
             if (LocaleCompare(token,"bold") == 0)
               type_list->weight=700;
             if (LocaleCompare(token,"normal") == 0)

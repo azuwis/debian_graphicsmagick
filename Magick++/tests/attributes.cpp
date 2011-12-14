@@ -547,8 +547,8 @@ int main( int /*argc*/, char ** argv)
       }
 
     // Test set/get
-    image.compressType(RunlengthEncodedCompression);
-    if ( image.compressType() != RunlengthEncodedCompression )
+    image.compressType(RLECompression);
+    if ( image.compressType() != RLECompression )
       {
 	++failures;
 	cout << "Line: " << __LINE__ << ", compressType set/get failed" << endl;
@@ -663,7 +663,7 @@ int main( int /*argc*/, char ** argv)
 	  //image.directory();
           Magick::Image bad_image("foo");
 	}
-      catch ( Exception exception_)
+      catch ( Exception &exception_)
 	{
           cout << "Caught exception, good!:" << endl
                << "  \"" << exception_.what() << "\"" << endl;
@@ -848,11 +848,11 @@ int main( int /*argc*/, char ** argv)
     // interlaceType
     //
     // Test default
-    if ( image.interlaceType() != NoInterlace )
+    if ( image.interlaceType() != UndefinedInterlace )
       {
 	++failures;
 	cout << "Line: " << __LINE__
-             << ", interlaceType default is not NoInterlace as expected" << endl;
+             << ", interlaceType default is not UndefinedInterlace as expected" << endl;
       }
 
     // Test set/get
@@ -1414,11 +1414,13 @@ int main( int /*argc*/, char ** argv)
     //
     // type
     //
+    image.type(PaletteType);
     if ( image.type() != PaletteType )
       {
 	++failures;
 	cout << "Line: " << __LINE__
-             << ", type is not PaletteType as expected" << endl;
+             << ", type is not PaletteType as expected. Reported type "
+             << (int) image.type() << endl;
       }
 
     //

@@ -116,9 +116,9 @@ static Image *ReadCAPTIONImage(const ImageInfo *image_info,
         length;
 
       /*
-        Read caption.
+        Read caption from file.
       */
-      (void) strncpy(image->filename,image_info->filename+1,MaxTextExtent-2);
+      (void) strlcpy(image->filename,image_info->filename+1,MaxTextExtent);
       status=OpenBlob(image_info,image,ReadBinaryBlobMode,exception);
       if (status == False)
         ThrowReaderException(FileOpenError,UnableToOpenFile,image);
@@ -132,7 +132,7 @@ static Image *ReadCAPTIONImage(const ImageInfo *image_info,
           if ((p-caption+MaxTextExtent+1) < (long) length)
             continue;
           length<<=1;
-          MagickReallocMemory(caption,length);
+          MagickReallocMemory(char *,caption,length);
           if (caption == (char *) NULL)
             break;
           p=caption+strlen(caption);
@@ -165,11 +165,11 @@ static Image *ReadCAPTIONImage(const ImageInfo *image_info,
   }
   if (image->rows == 0)
     image->rows=(unsigned long) ((i+1)*(metrics.ascent-metrics.descent));
-  SetImage(image,OpaqueOpacity);
+  (void) SetImage(image,OpaqueOpacity);
   /*
     Draw caption.
   */
-  (void) strcpy(draw_info->text,caption);
+  (void) CloneString(&draw_info->text,caption);
   FormatString(geometry,"+%g+%g",metrics.max_advance/4,metrics.ascent);
   draw_info->geometry=AllocateString(geometry);
   (void) AnnotateImage(image,draw_info);
@@ -209,8 +209,10 @@ ModuleExport void RegisterCAPTIONImage(void)
   entry=SetMagickInfo("CAPTION");
   entry->decoder=(DecoderHandler) ReadCAPTIONImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Image caption");
-  entry->module=AcquireString("CAPTION");
+  entry->description="Image caption";
+  entry->module="CAPTION";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

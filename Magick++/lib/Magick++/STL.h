@@ -1,6 +1,6 @@
 // This may look like C code, but it is really -*- C++ -*-
 //
-// Copyright Bob Friesenhahn, 1999, 2000, 2001, 2002, 2003, 2004
+// Copyright Bob Friesenhahn, 1999, 2000, 2001, 2002, 2003, 2004, 2009
 //
 // Definition and implementation of template functions for using
 // Magick::Image with STL containers.
@@ -149,6 +149,18 @@ namespace Magick
     Geometry _geometry;
   };
 
+  // Extract channel from image
+  class MagickDLLDecl channelImage : public std::unary_function<Image&,void>
+  {
+  public:
+    channelImage( const ChannelType channel_ );
+
+    void operator()( Image &image_ ) const;
+
+  private:
+    ChannelType _channel;
+  };
+
   // Charcoal effect image (looks like charcoal sketch)
   class MagickDLLDecl charcoalImage : public std::unary_function<Image&,void>
   {
@@ -193,6 +205,37 @@ namespace Magick
     unsigned int _opacityGreen;
     unsigned int _opacityBlue;
     Color _penColor;
+  };
+
+  // Bake in the ASC-CDL, which is a convention for the for the
+  // exchange of basic primary color grading information between for
+  // the exchange of basic primary color grading information between
+  // equipment and software from different manufacturers.  It is a
+  // useful transform for other purposes as well.
+  class MagickDLLDecl cdlImage : public std::unary_function<Image&,void>
+  {
+  public:
+    cdlImage( const std::string &cdl_ );
+
+    void operator()( Image &image_ ) const;
+
+  private:
+    std::string   _cdl;
+  };
+
+  // Apply a color matrix to the image channels.  The user supplied
+  // matrix may be of order 1 to 5 (1x1 through 5x5).
+  class MagickDLLDecl colorMatrixImage : public std::unary_function<Image&,void>
+  {
+  public:
+    colorMatrixImage( const unsigned int order_,
+		      const double *color_matrix_ );
+
+    void operator()( Image &image_ ) const;
+
+  private:
+    unsigned int  _order;
+    const double *_color_matrix;
   };
 
   // Convert the image colorspace representation
@@ -522,6 +565,18 @@ namespace Magick
     double _factor;
   };
 
+  // Apply a color lookup table (Hald CLUT) to the image.
+  class MagickDLLDecl haldClutImage : public std::unary_function<Image&,void>
+  {
+  public:
+    haldClutImage( const Image &haldClutImage_ );
+    
+    void operator()( Image &image_ ) const;
+
+  private:
+    Image             _haldClutImage;
+  };
+
   // Set image validity. Valid images become empty (inValid) if
   // argument is false.
   class MagickDLLDecl isValidImage : public std::unary_function<Image&,void>
@@ -547,16 +602,38 @@ namespace Magick
     std::string _label;
   };
 
-  // Extract channel from image
-  class MagickDLLDecl channelImage : public std::unary_function<Image&,void>
+  // Level image
+  class MagickDLLDecl levelImage : public std::unary_function<Image&,void>
   {
   public:
-    channelImage( const ChannelType channel_ );
+    levelImage( const double black_point,
+                const double white_point,
+                const double mid_point=1.0 );
 
     void operator()( Image &image_ ) const;
 
   private:
-    ChannelType _channel;
+    double _black_point;
+    double _white_point;
+    double _mid_point;
+  };
+
+  // Level image channel
+  class MagickDLLDecl levelChannelImage : public std::unary_function<Image&,void>
+  {
+  public:
+    levelChannelImage( const Magick::ChannelType channel,
+                       const double black_point,
+                       const double white_point,
+                       const double mid_point=1.0 );
+
+    void operator()( Image &image_ ) const;
+
+  private:
+    Magick::ChannelType _channel;
+    double _black_point;
+    double _white_point;
+    double _mid_point;
   };
 
   // Magnify image by integral size
@@ -831,14 +908,16 @@ namespace Magick
   class MagickDLLDecl shadeImage : public std::unary_function<Image&,void>
   {
   public:
-    shadeImage( const double clusterThreshold_ = 1.0, 
-		const double smoothingThreshold_ = 1.5 );
+    shadeImage( const double azimuth_ = 30,
+		const double elevation_ = 30,
+		const bool   colorShading_ = false );
 
     void operator()( Image &image_ ) const;
 
   private:
-    double  _clusterThreshold;
-    double  _smoothingThreshold;
+    double  _azimuth;
+    double  _elevation;
+    bool    _colorShading;
   };
 
   // Sharpen pixels in image
@@ -1892,7 +1971,8 @@ namespace Magick
             continue;
           }
       }
-    MagickLib::LiberateMemory((void **)&coder_list);
+    MagickLib::MagickFree(coder_list);
+    coder_list=0;
     MagickLib::DestroyExceptionInfo( &exceptionInfo );
   }
 
@@ -1962,7 +2042,8 @@ namespace Magick
       }
     
     // Deallocate histogram array
-    MagickLib::LiberateMemory((void **)&histogram_array);
+    MagickLib::MagickFree(histogram_array);
+    histogram_array = 0;
   }
                       
   // Break down an image sequence into constituent parts.  This is
@@ -2083,7 +2164,7 @@ namespace Magick
 		      const Montage &montageOpts_ ) {
 
     MagickLib::MontageInfo* montageInfo =
-      static_cast<MagickLib::MontageInfo*>(MagickLib::AcquireMemory(sizeof(MagickLib::MontageInfo)));
+      static_cast<MagickLib::MontageInfo*>(MagickLib::MagickMalloc(sizeof(MagickLib::MontageInfo)));
 
     // Update montage options with those set in montageOpts_
     montageOpts_.updateMontageInfo( *montageInfo );
@@ -2249,14 +2330,17 @@ namespace Magick
     MagickLib::GetExceptionInfo( &exceptionInfo );
 
     linkImages( first_, last_ );
-    int errorStat = MagickLib::WriteImages( first_->imageInfo(),
+    int errorStat = MagickLib::WriteImages( first_->constImageInfo(),
                                             first_->image(),
                                             imageSpec_.c_str(),
                                             &exceptionInfo );
     unlinkImages( first_, last_ );
 
     if ( errorStat != false )
-      return;
+      {
+	MagickLib::DestroyExceptionInfo( &exceptionInfo );
+	return;
+      }
 
     throwException( exceptionInfo );
   }

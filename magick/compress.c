@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -38,9 +38,9 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
 #include "magick/compress.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -275,7 +275,7 @@ MagickExport void Ascii85Flush(Image *image)
   (void) WriteBlobByte(image,'\n');
 }
 
-MagickExport void Ascii85Encode(Image *image,const unsigned long code)
+MagickExport void Ascii85Encode(Image *image,const magick_uint8_t code)
 {
   long
     n;
@@ -289,7 +289,7 @@ MagickExport void Ascii85Encode(Image *image,const unsigned long code)
   assert(image != (Image *) NULL);
   assert(image->signature == MagickSignature);
   assert(image->ascii85 != (Ascii85Info *) NULL);
-  image->ascii85->buffer[image->ascii85->offset]=(unsigned char) code;
+  image->ascii85->buffer[image->ascii85->offset]=code;
   image->ascii85->offset++;
   if (image->ascii85->offset < 4)
     return;
@@ -315,16 +315,16 @@ MagickExport void Ascii85Encode(Image *image,const unsigned long code)
 }
 
 MagickExport unsigned int Ascii85WriteByteHook(Image *image, 
-  const magick_uint8_t code, void *info)
+  const magick_uint8_t code, void *ARGUNUSED(info))
 {
-  Ascii85Encode(image,(unsigned long)code);
+  Ascii85Encode(image,code);
   return(True);
 }
 
 MagickExport unsigned int BlobWriteByteHook(Image *image,
-  const magick_uint8_t code, void *info)
+  const magick_uint8_t code, void *ARGUNUSED(info))
 {
-  return(WriteBlobByte(image,(unsigned long)code));
+  return(WriteBlobByte(image,code));
 }
 
 /*
@@ -353,8 +353,6 @@ MagickExport unsigned int BlobWriteByteHook(Image *image,
 %
 %
 */
-MagickExport unsigned int HuffmanDecodeImage(Image *image)
-{
 #define HashSize  1021
 #define MBHashA  293
 #define MBHashB  2695
@@ -387,6 +385,8 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
     runlength=0;  \
 }
 
+MagickExport MagickPassFail HuffmanDecodeImage(Image *image)
+{
   const HuffmanTable
     *entry;
 
@@ -428,6 +428,9 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
   unsigned char
     *scanline;
 
+  MagickPassFail
+    status=MagickPass;
+
   /*
     Allocate buffers.
   */
@@ -464,7 +467,10 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
   runlength=0;
   while (runlength < 11)
    InputBit(bit);
-  do { InputBit(bit); } while (bit == 0);
+  do
+  {
+    InputBit(bit);
+  } while (bit == 0);
   image->x_resolution=204.0;
   image->y_resolution=196.0;
   image->units=PixelsPerInchResolution;
@@ -522,7 +528,10 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
         {
           while (runlength < 11)
            InputBit(bit);
-          do { InputBit(bit); } while (bit == 0);
+          do
+          {
+            InputBit(bit);
+          } while (bit == 0);
           break;
         }
       if (color)
@@ -582,8 +591,11 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
     p=scanline;
     q=SetImagePixels(image,0,y,image->columns,1);
     if (q == (PixelPacket *) NULL)
-      break;
-    indexes=GetIndexes(image);
+      {
+        status=MagickFail;
+        break;
+      }
+    indexes=AccessMutableIndexes(image);
     for (x=0; x < (long) image->columns; x++)
     {
       index=(unsigned int) (*p++);
@@ -591,10 +603,17 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
       *q++=image->colormap[index];
     }
     if (!SyncImagePixels(image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,&image->exception))
+      {
+        status=MagickFail;
         break;
+      }
+    if (QuantumTick(y,image->rows))
+      if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                  "[%s] Huffman decode image...",image->filename))
+        {
+          status=MagickFail;
+          break;
+        }
     y++;
   }
   image->rows=Max(y-3,1);
@@ -605,7 +624,7 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
   MagickFreeMemory(mw_hash);
   MagickFreeMemory(mb_hash);
   MagickFreeMemory(scanline);
-  return(True);
+  return(status);
 }
 
 /*
@@ -657,7 +676,7 @@ MagickExport unsigned int HuffmanDecodeImage(Image *image)
       bit=0x80U;  \
     }  \
 }
-MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
+MagickExport MagickPassFail HuffmanEncode2Image(const ImageInfo *image_info,
   Image *image, WriteByteHook write_byte, void *info)
 {
   const HuffmanTable
@@ -675,7 +694,7 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
   Image
     *huffman_image;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -702,6 +721,9 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
     mask,
     width;
 
+  MagickPassFail
+    status=MagickPass;
+
   /*
     Allocate scanline buffer.
   */
@@ -719,8 +741,8 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
       (char *) NULL);
   huffman_image=CloneImage(image,0,0,True,&image->exception);
   if (huffman_image == (Image *) NULL)
-    return(False);
-  (void) SetImageType(huffman_image,BilevelType);
+    return(MagickFail);
+  status &= SetImageType(huffman_image,BilevelType);
   byte=0;
   bit=0x80;
   if (is_fax == True)
@@ -748,8 +770,11 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
     p=AcquireImagePixels(huffman_image,0,y,huffman_image->columns,1,
       &huffman_image->exception);
     if (p == (const PixelPacket *) NULL)
-      break;
-    indexes=GetIndexes(huffman_image);
+      {
+        status=MagickFail;
+        break;
+      }
+    indexes=AccessImmutableIndexes(huffman_image);
     for (x=0; x < (long) huffman_image->columns; x++)
     {
       *q=(unsigned char) (indexes[x] == polarity ? !polarity : polarity);
@@ -811,8 +836,12 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
     q=scanline;
     if (huffman_image->previous == (Image *) NULL)
       if (QuantumTick(y,huffman_image->rows))
-        if (!MagickMonitor(SaveImageText,y,huffman_image->rows,&image->exception))
-          break;
+        if (!MagickMonitorFormatted(y,huffman_image->rows,&image->exception,
+                                    "[%s] Huffman encode image...",image->filename))
+          {
+            status=MagickFail;
+            break;
+          }
   }
   /*
     End of page.
@@ -830,10 +859,10 @@ MagickExport unsigned int HuffmanEncode2Image(const ImageInfo *image_info,
     (void) (*write_byte)(image,(magick_uint8_t)byte,info);
   DestroyImage(huffman_image);
   MagickFreeMemory(scanline);
-  return(True);
+  return(status);
 }
 
-MagickExport unsigned int HuffmanEncodeImage(const ImageInfo *image_info,
+MagickExport MagickPassFail HuffmanEncodeImage(const ImageInfo *image_info,
   Image *image)
 {
   if (LocaleCompare(image_info->magick,"FAX") == 0)
@@ -842,7 +871,7 @@ MagickExport unsigned int HuffmanEncodeImage(const ImageInfo *image_info,
   }
   else
   {
-    unsigned int
+    MagickPassFail
       status;
     Ascii85Initialize(image);
     status=HuffmanEncode2Image(image_info,image,Ascii85WriteByteHook,(void *)NULL);
@@ -851,7 +880,144 @@ MagickExport unsigned int HuffmanEncodeImage(const ImageInfo *image_info,
   }
 }
 
-#if defined(HasLZW)
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
++   I m a g e T o H u f f m a n 2 D B l o b                                   %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Method ImageToHuffman2DBlob compresses an image via two-dimensional
+%  Huffman-coding (CCITT Group4 FAX) and returns the compressed data in a
+%  heap allocated buffer.  NULL is returned if there is an error.
+%
+%  Data is output with one strip per page with MSB2LSB fill order.
+%
+%  The format of the ImageToHuffman2DBlob method is:
+%
+%      unsigned char *ImageToHuffman2DBlob(const Image *image,
+%                                          const ImageInfo *image_info,
+%                                          size_t *blob_length,
+%                                          ExceptionInfo *exception);
+%
+%  A description of each parameter follows:
+%
+%    o image: The image to compress.
+%
+%    o image_info: Image options
+%
+%    o blob_length: Updated with the length of the compressed data.
+%
+%    o exception: Any exception is reported here.
+%
+*/
+MagickExport unsigned char *
+ImageToHuffman2DBlob(const Image *image,const ImageInfo *image_info,
+		     size_t *blob_length,ExceptionInfo *exception)
+{
+  unsigned char
+    *blob = (unsigned char *) NULL;
+
+  ImageInfo
+    *huffman_info;
+
+  ARG_NOT_USED(image_info);
+  *blob_length=0;
+  huffman_info=CloneImageInfo((const ImageInfo *) NULL);
+  if (huffman_info != (ImageInfo *) NULL)
+    {
+      Image
+	*huffman_image;
+
+      huffman_image=CloneImage(image,0,0,MagickTrue,exception);
+      if (huffman_image != (Image *) NULL)
+	{
+	  (void) strlcpy(huffman_image->magick,"GROUP4RAW",sizeof(huffman_image->magick));
+	  (void) strlcpy(huffman_image->filename,"",sizeof(huffman_image->filename));
+	  blob=ImageToBlob(huffman_info, huffman_image, blob_length, exception);
+	  DestroyImage(huffman_image);
+	}
+      DestroyImageInfo(huffman_info);
+    }
+  return blob;
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
++   I m a g e T o J P E G B l o b                                             %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Method ImageToJPEGBlob compresses an image into a JFIF JPEG format and
+%  returns the compressed data in a heap allocated buffer.  NULL is
+%  returned if there is an error.
+%
+%  The format of the ImageToJPEGBlob method is:
+%
+%      unsigned char *ImageToJPEGBlob(const Image *image,
+%                                     const ImageInfo *image_info,
+%                                     size_t *blob_length,
+%                                     ExceptionInfo *exception);
+%
+%  A description of each parameter follows:
+%
+%    o image: The image to compress.
+%
+%    o image_info: Image options
+%
+%    o blob_length: Updated with the length of the compressed data.
+%
+%    o exception: Any exception is reported here.
+%
+*/
+MagickExport unsigned char *
+ImageToJPEGBlob(const Image *image,const ImageInfo *image_info,
+		size_t *blob_length,ExceptionInfo *exception)
+{
+  unsigned char
+    *blob = NULL;
+
+  ImageInfo
+    *jpeg_info;
+
+  *blob_length=0;
+  jpeg_info=CloneImageInfo(image_info);
+  if (jpeg_info != (ImageInfo *) NULL)
+    {
+      Image
+	*jpeg_image;
+
+      /*
+	Try to preserve any existing JPEG options but if the user
+	applies any override, then existing JPEG options are ignored.
+      */
+      if ((JPEGCompression == image->compression) &&
+	  (DefaultCompressionQuality == image_info->quality) &&
+	  ((char *) NULL == jpeg_info->sampling_factor))
+	(void) AddDefinitions(jpeg_info,"jpeg:preserve-settings=TRUE",
+			      exception);
+      jpeg_image=CloneImage(image,0,0,MagickTrue,exception);
+      if (jpeg_image != (Image *) NULL)
+	{
+	  (void) strlcpy(jpeg_image->magick,"JPEG",sizeof(jpeg_image->magick));
+	  (void) strlcpy(jpeg_image->filename,"",sizeof(jpeg_image->filename));
+	  blob =(unsigned char *) ImageToBlob(jpeg_info, jpeg_image, blob_length, exception);
+	  DestroyImage(jpeg_image);
+	}
+      DestroyImageInfo(jpeg_info);
+    }
+  return blob;
+}
+
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -886,9 +1052,6 @@ MagickExport unsigned int HuffmanEncodeImage(const ImageInfo *image_info,
 %
 %
 */
-MagickExport unsigned int LZWEncode2Image(Image *image,
-  const size_t length,unsigned char *pixels,WriteByteHook write_byte,void *info)
-{
 #define LZWClr  256  /* Clear Table Marker */
 #define LZWEod  257  /* End of Data marker */
 #define OutputCode(code) \
@@ -903,6 +1066,9 @@ MagickExport unsigned int LZWEncode2Image(Image *image,
     } \
 }
 
+MagickExport MagickPassFail LZWEncode2Image(Image *image,
+  const size_t length,magick_uint8_t *pixels,WriteByteHook write_byte,void *info)
+{
   typedef struct _TableType
   {
     short
@@ -1015,32 +1181,14 @@ MagickExport unsigned int LZWEncode2Image(Image *image,
   if (number_bits != 0)
     (void) (*write_byte)(image,(magick_uint8_t)(accumulator >> 24),info);
   MagickFreeMemory(table);
-  return(True);
+  return(MagickPass);
 }
 
-MagickExport unsigned int LZWEncodeImage(Image *image, const size_t length,
-  unsigned char *pixels)
+MagickExport MagickPassFail LZWEncodeImage(Image *image, const size_t length,
+  magick_uint8_t *pixels)
 {
   return(LZWEncode2Image(image,length,pixels,BlobWriteByteHook,(void *)NULL));
 }
-
-#else
-MagickExport unsigned int LZWEncode2Image(Image *image,const size_t length,
-  unsigned char *pixels,WriteByteHook write_byte,void *info)
-{
-  assert(image != (Image *) NULL);
-  assert(image->signature == MagickSignature);
-  ThrowBinaryException(MissingDelegateError,LZWEncodingNotEnabled,(char *) NULL)
-}
-
-MagickExport unsigned int LZWEncodeImage(Image *image,const size_t length,
-  unsigned char *pixels)
-{
-  assert(image != (Image *) NULL);
-  assert(image->signature == MagickSignature);
-  ThrowBinaryException(MissingDelegateError,LZWEncodingNotEnabled,(char *) NULL)
-}
-#endif
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -1076,8 +1224,8 @@ MagickExport unsigned int LZWEncodeImage(Image *image,const size_t length,
 %
 %
 */
-MagickExport unsigned int PackbitsEncode2Image(Image *image,
-  const size_t length,unsigned char *pixels,WriteByteHook write_byte, 
+MagickExport MagickPassFail PackbitsEncode2Image(Image *image,
+  const size_t length,magick_uint8_t *pixels,WriteByteHook write_byte, 
   void *info)
 {
   int
@@ -1178,11 +1326,11 @@ MagickExport unsigned int PackbitsEncode2Image(Image *image,
   }
   (void) (*write_byte)(image,(magick_uint8_t)128,info);  /* EOD marker */
   MagickFreeMemory(packbits);
-  return(True);
+  return(MagickPass);
 }
 
-MagickExport unsigned int PackbitsEncodeImage(Image *image,const size_t length,
-  unsigned char *pixels)
+MagickExport MagickPassFail PackbitsEncodeImage(Image *image,const size_t length,
+  magick_uint8_t *pixels)
 {
   return(PackbitsEncode2Image(image,length,pixels,BlobWriteByteHook,(void *)NULL));
 }

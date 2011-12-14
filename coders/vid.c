@@ -134,7 +134,7 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
       ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image)
     }
   list[0]=(char *) AllocateString((char *) NULL);
-  (void) strncpy(list[0],image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(list[0],image_info->filename,MaxTextExtent);
   number_files=1;
   filelist=list;
   status=ExpandFilenames(&number_files,&filelist);
@@ -152,13 +152,13 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
   clone_info->blob=(void *) NULL;
   clone_info->length=0;
   if (clone_info->size == (char *) NULL)
-    CloneString(&clone_info->size,DefaultTileGeometry);
+    (void) CloneString(&clone_info->size,DefaultTileGeometry);
   for (i=0; i < number_files; i++)
   {
     (void) LogMagickEvent(CoderEvent,GetMagickModule(),"name: %.1024s",
       filelist[i]);
     handler=SetMonitorHandler((MonitorHandler) NULL);
-    (void) strncpy(clone_info->filename,filelist[i],MaxTextExtent-1);
+    (void) strlcpy(clone_info->filename,filelist[i],MaxTextExtent);
     *clone_info->magick='\0';
     next_image=ReadImage(clone_info,exception);
     MagickFreeMemory(filelist[i]);
@@ -189,7 +189,9 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
           }
       }
     (void) SetMonitorHandler(handler);
-    if (!MagickMonitor(LoadImageText,i,number_files,&image->exception))
+    if (!MagickMonitorFormatted(i,number_files,&image->exception,
+                                LoadImageText,image->filename,
+				image->columns,image->rows))
       break;
   }
   DestroyImageInfo(clone_info);
@@ -208,6 +210,7 @@ static Image *ReadVIDImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) LogMagickEvent(CoderEvent,GetMagickModule(),"creating montage");
   montage_image=MontageImages(image,montage_info,exception);
   DestroyMontageInfo(montage_info);
+  montage_info=(MontageInfo *) NULL;
   if (montage_image == (Image *) NULL)
     {
       (void) LogMagickEvent(CoderEvent,GetMagickModule(),"return");
@@ -251,8 +254,9 @@ ModuleExport void RegisterVIDImage(void)
   entry=SetMagickInfo("VID");
   entry->decoder=(DecoderHandler) ReadVIDImage;
   entry->encoder=(EncoderHandler) WriteVIDImage;
-  entry->description=AcquireString("Visual Image Directory");
-  entry->module=AcquireString("VID");
+  entry->description="Visual Image Directory";
+  entry->module="VID";
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -330,6 +334,8 @@ static unsigned int WriteVIDImage(const ImageInfo *image_info,Image *image)
     (void) SetImageAttribute(p,"label",DefaultTileLabel);
   montage_info=CloneMontageInfo(image_info,(MontageInfo *) NULL);
   montage_image=MontageImages(image,montage_info,&image->exception);
+  DestroyMontageInfo(montage_info);
+  montage_info=(MontageInfo *) NULL;
   if (montage_image == (Image *) NULL)
     ThrowWriterException2(CorruptImageError,image->exception.reason,image);
   FormatString(montage_image->filename,"miff:%.1024s",image->filename);

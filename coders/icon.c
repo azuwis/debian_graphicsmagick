@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -203,7 +204,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
     icon_info.height=ReadBlobLSBLong(image);
     icon_info.planes=ReadBlobLSBShort(image);
     icon_info.bits_per_pixel=ReadBlobLSBShort(image);
-    if (icon_info.bits_per_pixel > 32)
+    if (icon_info.bits_per_pixel > 32U)
       ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
     icon_info.compression=ReadBlobLSBLong(image);
     icon_info.image_size=ReadBlobLSBLong(image);
@@ -211,11 +212,11 @@ static Image *ReadIconImage(const ImageInfo *image_info,
     icon_info.y_pixels=ReadBlobLSBLong(image);
     icon_info.number_colors=ReadBlobLSBLong(image);
     icon_info.colors_important=ReadBlobLSBLong(image);
-    image->matte=(unsigned int) (icon_info.bits_per_pixel == 32);
+    image->matte=(unsigned int) (icon_info.bits_per_pixel == 32U);
     image->columns=icon_info.width;
     image->rows=icon_info.height;
     image->depth=8;
-    if ((icon_info.number_colors != 0) || (icon_info.bits_per_pixel <= 16))
+    if ((icon_info.number_colors != 0) || (icon_info.bits_per_pixel <= 16U))
       {
         image->storage_class=PseudoClass;
         image->colors=icon_info.number_colors;
@@ -269,7 +270,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < ((long) image->columns-7); x+=8)
           {
             byte=ReadBlobByte(image);
@@ -286,7 +287,9 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -301,7 +304,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < ((long) image->columns-1); x+=2)
           {
             byte=ReadBlobByte(image);
@@ -317,7 +320,9 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -332,7 +337,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < (long) image->columns; x++)
           {
             byte=ReadBlobByte(image);
@@ -342,7 +347,9 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -357,7 +364,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < (long) image->columns; x++)
           {
             byte=ReadBlobByte(image);
@@ -369,7 +376,9 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -398,7 +407,9 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         break;
@@ -406,7 +417,7 @@ static Image *ReadIconImage(const ImageInfo *image_info,
       default:
         ThrowReaderException(CorruptImageError,ImproperImageHeader,image)
     }
-    SyncImage(image);
+    (void) SyncImage(image);
     /*
       Convert bitmap scanline to pixel packets.
     */
@@ -433,12 +444,14 @@ static Image *ReadIconImage(const ImageInfo *image_info,
         }
      if (image->columns % 32) 
        for (x=0; x < (long) ((32-(image->columns % 32))/8); x++)
-         ReadBlobByte(image);
+         (void) ReadBlobByte(image);
       if (!SyncImagePixels(image))
         break;
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(LoadImageText,image->rows-y-1,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(image->rows-y-1,image->rows,&image->exception,
+                                      LoadImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
     if (EOFBlob(image))
@@ -465,7 +478,8 @@ static Image *ReadIconImage(const ImageInfo *image_info,
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),exception,
+                                    LoadImagesText,image->filename))
           break;
       }
   }
@@ -507,24 +521,24 @@ ModuleExport void RegisterICONImage(void)
   entry->decoder=(DecoderHandler) ReadIconImage;
   entry->adjoin=False;
   entry->seekable_stream=True;
-  entry->description=AcquireString("Microsoft Cursor Icon");
-  entry->module=AcquireString("ICON");
+  entry->description="Microsoft Cursor Icon";
+  entry->module="ICON";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("ICO");
   entry->decoder=(DecoderHandler) ReadIconImage;
   entry->adjoin=False;
   entry->seekable_stream=True;
-  entry->description=AcquireString("Microsoft Icon");
-  entry->module=AcquireString("ICON");
+  entry->description="Microsoft Icon";
+  entry->module="ICON";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("ICON");
   entry->decoder=(DecoderHandler) ReadIconImage;
   entry->adjoin=False;
   entry->seekable_stream=True;
-  entry->description=AcquireString("Microsoft Icon");
-  entry->module=AcquireString("ICON");
+  entry->description="Microsoft Icon";
+  entry->module="ICON";
   (void) RegisterMagickInfo(entry);
 }
 

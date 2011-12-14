@@ -1,5 +1,5 @@
 /*
-  Copyright (C) 2003, 2004 GraphicsMagick Group
+  Copyright (C) 2003 - 2009 GraphicsMagick Group
   Copyright (C) 2002 ImageMagick Studio
  
   This program is covered by multiple licenses, which are described in
@@ -13,10 +13,6 @@
 
 #if defined(__cplusplus) || defined(c_plusplus)
 extern "C" {
-#endif
-
-#if !defined(__GNUC__) && !defined(__attribute__)
-#  define __attribute__(x) /*nothing*/
 #endif
 
   /*
@@ -78,21 +74,41 @@ typedef enum
 /*
   Method declarations.
 */
-extern MagickExport unsigned int
+extern MagickExport MagickBool
   IsEventLogging(void),
   LogMagickEvent(const ExceptionType type,
     const char *module,const char *function,const unsigned long line,
-    const char *format,...) __attribute__((format (printf,5,6)));
+    const char *format,...) __attribute__((format (printf,5,6))),
+  LogMagickEventList(const ExceptionType type,
+    const char *module,const char *function,const unsigned long line,
+    const char *format,va_list operands);
 
 extern MagickExport unsigned long
   SetLogEventMask(const char *events);
 
 extern MagickExport void
-  DestroyLogInfo(void),
   SetLogFormat(const char *format);
+
+#if defined(MAGICK_IMPLEMENTATION)
+
+extern MagickExport void
+  DestroyLogInfo(void);
+
+extern MagickPassFail
+  InitializeLogInfo(void);
+
+#endif /* MAGICK_IMPLEMENTATION */
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
-#endif
+#endif /* _MAGICK_LOG_H */
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

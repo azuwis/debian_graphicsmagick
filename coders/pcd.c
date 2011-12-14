@@ -38,7 +38,7 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/decorate.h"
 #include "magick/gem.h"
 #include "magick/magick.h"
@@ -54,6 +54,88 @@
 */
 static unsigned int
   WritePCDImage(const ImageInfo *,Image *);
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%   U p s a m p l e                                                           %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Upsample() doubles the size of the image.
+%
+%  The format of the Upsample method is:
+%
+%      void Upsample(const unsigned long width,const unsigned long height,
+%        const unsigned long scaled_width,unsigned char *pixels)
+%
+%  A description of each parameter follows:
+%
+%    o width,height:  Unsigned values representing the width and height of
+%      the image pixel array.
+%
+%    o scaled_width:  Specifies the final width of the upsampled pixel array.
+%
+%    o pixels:  An unsigned char containing the pixel data.  On output the
+%      upsampled pixels are returned here.
+%
+%
+*/
+static void Upsample(const unsigned long width,const unsigned long height,
+                     const unsigned long scaled_width,unsigned char *pixels)
+{
+  register long
+    x,
+    y;
+
+  register unsigned char
+    *p,
+    *q,
+    *r;
+
+  /*
+    Create a new image that is a integral size greater than an existing one.
+  */
+  assert(pixels != (unsigned char *) NULL);
+  for (y=0; y < (long) height; y++)
+  {
+    p=pixels+(height-1-y)*scaled_width+(width-1);
+    q=pixels+((height-1-y) << 1)*scaled_width+((width-1) << 1);
+    *q=(*p);
+    *(q+1)=(*(p));
+    for (x=1; x < (long) width; x++)
+    {
+      p--;
+      q-=2;
+      *q=(*p);
+      *(q+1)=(unsigned char) ((((long) *p)+((long) *(p+1))+1) >> 1);
+    }
+  }
+  for (y=0; y < (long) (height-1); y++)
+  {
+    p=pixels+(y << 1)*scaled_width;
+    q=p+scaled_width;
+    r=q+scaled_width;
+    for (x=0; x < (long) (width-1); x++)
+    {
+      *q=(unsigned char) ((((long) *p)+((long) *r)+1) >> 1);
+      *(q+1)=(unsigned char)
+        ((((long) *p)+((long) *(p+2))+((long) *r)+((long) *(r+2))+2) >> 2);
+      q+=2;
+      p+=2;
+      r+=2;
+    }
+    *q++=(unsigned char) ((((long) *p++)+((long) *r++)+1) >> 1);
+    *q++=(unsigned char) ((((long) *p++)+((long) *r++)+1) >> 1);
+  }
+  p=pixels+(2*height-2)*scaled_width;
+  q=pixels+(2*height-1)*scaled_width;
+  (void) memcpy(q,p,2*width);
+}
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -93,11 +175,8 @@ static unsigned int
 %
 %
 */
-static unsigned int DecodeImage(Image *image,unsigned char *luma,
-  unsigned char *chroma1,unsigned char *chroma2)
-{
 #define IsSync  ((sum & 0xffffff00) == 0xfffffe00)
-#define DecodeImageText  "  PCD decode image...  "
+#define DecodeImageText  "[%s] PCD decode image..."
 #define PCDGetBits(n) \
 {  \
   sum=(sum << n) & 0xffffffff; \
@@ -116,7 +195,9 @@ static unsigned int DecodeImage(Image *image,unsigned char *luma,
   if (EOFBlob(image)) \
     break; \
 }
-
+static unsigned int DecodeImage(Image *image,unsigned char *luma,
+  unsigned char *chroma1,unsigned char *chroma2)
+{
   typedef struct PCDTable
   {
     unsigned int
@@ -154,7 +235,7 @@ static unsigned int DecodeImage(Image *image,unsigned char *luma,
   unsigned char
     *buffer;
 
-  unsigned long
+  unsigned int
     bits,
     plane,
     pcd_length[3],
@@ -268,7 +349,8 @@ static unsigned int DecodeImage(Image *image,unsigned char *luma,
         }
         length=pcd_length[plane];
         if (QuantumTick(row,image->rows))
-          if (!MagickMonitor(DecodeImageText,row,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(row,image->rows,&image->exception,
+                                      DecodeImageText,image->filename))
             break;
         continue;
       }
@@ -288,11 +370,13 @@ static unsigned int DecodeImage(Image *image,unsigned char *luma,
           PCDGetBits(1);
         continue;
       }
-    if (r->key < 128)
+    if (r->key < 128U)
       quantum=(long) (*q)+r->key;
     else
       quantum=(long) (*q)+r->key-256;
-    *q=(unsigned char) ((quantum < 0) ? 0 : (quantum > 255) ? 255 : quantum);
+    *q=(unsigned char) ((quantum < 0L) ? 0U :
+                        (quantum > 255L) ? 255U :
+                        (unsigned char) quantum);
     q++;
     PCDGetBits(r->length);
     count--;
@@ -395,14 +479,14 @@ static Image *OverviewImage(const ImageInfo *image_info,Image *image,
 
     for( label_image=GetFirstImageInList(image); label_image != 0;
          label_image=GetNextImageInList(label_image) )
-      SetImageAttribute(label_image, "label", DefaultTileLabel);
+      (void) SetImageAttribute(label_image, "label", DefaultTileLabel);
   }
 
   /*
     Create the PCD Overview image.
   */
   montage_info=CloneMontageInfo(image_info,(MontageInfo *) NULL);
-  (void) strncpy(montage_info->filename,image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(montage_info->filename,image_info->filename,MaxTextExtent);
   montage_image=MontageImages(image,montage_info,exception);
   DestroyMontageInfo(montage_info);
   if (montage_image == (Image *) NULL)
@@ -610,7 +694,7 @@ static Image *ReadPCDImage(const ImageInfo *image_info,ExceptionInfo *exception)
           image->colorspace=sRGBColorspace;
         else
           image->colorspace=YCCColorspace;
-        TransformColorspace(image,RGBColorspace);
+        (void) TransformColorspace(image,RGBColorspace);
         if (j < (long) number_images)
           {
             /*
@@ -625,7 +709,9 @@ static Image *ReadPCDImage(const ImageInfo *image_info,ExceptionInfo *exception)
             image=SyncNextImageInList(image);
           }
         (void) SetMonitorHandler(handler);
-        if (!MagickMonitor(LoadImageText,j-1,number_images,&image->exception))
+        if (!MagickMonitorFormatted(j-1,number_images,&image->exception,
+                                    LoadImageText,image->filename,
+				    image->columns,image->rows))
           break;
       }
       MagickFreeMemory(chroma2);
@@ -712,7 +798,9 @@ static Image *ReadPCDImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (!SyncImagePixels(image))
       break;
     if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+      if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                  image->filename,
+				  image->columns,image->rows))
         break;
   }
   MagickFreeMemory(chroma2);
@@ -722,11 +810,13 @@ static Image *ReadPCDImage(const ImageInfo *image_info,ExceptionInfo *exception)
     image->colorspace=sRGBColorspace;
   else
     image->colorspace=YCCColorspace;
-  TransformColorspace(image,RGBColorspace);
+  /* FIXME: YCCColorspace transform is broken! 1.1 is ok! */
+  (void) TransformColorspace(image,RGBColorspace);
   if (EOFBlob(image))
     ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
       image->filename);
   CloseBlob(image);
+
   if ((rotate == 1) || (rotate == 3))
     {
       double
@@ -746,6 +836,7 @@ static Image *ReadPCDImage(const ImageInfo *image_info,ExceptionInfo *exception)
           image=rotated_image;
         }
     }
+
   /*
     Set CCIR 709 primaries with a D65 white point.
   */
@@ -794,15 +885,16 @@ ModuleExport void RegisterPCDImage(void)
   entry->encoder=(EncoderHandler) WritePCDImage;
   entry->magick=(MagickHandler) IsPCD;
   entry->adjoin=False;
-  entry->description=AcquireString("Photo CD");
-  entry->module=AcquireString("PCD");
+  entry->description="Photo CD";
+  entry->module="PCD";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PCDS");
   entry->decoder=(DecoderHandler) ReadPCDImage;
   entry->encoder=(EncoderHandler) WritePCDImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Photo CD");
-  entry->module=AcquireString("PCD");
+  entry->description="Photo CD";
+  entry->module="PCD";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -862,8 +954,8 @@ ModuleExport void UnregisterPCDImage(void)
 %
 */
 
-static unsigned int WritePCDTile(const ImageInfo *image_info,Image *image,
-  char *page_geometry,char *tile_geometry)
+static unsigned int WritePCDTile(const ImageInfo *ARGUNUSED(image_info),
+  Image *image,char *page_geometry,char *tile_geometry)
 {
   Image
     *downsample_image,
@@ -919,7 +1011,7 @@ static unsigned int WritePCDTile(const ImageInfo *image_info,Image *image,
       tile_image=bordered_image;
     }
   (void) TransformImage(&tile_image,(char *) NULL,tile_geometry);
-  TransformColorspace(tile_image,YCCColorspace);
+  (void) TransformColorspace(tile_image,YCCColorspace);
   downsample_image=ResizeImage(tile_image,tile_image->columns/2,
     tile_image->rows/2,TriangleFilter,1.0,&image->exception);
   if (downsample_image == (Image *) NULL)
@@ -957,7 +1049,9 @@ static unsigned int WritePCDTile(const ImageInfo *image_info,Image *image,
       q++;
     }
     if (QuantumTick(y,tile_image->rows))
-      if (!MagickMonitor(SaveImageText,y,tile_image->rows,&image->exception))
+      if (!MagickMonitorFormatted(y,tile_image->rows,&image->exception,
+                                  SaveImageText,image->filename,
+				  image->columns,image->rows))
         break;
   }
   for (i=0; i < 0x800; i++)
@@ -1002,7 +1096,7 @@ static unsigned int WritePCDImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,pcd_image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,pcd_image);
-  TransformColorspace(pcd_image,RGBColorspace);
+  (void) TransformColorspace(pcd_image,RGBColorspace);
   /*
     Write PCD image header.
   */

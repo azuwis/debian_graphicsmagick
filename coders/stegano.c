@@ -37,10 +37,11 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -89,12 +90,16 @@ static Image *ReadSTEGANOImage(const ImageInfo *image_info,
   ImageInfo
     *clone_info;
 
+  unsigned long
+    y;
+
   long
+    k;
+
+  int
     c,
     i,
-    j,
-    k,
-    y;
+    j;
 
   PixelPacket
     pixel;
@@ -102,7 +107,7 @@ static Image *ReadSTEGANOImage(const ImageInfo *image_info,
   register IndexPacket
     *indexes;
 
-  register long
+  register unsigned long
     x;
 
   register PixelPacket
@@ -143,16 +148,16 @@ static Image *ReadSTEGANOImage(const ImageInfo *image_info,
   k=image->offset;
   for (i=QuantumDepth-1; (i >= 0) && (j < QuantumDepth); i--)
   {
-    for (y=0; (y < (long) image->rows) && (j < QuantumDepth); y++)
+    for (y=0; (y < image->rows) && (j < QuantumDepth); y++)
     {
-      for (x=0; (x < (long) image->columns) && (j < QuantumDepth); x++)
+      for (x=0; (x < image->columns) && (j < QuantumDepth); x++)
       {
-        pixel=AcquireOnePixel(watermark,k % (long) watermark->columns,
-          k/(long) watermark->columns,exception);
+        (void) AcquireOnePixelByReference(watermark,&pixel,k % watermark->columns,
+          k/watermark->columns,exception);
         q=GetImagePixels(image,x,y,1,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         switch (c)
         {
           case 0:
@@ -176,17 +181,18 @@ static Image *ReadSTEGANOImage(const ImageInfo *image_info,
         if (c == 3)
           c=0;
         k++;
-        if (k == (long) (watermark->columns*watermark->columns))
+        if ((unsigned long) k == watermark->columns*watermark->columns)
           k=0;
         if (k == image->offset)
           j++;
       }
     }
-    if (!MagickMonitor(LoadImagesText,i,QuantumDepth,&image->exception))
+    if (!MagickMonitorFormatted(i,QuantumDepth,&image->exception,
+                                LoadImagesText,image->filename))
       break;
   }
   DestroyImage(watermark);
-  SyncImage(image);
+  (void) SyncImage(image);
   return(image);
 }
 
@@ -220,8 +226,10 @@ ModuleExport void RegisterSTEGANOImage(void)
 
   entry=SetMagickInfo("STEGANO");
   entry->decoder=(DecoderHandler) ReadSTEGANOImage;
-  entry->description=AcquireString("Steganographic image");
-  entry->module=AcquireString("STEGANO");
+  entry->description="Steganographic image";
+  entry->module="STEGANO";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

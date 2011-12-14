@@ -38,10 +38,10 @@
 #include "magick/studio.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -135,7 +135,7 @@ static Image *ReadXWDImage(const ImageInfo *image_info,ExceptionInfo *exception)
     *image;
 
   IndexPacket
-    index;
+    index_val;
 
   int
     status;
@@ -263,7 +263,7 @@ static Image *ReadXWDImage(const ImageInfo *image_info,ExceptionInfo *exception)
       length=(size_t) header.ncolors;
       if (length > ((~0UL)/sizeof(*colors)))
         ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
-      colors=MagickAllocateMemoryElements(XColor *,length,sizeof(XColor));
+      colors=MagickAllocateArray(XColor *,length,sizeof(XColor));
       if (colors == (XColor *) NULL)
         ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
       for (i=0; i < (long) header.ncolors; i++)
@@ -375,18 +375,20 @@ static Image *ReadXWDImage(const ImageInfo *image_info,ExceptionInfo *exception)
             for (x=0; x < (long) image->columns; x++)
             {
               pixel=XGetPixel(ximage,(int) x,(int) y);
-              index=(unsigned short) ((pixel >> red_shift) & red_mask);
-              q->red=ScaleShortToQuantum(colors[index].red);
-              index=(unsigned short) ((pixel >> green_shift) & green_mask);
-              q->green=ScaleShortToQuantum(colors[index].green);
-              index=(unsigned short) ((pixel >> blue_shift) & blue_mask);
-              q->blue=ScaleShortToQuantum(colors[index].blue);
+              index_val=(unsigned short) ((pixel >> red_shift) & red_mask);
+              q->red=ScaleShortToQuantum(colors[index_val].red);
+              index_val=(unsigned short) ((pixel >> green_shift) & green_mask);
+              q->green=ScaleShortToQuantum(colors[index_val].green);
+              index_val=(unsigned short) ((pixel >> blue_shift) & blue_mask);
+              q->blue=ScaleShortToQuantum(colors[index_val].blue);
               q++;
             }
             if (!SyncImagePixels(image))
               break;
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+					  LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
           }
         else
@@ -409,7 +411,9 @@ static Image *ReadXWDImage(const ImageInfo *image_info,ExceptionInfo *exception)
             if (!SyncImagePixels(image))
               break;
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+              if (!MagickMonitorFormatted(y,image->rows,exception,
+                                          LoadImageText,image->filename,
+					  image->columns,image->rows))
                 break;
           }
         break;
@@ -433,18 +437,20 @@ static Image *ReadXWDImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           for (x=0; x < (long) image->columns; x++)
           {
-            index=(IndexPacket) (XGetPixel(ximage,(int) x,(int) y));
-            VerifyColormapIndex(image,index);
-            indexes[x]=index;
-            *q++=image->colormap[index];
+            index_val=(IndexPacket) (XGetPixel(ximage,(int) x,(int) y));
+            VerifyColormapIndex(image,index_val);
+            indexes[x]=index_val;
+            *q++=image->colormap[index_val];
           }
           if (!SyncImagePixels(image))
             break;
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+            if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                        image->filename,
+					image->columns,image->rows))
               break;
         }
         break;
@@ -500,8 +506,8 @@ ModuleExport void RegisterXWDImage(void)
 #endif
   entry->magick=(MagickHandler) IsXWD;
   entry->adjoin=False;
-  entry->description=AcquireString("X Windows system window dump (color)");
-  entry->module=AcquireString("XWD");
+  entry->description="X Windows system window dump (color)";
+  entry->module="XWD";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -568,9 +574,6 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
-    *indexes;
-
   register long
     x;
 
@@ -608,10 +611,16 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
   status=OpenBlob(image_info,image,WriteBinaryBlobMode,&image->exception);
   if (status == False)
     ThrowWriterException(FileOpenError,UnableToOpenFile,image);
-  TransformColorspace(image,RGBColorspace);
+  (void) TransformColorspace(image,RGBColorspace);
+  /*
+    XWD does not support more than 256 colors.
+  */
+  if ((image->storage_class == PseudoClass) && (image->colors > 256))
+    SetImageType(image,TrueColorType);
   /*
     Initialize XWD file header.
   */
+  (void) memset(&xwd_info,0,sizeof(xwd_info));
   xwd_info.header_size=(CARD32) (sz_XWDheader+strlen(image->filename)+1);
   xwd_info.file_version=(CARD32) XWD_FILE_VERSION;
   xwd_info.pixmap_format=(CARD32) ZPixmap;
@@ -665,7 +674,8 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
       /*
         Dump colormap to file.
       */
-      colors=MagickAllocateMemoryElements(XColor *,image->colors,sizeof(XColor));
+      (void) memset(&color,0,sizeof(color));
+      colors=MagickAllocateArray(XColor *,image->colors,sizeof(XColor));
       if (colors == (XColor *) NULL)
         ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
       for (i=0; i < (long) image->colors; i++)
@@ -701,6 +711,7 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
   pixels=MagickAllocateMemory(unsigned char *,pixels_size);
   if (pixels == (unsigned char *) NULL)
     ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,image);
+  (void) memset(pixels,0,pixels_size);
   /*
     Convert MIFF to XWD raster pixels.
   */
@@ -709,13 +720,16 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
     p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
     if (p == (const PixelPacket *) NULL)
       break;
-    indexes=GetIndexes(image);
     q=pixels;
 
     if (image->storage_class == PseudoClass)
       {
-        for (x=(long) image->columns; x > 0; x--)
-          *q++=(unsigned char) *indexes++;
+        register const IndexPacket
+          *indexes;
+
+        indexes=AccessImmutableIndexes(image);
+        for (x=0; x < (long) image->columns; x++)
+          *q++=(unsigned char) indexes[x];
       }
     else
       {
@@ -733,7 +747,9 @@ static unsigned int WriteXWDImage(const ImageInfo *image_info,Image *image)
     (void) WriteBlob(image,(size_t) (q-pixels),(char *) pixels);
     if (image->previous == (Image *) NULL)
       if (QuantumTick(y,image->rows))
-        if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+        if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                    SaveImageText,image->filename,
+				    image->columns,image->rows))
           break;
   }
   MagickFreeMemory(pixels);

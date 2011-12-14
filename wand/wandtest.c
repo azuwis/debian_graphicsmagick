@@ -1,3 +1,4 @@
+/* Copyright (C) 2003-2010 GraphicsMagick Group */
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
@@ -78,8 +79,6 @@
 #define False  0
 #define True  1
 
-int main(int argc,char **argv)
-{
 #define ThrowAPIException(wand) \
 { \
   description=MagickGetException(wand,&severity); \
@@ -88,6 +87,8 @@ int main(int argc,char **argv)
   exit(-1); \
 }
 
+int main(int argc,char **argv)
+{
   char
     *description;
 
@@ -115,6 +116,9 @@ int main(int argc,char **argv)
     columns,
     rows;
 
+  (void) argc;
+
+  InitializeMagick(*argv);
   magick_wand=NewMagickWand();
   MagickSetSize(magick_wand,640,480);
   MagickGetSize(magick_wand,&columns,&rows);
@@ -132,7 +136,11 @@ int main(int argc,char **argv)
     path[0]=0;
     p=getenv("SRCDIR");
     if (p)
-      strcpy(path,p);
+      {
+        strcpy(path,p);
+        if (path[strlen(path)-1] != '/')
+          strcat(path,"/");
+      }
     strcat(path,"sequence.miff");
     
     status=MagickReadImage(magick_wand,path);
@@ -203,9 +211,9 @@ int main(int argc,char **argv)
   (void) DrawPopGraphicContext(drawing_wand);
   (void) MagickSetImageIndex(magick_wand,1);
   status=MagickDrawImage(magick_wand,drawing_wand);
+  DestroyDrawingWand(drawing_wand);
   if (status == False)
     ThrowAPIException(magick_wand);
-  DestroyDrawingWand(drawing_wand);
   {
     unsigned char
       pixels[27],
@@ -241,8 +249,17 @@ int main(int argc,char **argv)
   status=MagickResizeImage(magick_wand,50,50,UndefinedFilter,1.0);
   if (status == False)
     ThrowAPIException(magick_wand);
-  (void) fprintf(stdout,"Write to image.miff...\n");
-  status=MagickWriteImages(magick_wand,"image.miff",True);
+
+  MagickResetIterator(magick_wand);
+  while (MagickNextImage(magick_wand) != False)
+    {
+      MagickSetImageDepth( magick_wand, 8);
+      MagickSetImageCompression( magick_wand, RLECompression);
+    }
+  MagickResetIterator(magick_wand);
+
+  (void) fprintf(stdout,"Write to wandtest_out.miff...\n");
+  status=MagickWriteImages(magick_wand,"wandtest_out.miff",True);
   if (status == False)
     ThrowAPIException(magick_wand);
   DestroyMagickWand(magick_wand);

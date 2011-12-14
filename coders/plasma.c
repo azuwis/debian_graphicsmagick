@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003-2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,10 +37,12 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/constitute.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/plasma.h"
+#include "magick/random.h"
 #include "magick/utility.h"
 
 /*
@@ -83,16 +85,16 @@ static void PlasmaPixel(Image *image,double x,double y)
   q=GetImagePixels(image,(long) (x+0.5),(long) (y+0.5),1,1);
   if (q == (PixelPacket *) NULL)
     return;
-  q->red=(Quantum) ((double) MaxRGB*rand()/RAND_MAX+0.5);
-  q->green=(Quantum) ((double) MaxRGB*rand()/RAND_MAX+0.5);
-  q->blue=(Quantum) ((double) MaxRGB*rand()/RAND_MAX+0.5);
+  q->red=(Quantum) (MaxRGBDouble*MagickRandomReal()+0.5);
+  q->green=(Quantum) (MaxRGBDouble*MagickRandomReal()+0.5);
+  q->blue=(Quantum) (MaxRGBDouble*MagickRandomReal()+0.5);
   (void) SyncImagePixels(image);
 }
 
 static Image *ReadPlasmaImage(const ImageInfo *image_info,
   ExceptionInfo *exception)
 {
-#define PlasmaImageText  "  Applying image plasma...  "
+#define PlasmaImageText  "[%s] Applying image plasma..."
 
   Image
     *image;
@@ -168,7 +170,8 @@ static Image *ReadPlasmaImage(const ImageInfo *image_info,
     i>>=1;
   for (depth=1; ; depth++)
   {
-    if (!MagickMonitor(PlasmaImageText,depth,max_depth,&image->exception))
+    if (!MagickMonitorFormatted(depth,max_depth,&image->exception,
+                                PlasmaImageText,image->filename))
       break;
     if (PlasmaImage(image,&segment_info,0,depth))
       break;
@@ -207,14 +210,19 @@ ModuleExport void RegisterPLASMAImage(void)
   entry=SetMagickInfo("PLASMA");
   entry->decoder=(DecoderHandler) ReadPlasmaImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Plasma fractal image");
-  entry->module=AcquireString("PLASMA");
+  entry->description="Plasma fractal image";
+  entry->module="PLASMA";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("FRACTAL");
   entry->decoder=(DecoderHandler) ReadPlasmaImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Plasma fractal image");
-  entry->module=AcquireString("PLASMA");
+  entry->description="Plasma fractal image";
+  entry->module="PLASMA";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

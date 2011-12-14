@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003-2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,12 +37,14 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
+#include "magick/color.h"
 #include "magick/effect.h"
 #include "magick/enhance.h"
 #include "magick/fx.h"
 #include "magick/gem.h"
 #include "magick/log.h"
+#include "magick/pixel_cache.h"
+#include "magick/pixel_iterator.h"
 #include "magick/monitor.h"
 #include "magick/resize.h"
 #include "magick/utility.h"
@@ -97,7 +99,7 @@ MagickExport Image *CharcoalImage(const Image *image,const double radius,
   charcoal_image=CloneImage(image,0,0,True,exception);
   if (charcoal_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(charcoal_image,GrayscaleType);
+  (void) SetImageType(charcoal_image,GrayscaleType);
   edge_image=EdgeImage(charcoal_image,radius,exception);
   if (edge_image == (Image *) NULL)
     return((Image *) NULL);
@@ -108,7 +110,7 @@ MagickExport Image *CharcoalImage(const Image *image,const double radius,
   DestroyImage(edge_image);
   (void) NormalizeImage(blur_image);
   (void) NegateImage(blur_image,False);
-  SetImageType(blur_image,GrayscaleType);
+  (void) SetImageType(blur_image,GrayscaleType);
   return(blur_image);
 }
 
@@ -145,32 +147,71 @@ MagickExport Image *CharcoalImage(const Image *image,const double radius,
 %
 %
 */
+typedef struct _ColorizeImagePixelsOptions
+{
+  DoublePixelPacket amount;
+  DoublePixelPacket color;
+} ColorizeImagePixelsOptions;
+static MagickPassFail
+ColorizeImagePixelsCB(void *mutable_data,                /* User provided mutable data */
+                      const void *immutable_data,        /* User provided immutable data */
+                      const Image *source_image,         /* Source image */
+                      const PixelPacket *source_pixels,  /* Pixel row in source image */
+                      const IndexPacket *source_indexes, /* Pixel row indexes in source image */
+                      Image *new_image,                  /* New image */
+                      PixelPacket *new_pixels,           /* Pixel row in new image */
+                      IndexPacket *new_indexes,          /* Pixel row indexes in new image */
+                      const long npixels,                /* Number of pixels in row */
+                      ExceptionInfo *exception           /* Exception report */
+                      )
+{
+  ColorizeImagePixelsOptions
+    options = *((const ColorizeImagePixelsOptions *) immutable_data);
+
+  register long
+    i;
+
+  ARG_NOT_USED(mutable_data);
+  ARG_NOT_USED(source_image);
+  ARG_NOT_USED(source_indexes);
+  ARG_NOT_USED(new_image);
+  ARG_NOT_USED(new_indexes);
+  ARG_NOT_USED(exception);
+
+  for (i=0; i < npixels; i++)
+    {
+      new_pixels[i].red=(Quantum)
+        ((source_pixels[i].red*(100.0-options.amount.red)+
+          options.color.red*options.amount.red)/100.0);
+      new_pixels[i].green=(Quantum)
+        ((source_pixels[i].green*(100.0-options.amount.green)+
+          options.color.green*options.amount.green)/100.0);
+      new_pixels[i].blue=(Quantum)
+        ((source_pixels[i].blue*(100.0-options.amount.blue)+
+          options.color.blue*options.amount.blue)/100.0);
+      new_pixels[i].opacity=(Quantum)
+        ((source_pixels[i].opacity*(100.0-options.amount.opacity)+
+          options.color.opacity*options.amount.opacity)/100.0);
+    }
+
+  return MagickPass;
+}
 MagickExport Image *ColorizeImage(const Image *image,const char *opacity,
   const PixelPacket target,ExceptionInfo *exception)
 {
-#define ColorizeImageText  "  Colorize the image...  "
+#define ColorizeImageText "[%s] Colorize..."
 
-  DoublePixelPacket
-    pixel;
+  ColorizeImagePixelsOptions
+    options;
 
   Image
     *colorize_image;
 
   long
-    count,
-    y;
-
-  register const PixelPacket
-    *p;
-
-  register long
-    x;
+    count;
 
   unsigned int
     is_grayscale;
-
-  register PixelPacket
-    *q;
 
   /*
     Allocate colorized image.
@@ -183,54 +224,37 @@ MagickExport Image *ColorizeImage(const Image *image,const char *opacity,
   colorize_image=CloneImage(image,image->columns,image->rows,True,exception);
   if (colorize_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(colorize_image,TrueColorType);
+  (void) SetImageType(colorize_image,TrueColorType);
   if (opacity == (const char *) NULL)
     return(colorize_image);
   /*
-    Determine RGB values of the pen color.
+    Determine percentage RGB values of the pen color.
   */
-  pixel.red=100.0;
-  pixel.green=100.0;
-  pixel.blue=100.0;
-  pixel.opacity=0.0;
+  options.amount.red=100.0;
+  options.amount.green=100.0;
+  options.amount.blue=100.0;
+  options.amount.opacity=0.0;
   count=sscanf(opacity,"%lf%*[/,]%lf%*[/,]%lf%*[/,]%lf",
-    &pixel.red,&pixel.green,&pixel.blue,&pixel.opacity);
+    &options.amount.red,&options.amount.green,&options.amount.blue,&options.amount.opacity);
   if (count == 1)
     {
-      if (pixel.red == 0.0)
+      if (options.amount.red == 0.0)
         return(colorize_image);
-      pixel.green=pixel.red;
-      pixel.blue=pixel.red;
-      pixel.opacity=pixel.red;
+      options.amount.green=options.amount.red;
+      options.amount.blue=options.amount.red;
+      options.amount.opacity=options.amount.red;
     }
+  options.color.red=target.red;
+  options.color.green=target.green;
+  options.color.blue=target.blue;
+  options.color.opacity=target.opacity;
   /*
     Colorize DirectClass image.
   */
-  for (y=0; y < (long) image->rows; y++)
-  {
-    p=AcquireImagePixels(image,0,y,image->columns,1,exception);
-    q=SetImagePixels(colorize_image,0,y,colorize_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    for (x=0; x < (long) image->columns; x++)
-    {
-      q->red=(Quantum)
-        ((p->red*(100.0-pixel.red)+target.red*pixel.red)/100.0);
-      q->green=(Quantum)
-        ((p->green*(100.0-pixel.green)+target.green*pixel.green)/100.0);
-      q->blue=(Quantum)
-        ((p->blue*(100.0-pixel.blue)+target.blue*pixel.blue)/100.0);
-      q->opacity=(Quantum)
-        ((p->opacity*(100.0-pixel.opacity)+target.opacity*pixel.opacity)/100.0);
-      p++;
-      q++;
-    }
-    if (!SyncImagePixels(colorize_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(ColorizeImageText,y,image->rows,exception))
-        break;
-  }
+  (void) PixelIterateDualNew(ColorizeImagePixelsCB,NULL,
+                             ColorizeImageText,NULL,&options,
+                             image->columns,image->rows,image,0,0,
+                             colorize_image,0,0,&colorize_image->exception);
   colorize_image->is_grayscale=(is_grayscale && IsGray(target));
   return(colorize_image);
 }
@@ -239,18 +263,40 @@ MagickExport Image *ColorizeImage(const Image *image,const char *opacity,
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
 %                                                                             %
-%     C o n v o l v e I m a g e                                               %
+%     C o l o r M a t r i x I m a g e                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  ConvolveImage() applies a custom convolution kernel to the image.
+%  ColorMatrixImage() applies a color matrix to the image channels.  The
+%  user supplied matrix may be of order 1 to 5 (1x1 through 5x5) and is
+%  used to update the default identity matrix:
 %
-%  The format of the ConvolveImage method is:
+%    1 0 0 0 0
+%    0 1 0 0 0
+%    0 0 1 0 0
+%    0 0 0 1 0
+%    0 0 0 0 1
 %
-%      Image *ConvolveImage(const Image *image,const unsigned int order,
-%        const double *kernel,ExceptionInfo *exception)
+%  where the first four columns represent the ratio of the color (red,
+%  green, blue) and opacity components incorporated in the output summation.
+%  The first four rows represent the summations for red, green, blue, and
+%  opacity.  The last row is a dummy row and is not used.  The last column
+%  represents a constant value (expressed as a ratio of MaxRGB) to be
+%  added to the row summation.  The following is a summary of how the
+%  matrix is applied:
+%
+%    r' = r*m[0,0] + g*m[1,0] + b*m[2,0] + o*m[3,0] + MaxRGB*m[4,0]
+%    g' = r*m[0,1] + g*m[1,1] + b*m[2,1] + o*m[3,1] + MaxRGB*m[4,1]
+%    b' = r*m[0,2] + g*m[1,2] + b*m[2,2] + o*m[3,2] + MaxRGB*m[4,2]
+%    o' = r*m[0,3] + g*m[1,3] + b*m[2,3] + o*m[3,3] + MaxRGB*m[4,3]
+%
+%  The format of the ColorMatrixImage method is:
+%
+%      MagickPassFail ColorMatrixImage(Image *image,
+%                                      const unsigned int order,
+%                                      const double *color_matrix)
 %
 %  A description of each parameter follows:
 %
@@ -258,208 +304,236 @@ MagickExport Image *ColorizeImage(const Image *image,const char *opacity,
 %
 %    o order: The number of columns and rows in the filter kernel.
 %
-%    o kernel: An array of double representing the convolution kernel.
-%
-%    o exception: Return any errors or warnings in this structure.
+%    o matrix: An array of double representing the matrix
 %
 %
 */
-MagickExport Image *ConvolveImage(const Image *image,const unsigned int order,
-  const double *kernel,ExceptionInfo *exception)
+typedef struct _ColorMatrixImageOptions_t
 {
-#define ConvolveImageText  "  Convolving image...  "
+  const double
+    *matrix[5];
 
-  DoublePixelPacket
-    pixel,
-    zero;
+} ColorMatrixImageOptions_t;
+
+static MagickPassFail
+ColorMatrixImagePixels(void *mutable_data,         /* User provided mutable data */
+                       const void *immutable_data, /* User provided immutable data */
+                       Image *image,               /* Modify image */
+                       PixelPacket *pixels,        /* Pixel row */
+                       IndexPacket *indexes,       /* Pixel row indexes */
+                       const long npixels,         /* Number of pixels in row */
+                       ExceptionInfo *exception)   /* Exception report */
+{
+  /*
+    Color matrix image pixels.
+  */
+  const ColorMatrixImageOptions_t
+    *options = (const ColorMatrixImageOptions_t *) immutable_data;
+
+  long
+    i;
 
   double
-    normalize,
-    *normal_kernel;
+    column[5],
+    sums[4];
 
-  Image
-    *convolve_image;
+  ARG_NOT_USED(mutable_data);
+  ARG_NOT_USED(image);
+  ARG_NOT_USED(indexes);
+  ARG_NOT_USED(exception);
 
-  long
-    width,
-    y;
+  for (i=0; i < (long) (sizeof(sums)/sizeof(sums[0])); i++)
+    sums[i] = 0.0;
 
-  register const double
-    *k;
+  column[3] = MaxRGBDouble;
+  column[4] = MaxRGBDouble;
 
-  register const PixelPacket
-    *p;
+  for (i=0; i < npixels; i++)
+    {
+      unsigned int
+	row;
 
-  register long
-    i,
-    u,
-    v;
+      /*
+	Accumulate float input pixel
+      */
+      column[0]=(double) pixels[i].red;
+      column[1]=(double) pixels[i].green;
+      column[2]=(double) pixels[i].blue;
+      if (image->matte)
+	column[3]=(MaxRGBDouble-(double) pixels[i].opacity);
 
-  long
-    x;
+      /*
+	Compute row sums.
+      */
+      for (row=0; row < 4; row++)
+	{
+	  const double
+	    *m;
 
-  register PixelPacket
-    *q;
+	  if ((m = options->matrix[row]) != (const double *) NULL)
+	    sums[row]=m[0]*column[0] + m[1]*column[1] + m[2]*column[2] +
+	      m[3]*column[3] + m[4]*column[4];
+	}
+
+      /*
+	Assign results.
+      */
+      for (row=0; row < 4; row++)
+	{
+	  if (options->matrix[row] != (const double *) NULL)
+	    {
+	      switch (row)
+		{
+		case 0:
+		  pixels[i].red = RoundDoubleToQuantum(sums[row]);
+		  break;
+		case 1:
+		  pixels[i].green = RoundDoubleToQuantum(sums[row]);
+		  break;
+		case 2:
+		  pixels[i].blue = RoundDoubleToQuantum(sums[row]);
+		  break;
+		case 3:
+		  sums[row]=(MaxRGBDouble-sums[row]);
+		  pixels[i].opacity = RoundDoubleToQuantum(sums[row]);
+		  break;
+		}
+	    }
+	}
+    }
+
+  return MagickPass;
+}
+
+#define ColorMatrixImageText "[%s] Color matrix..."
+MagickExport MagickPassFail
+ColorMatrixImage(Image *image,const unsigned int order,const double *color_matrix)
+{
+  double
+    matrix[] =
+    {
+      1.0, 0.0, 0.0, 0.0, 0.0,
+      0.0, 1.0, 0.0, 0.0, 0.0,
+      0.0, 0.0, 1.0, 0.0, 0.0,
+      0.0, 0.0, 0.0, 1.0, 0.0,
+      0.0, 0.0, 0.0, 0.0, 1.0
+    };
 
   unsigned int
-    logging,
-    range_check;
+    i;
 
-  /*
-    Initialize convolve image attributes.
-  */
-  assert(image != (Image *) NULL);
-  assert(image->signature == MagickSignature);
-  assert(exception != (ExceptionInfo *) NULL);
-  assert(exception->signature == MagickSignature);
-  width=(long) order;
-  if ((width % 2) == 0)
-    ThrowImageException3(OptionError,UnableToConvolveImage,
-      KernelWidthMustBeAnOddNumber);
-  if (((long) image->columns < width) || ((long) image->rows < width))
-    ThrowImageException3(OptionError,UnableToConvolveImage,
-      ImageSmallerThanKernelWidth);
-  convolve_image=CloneImage(image,image->columns,image->rows,True,exception);
-  if (convolve_image == (Image *) NULL)
-    return((Image *) NULL);
-  convolve_image->storage_class=DirectClass;
-  /*
-    Convolve image.
-  */
-  normal_kernel=MagickAllocateMemory(double *,width*width*sizeof(double));
-  if (normal_kernel == (double *) NULL)
-    {
-      DestroyImage(convolve_image);
-      ThrowImageException(ResourceLimitError,MemoryAllocationFailed,
-        MagickMsg(OptionError,UnableToConvolveImage));
-    }
-  normalize=0.0;
-  for (i=0; i < (width*width); i++)
-    normalize+=kernel[i];
-  if (AbsoluteValue(normalize) <= MagickEpsilon)
-    normalize=1.0;
-  normalize=1.0/normalize;
-  range_check=False;
-  for (i=0; i < (width*width); i++)
+  int
+    width = 5;
+
+  ColorMatrixImageOptions_t
+    options;
+
+  MagickPassFail
+    status = MagickPass;
+
+  if ((order < 1) || (order > 5))
+    ThrowBinaryException(OptionError,MatrixOrderOutOfRange,
+			 MagickMsg(OptionError,UnableToColorMatrixImage));
+
+  assert(color_matrix != (const double *) NULL);
+
+  for (i=0; i < sizeof(options.matrix)/sizeof(options.matrix[0]); i++)
+    options.matrix[i] = (double *) NULL;
+
   {
-    normal_kernel[i]=normalize*kernel[i];
-    if (normal_kernel[i] <= 0.0)
-      range_check=True;
+    double
+      *d;
+
+    const double
+      *u;
+
+    unsigned int
+      j;
+
+    u = color_matrix;
+    for (i=0; i < order; i++)
+      {
+	d = &matrix[i*5];
+	for (j=0; j < order; j++)
+	  {
+	    if (d[j] != *u)
+	      {
+		d[j]=*u;
+		options.matrix[i]=&matrix[i*5];
+	      }
+	    u++;
+	  }
+      }
+
+    /*
+      Add opacity channel if we will be updating opacity.
+    */
+    if ((!image->matte) && (options.matrix[3] != (double *) NULL))
+      SetImageOpacity(image,OpaqueOpacity);
   }
 
-  logging=LogMagickEvent(TransformEvent,GetMagickModule(),
-        "  ConvolveImage with %ldx%ld kernel:",width,width);
-  if (logging)
+  if (LogMagickEvent(TransformEvent,GetMagickModule(),
+                     "  ColorMatrix with %dx%d matrix:",width,width))
     {
+      /*
+        Log matrix.
+      */
       char
-        cell_text[13],
-        row_text[65];
+        cell_text[MaxTextExtent],
+        row_text[MaxTextExtent];
 
-      k=kernel;
-      for (v=0; v<width; v++)
-      {
-         *row_text='\0';
-         for (u=0; u<width; u++)
-         {
-           FormatString(cell_text,"%#12.4g",*k++);
-           (void) strncat(row_text,cell_text,12);
-           if (u%5 == 4)
-             {
-                (void) LogMagickEvent(TransformEvent,GetMagickModule(),
-                    "   %.64s", row_text);
-                *row_text='\0';
-             }
-         }
-         if (u > 5)
-           (void) strcat(row_text,"\n");
-         if (row_text[0] != '\0')
-           (void) LogMagickEvent(TransformEvent,GetMagickModule(),
-               "   %.64s", row_text);
-      }
+      const double
+        *k;
+
+      long
+        u,
+        v;
+
+      k=matrix;
+      for (v=0; v < width; v++)
+        {
+          *row_text='\0';
+          for (u=0; u < width; u++)
+            {
+              FormatString(cell_text,"%#12.4g",*k++);
+              (void) strlcat(row_text,cell_text,sizeof(row_text));
+              if (u%5 == 4)
+                {
+                  (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                                        "   %.64s", row_text);
+                  *row_text='\0';
+                }
+            }
+          if (u > 5)
+            (void) strlcat(row_text,"\n",sizeof(row_text));
+          if (row_text[0] != '\0')
+            (void) LogMagickEvent(TransformEvent,GetMagickModule(),
+                                  "   %s", row_text);
+        }
     }
-  (void) memset(&zero,0,sizeof(DoublePixelPacket));
-  for (y=0; y < (long) convolve_image->rows; y++)
-  {
-    p=AcquireImagePixels(image,-width/2,y-width/2,image->columns+width,width,
-      exception);
-    q=SetImagePixels(convolve_image,0,y,convolve_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    if (!range_check)
-      for (x=0; x < (long) convolve_image->columns; x++)
-      {
-        register const PixelPacket
-          *r=p;
 
-        pixel=zero;
-        k=normal_kernel;
-        for (v=width; v > 0; v--)
-        {
-          register const PixelPacket
-            *ru=r;
+  if ((options.matrix[0] != (double *) NULL) ||
+      (options.matrix[1] != (double *) NULL) ||
+      (options.matrix[2] != (double *) NULL) ||
+      (options.matrix[3] != (double *) NULL))
+    {
+      image->storage_class=DirectClass;
+      /*
+	We don't currently handle CMYK(A) colorspaces, although
+	manipulation in other alternate colorspaces may be useful.
+      */
+      if (image->colorspace == CMYKColorspace)
+	(void) TransformColorspace(image,RGBColorspace);
+      status=PixelIterateMonoModify(ColorMatrixImagePixels,
+				    NULL,
+				    ColorMatrixImageText,
+				    NULL,&options,
+				    0,0,image->columns,image->rows,
+				    image,
+				    &image->exception);
+    }
 
-          for (u=width; u > 0; u--)
-          {
-            pixel.red+=(*k)*ru->red;
-            pixel.green+=(*k)*ru->green;
-            pixel.blue+=(*k)*ru->blue;
-            pixel.opacity+=(*k)*ru->opacity;
-            k++;
-            ru++;
-          }
-          r+=image->columns+width;
-        }
-        q->red=(Quantum) (pixel.red+0.5);
-        q->green=(Quantum) (pixel.green+0.5);
-        q->blue=(Quantum) (pixel.blue+0.5);
-        q->opacity=(Quantum) (pixel.opacity+0.5);
-        p++;
-        q++;
-      }
-    else
-      for (x=0; x < (long) convolve_image->columns; x++)
-      {
-        register const PixelPacket
-          *r=p;
-
-        pixel=zero;
-        k=normal_kernel;
-        for (v=width; v > 0; v--)
-        {
-          register const PixelPacket
-            *ru=r;
-
-          for (u=width; u > 0; u--)
-          {
-            pixel.red+=(*k)*ru->red;
-            pixel.green+=(*k)*ru->green;
-            pixel.blue+=(*k)*ru->blue;
-            pixel.opacity+=(*k)*ru->opacity;
-            k++;
-            ru++;
-          }
-          r+=image->columns+width;
-        }
-        q->red=(Quantum) ((pixel.red < 0) ? 0 :
-          (pixel.red > MaxRGB) ? MaxRGB : pixel.red+0.5);
-        q->green=(Quantum) ((pixel.green < 0) ? 0 :
-          (pixel.green > MaxRGB) ? MaxRGB : pixel.green+0.5);
-        q->blue=(Quantum) ((pixel.blue < 0) ? 0 :
-          (pixel.blue > MaxRGB) ? MaxRGB : pixel.blue+0.5);
-        q->opacity=(Quantum) ((pixel.opacity < 0) ? 0 :
-          (pixel.opacity > MaxRGB) ? MaxRGB : pixel.opacity+0.5);
-        p++;
-        q++;
-      }
-    if (!SyncImagePixels(convolve_image))
-      break;
-    if (QuantumTick(y,convolve_image->rows))
-      if (!MagickMonitor(ConvolveImageText,y,convolve_image->rows,exception))
-        break;
-  }
-  MagickFreeMemory(normal_kernel);
-  convolve_image->is_grayscale=image->is_grayscale;
-  return(convolve_image);
+  return status;
 }
 
 /*
@@ -497,18 +571,15 @@ MagickExport Image *ConvolveImage(const Image *image,const unsigned int order,
 %
 */
 MagickExport Image *ImplodeImage(const Image *image,const double amount,
-  ExceptionInfo *exception)
+                                 ExceptionInfo *exception)
 {
-#define ImplodeImageText  "  Implode image...  "
+#define ImplodeImageText "[%s] Implode..."
 
   double
-    distance,
     radius,
     x_center,
-    x_distance,
     x_scale,
     y_center,
-    y_distance,
     y_scale;
 
   Image
@@ -517,11 +588,6 @@ MagickExport Image *ImplodeImage(const Image *image,const double amount,
   long
     y;
 
-  register long
-    x;
-
-  register PixelPacket
-    *q;
 
   /*
     Initialize implode image attributes.
@@ -533,8 +599,8 @@ MagickExport Image *ImplodeImage(const Image *image,const double amount,
   implode_image=CloneImage(image,image->columns,image->rows,True,exception);
   if (implode_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(implode_image,implode_image->background_color.opacity !=
-    OpaqueOpacity ? TrueColorMatteType : TrueColorType);
+  (void) SetImageType(implode_image,implode_image->background_color.opacity !=
+                      OpaqueOpacity ? TrueColorMatteType : TrueColorType);
   /*
     Compute scaling factor.
   */
@@ -554,42 +620,91 @@ MagickExport Image *ImplodeImage(const Image *image,const double amount,
   /*
     Implode each row.
   */
-  for (y=0; y < (long) image->rows; y++)
   {
-    q=SetImagePixels(implode_image,0,y,implode_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    y_distance=y_scale*(y-y_center);
-    for (x=0; x < (long) image->columns; x++)
-    {
-      /*
-        Determine if the pixel is within an ellipse.
-      */
-      x_distance=x_scale*(x-x_center);
-      distance=x_distance*x_distance+y_distance*y_distance;
-      if (distance >= (radius*radius))
-        *q=AcquireOnePixel(image,x,y,exception);
-      else
-        {
-          double
-            factor;
+    MagickPassFail
+      status = MagickPass;
 
-          /*
-            Implode the pixel.
-          */
-          factor=1.0;
-          if (distance > 0.0)
-            factor=pow(sin(MagickPI*sqrt(distance)/radius/2),-amount);
-          *q=InterpolateColor(image,factor*x_distance/x_scale+x_center,
-            factor*y_distance/y_scale+y_center,exception);
+    unsigned long
+      row_count=0;
+
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
+    for (y=0; y < (long) image->rows; y++)
+      {
+        register long
+          x;
+
+        register PixelPacket
+          *q;
+
+        double
+          distance,
+          x_distance,
+          y_distance;
+
+        ViewInfo
+          *image_view;
+
+        MagickPassFail
+          thread_status;
+        
+        thread_status=status;
+        if (thread_status == MagickFail)
+          continue;
+
+        image_view=AccessDefaultCacheView(image);
+        q=SetImagePixelsEx(implode_image,0,y,implode_image->columns,1,
+                           exception);
+        if (q == (PixelPacket *) NULL)
+          thread_status=MagickFail;
+        if (thread_status != MagickFail)
+          {
+            y_distance=y_scale*(y-y_center);
+            for (x=0; x < (long) image->columns; x++)
+              {
+                /*
+                  Determine if the pixel is within an ellipse.
+                */
+                x_distance=x_scale*(x-x_center);
+                distance=x_distance*x_distance+y_distance*y_distance;
+                if (distance >= (radius*radius))
+                  (void) AcquireOneCacheViewPixel(image_view,q,x,y,exception);
+                else
+                  {
+                    double
+                      factor;
+
+                    /*
+                      Implode the pixel.
+                    */
+                    factor=1.0;
+                    if (distance > 0.0)
+                      factor=pow(sin(MagickPI*sqrt(distance)/radius/2),-amount);
+                    InterpolateViewColor(image_view,q,
+                                         factor*x_distance/x_scale+x_center,
+                                         factor*y_distance/y_scale+y_center,
+                                         exception);
+                  }
+                q++;
+              }
+            if (!SyncImagePixelsEx(implode_image,exception))
+              thread_status=MagickFail;
+          }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_ImplodeImage)
+#endif
+        {
+          row_count++;
+          if (QuantumTick(row_count,image->rows))
+            if (!MagickMonitorFormatted(row_count,image->rows,exception,
+                                        ImplodeImageText,implode_image->filename))
+              thread_status=MagickFail;
+
+          if (thread_status == MagickFail)
+            status=MagickFail;
         }
-      q++;
-    }
-    if (!SyncImagePixels(implode_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(ImplodeImageText,y,image->rows,exception))
-        break;
+      }
   }
   implode_image->is_grayscale=image->is_grayscale;
   return(implode_image);
@@ -625,22 +740,63 @@ MagickExport Image *ImplodeImage(const Image *image,const double amount,
 %
 %
 */
+typedef struct _MorphImagePixelsOptions
+{
+  double alpha;
+  double beta;
+} MorphImagePixelsOptions;
+static MagickPassFail
+MorphImagePixelsCB(void *mutable_data,                /* User provided mutable data */
+                   const void *immutable_data,        /* User provided immutable data */
+                   const Image *source_image,         /* Source image */
+                   const PixelPacket *source_pixels,  /* Pixel row in source image */
+                   const IndexPacket *source_indexes, /* Pixel row indexes in source image */
+                   Image *new_image,                  /* New image */
+                   PixelPacket *new_pixels,           /* Pixel row in new image */
+                   IndexPacket *new_indexes,          /* Pixel row indexes in new image */
+                   const long npixels,                /* Number of pixels in row */
+                   ExceptionInfo *exception           /* Exception report */
+                   )
+{
+  MorphImagePixelsOptions
+    options = *((const MorphImagePixelsOptions *) immutable_data);
+
+  register long
+    i;
+
+  ARG_NOT_USED(mutable_data);
+  ARG_NOT_USED(source_image);
+  ARG_NOT_USED(source_indexes);
+  ARG_NOT_USED(new_image);
+  ARG_NOT_USED(new_indexes);
+  ARG_NOT_USED(exception);
+
+  for (i=0; i < npixels; i++)
+    {
+      new_pixels[i].red=(Quantum) (options.alpha*new_pixels[i].red+
+                                   options.beta*source_pixels[i].red+0.5);
+      new_pixels[i].green=(Quantum) (options.alpha*new_pixels[i].green+
+                                     options.beta*source_pixels[i].green+0.5);
+      new_pixels[i].blue=(Quantum) (options.alpha*new_pixels[i].blue+
+                                    options.beta*source_pixels[i].blue+0.5);
+      new_pixels[i].opacity=(Quantum) (options.alpha*new_pixels[i].opacity+
+                                       options.beta*source_pixels[i].opacity+0.5);
+    }
+
+  return MagickPass;
+}
 MagickExport Image *MorphImages(const Image *image,
   const unsigned long number_frames,ExceptionInfo *exception)
 {
-#define MorphImageText  "  Morph image sequence...  "
+#define MorphImageText "[%s] Morph sequence..."
 
-  double
-    alpha,
-    beta;
+  MorphImagePixelsOptions
+    options;
 
   Image
     *clone_image,
     *morph_image,
     *morph_images;
-
-  long
-    y;
 
   MonitorHandler
     handler;
@@ -648,15 +804,8 @@ MagickExport Image *MorphImages(const Image *image,
   register const Image
     *next;
 
-  register const PixelPacket
-    *p;
-
   register long
-    i,
-    x;
-
-  register PixelPacket
-    *q;
+    i;
 
   unsigned long
     scene;
@@ -686,7 +835,8 @@ MagickExport Image *MorphImages(const Image *image,
           }
         morph_images->next->previous=morph_images;
         morph_images=morph_images->next;
-        if (!MagickMonitor(MorphImageText,i,number_frames,exception))
+        if (!MagickMonitorFormatted(i,number_frames,exception,
+                                    MorphImageText,image->filename))
           break;
       }
       while (morph_images->previous != (Image *) NULL)
@@ -702,14 +852,14 @@ MagickExport Image *MorphImages(const Image *image,
     handler=SetMonitorHandler((MonitorHandler) NULL);
     for (i=0; i < (long) number_frames; i++)
     {
-      beta=((double) i+1.0)/(number_frames+1.0);
-      alpha=1.0-beta;
+      options.beta=((double) i+1.0)/(number_frames+1.0);
+      options.alpha=1.0-options.beta;
       clone_image=CloneImage(next,0,0,True,exception);
       if (clone_image == (Image *) NULL)
         break;
       morph_images->next=ZoomImage(clone_image,
-        (unsigned long) (alpha*next->columns+beta*next->next->columns+0.5),
-        (unsigned long) (alpha*next->rows+beta*next->next->rows+0.5),exception);
+        (unsigned long) (options.alpha*next->columns+options.beta*next->next->columns+0.5),
+        (unsigned long) (options.alpha*next->rows+options.beta*next->next->rows+0.5),exception);
       DestroyImage(clone_image);
       if (morph_images->next == (Image *) NULL)
         break;
@@ -723,25 +873,11 @@ MagickExport Image *MorphImages(const Image *image,
       DestroyImage(clone_image);
       if (morph_image == (Image *) NULL)
         break;
-      SetImageType(morph_images,TrueColorType);
-      for (y=0; y < (long) morph_images->rows; y++)
-      {
-        p=AcquireImagePixels(morph_image,0,y,morph_image->columns,1,exception);
-        q=GetImagePixels(morph_images,0,y,morph_images->columns,1);
-        if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-          break;
-        for (x=0; x < (long) morph_images->columns; x++)
-        {
-          q->red=(Quantum) (alpha*q->red+beta*p->red+0.5);
-          q->green=(Quantum) (alpha*q->green+beta*p->green+0.5);
-          q->blue=(Quantum) (alpha*q->blue+beta*p->blue+0.5);
-          q->opacity=(Quantum) (alpha*q->opacity+beta*p->opacity+0.5);
-          p++;
-          q++;
-        }
-        if (!SyncImagePixels(morph_images))
-          break;
-      }
+      (void) SetImageType(morph_images,TrueColorType);
+      (void) PixelIterateDualNew(MorphImagePixelsCB,NULL,
+                                 MorphImageText,NULL,&options,
+                                 morph_images->columns,morph_images->rows,morph_image,0,0,
+                                 morph_images,0,0,exception);
       DestroyImage(morph_image);
     }
     if (i < (long) number_frames)
@@ -755,7 +891,8 @@ MagickExport Image *MorphImages(const Image *image,
     morph_images->next->previous=morph_images;
     morph_images=morph_images->next;
     (void) SetMonitorHandler(handler);
-    if (!MagickMonitor(MorphImageText,scene,GetImageListLength(image),exception))
+    if (!MagickMonitorFormatted(scene,GetImageListLength(image),exception,
+                                MorphImageText,image->filename))
       break;
     scene++;
   }
@@ -800,16 +937,9 @@ MagickExport Image *MorphImages(const Image *image,
 */
 #define PaintHistSize 256
 MagickExport Image *OilPaintImage(const Image *image,const double radius,
-  ExceptionInfo *exception)
+                                  ExceptionInfo *exception)
 {
-#define OilPaintImageTag  "OilPaint/Image"
-
-  const PixelPacket
-    *s;
-
-  unsigned long
-    count,
-    *histogram;
+#define OilPaintImageText "[%s] OilPaint..."
 
   Image
     *paint_image;
@@ -818,15 +948,11 @@ MagickExport Image *OilPaintImage(const Image *image,const double radius,
     width,
     y;
 
-  register const PixelPacket
-    *p,
-    *r;
-
-  register long
-    x;
-
-  register PixelPacket
-    *q;
+  unsigned long
+    row_count=0;
+  
+  MagickPassFail
+    status=MagickPass;
 
   /*
     Initialize painted image attributes.
@@ -838,77 +964,120 @@ MagickExport Image *OilPaintImage(const Image *image,const double radius,
   width=GetOptimalKernelWidth(radius,0.5);
   if (((long) image->columns < width) || ((long) image->rows < width))
     ThrowImageException3(OptionError,UnableToPaintImage,
-      ImageSmallerThanRadius);
+                         ImageSmallerThanRadius);
+
   paint_image=CloneImage(image,image->columns,image->rows,True,exception);
   if (paint_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(paint_image,TrueColorType);
-  /*
-    Allocate histogram and scanline.
-  */
-  histogram=MagickAllocateMemory(unsigned long *,(PaintHistSize)*sizeof(unsigned long));
-  if (histogram == (unsigned long *) NULL)
-    {
-      DestroyImage(paint_image);
-      ThrowImageException(ResourceLimitError,MemoryAllocationFailed,
-        MagickMsg(OptionError,UnableToOilPaintImage));
-    }
+
+  (void) SetImageType(paint_image,TrueColorType);
+
   /*
     Paint each row of the image.
   */
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) image->rows; y++)
-  {
-    p=AcquireImagePixels(image,-width/2,y-width/2,image->columns+width,width,
-      exception);
-    q=SetImagePixels(paint_image,0,y,paint_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    for (x=(long) image->columns; x > 0; x--)
     {
-      register long
-        v;
+      const PixelPacket
+        *p,
+        *r;
+    
+      PixelPacket
+        *q;
+    
+      long
+        x;
 
-      /*
-        Determine most frequent color.
-      */
-      count=0;
-      (void) memset(histogram,0,(PaintHistSize)*sizeof(unsigned long));
-      r=p++;
-      s=r;
-      for (v=width; v > 0; v--)
-      {
-        register long
-          u;
+      const PixelPacket
+        *s;
 
-        register const PixelPacket
-          *ru;
+      MagickBool
+        thread_status;
+      
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
 
-        ru=r;
-        for (u=width; u > 0; u--)
+      p=AcquireImagePixels(image,-width/2,y-width/2,image->columns+width,width,
+                           exception);
+      q=SetImagePixelsEx(paint_image,0,y,paint_image->columns,1,exception);
+      if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+      if (thread_status != MagickFail)
         {
-          register unsigned long
-            *hp;
-
-          hp=histogram+ScaleQuantumToChar(PixelIntensityToQuantum(ru));
-          (*hp)++;
-          if (*hp > count)
+          for (x=(long) image->columns; x > 0; x--)
             {
-              s=ru;
-              count=*hp;
+              long
+                v;
+
+              unsigned long
+                count;
+
+              unsigned int
+                histogram[PaintHistSize];
+
+              /*
+                Determine most frequent color.
+              */
+              count=0;
+              (void) memset(histogram,0,sizeof(histogram));
+              r=p++;
+              s=r;
+              for (v=width; v > 0; v--)
+                {
+                  register long
+                    u;
+
+                  register const PixelPacket
+                    *ru;
+
+                  ru=r;
+                  for (u=width; u > 0; u--)
+                    {
+                      register unsigned int
+                        *hp;
+
+                      Quantum
+                        intensity;
+
+                      if (image->is_grayscale)
+                        intensity=ru->red;
+                      else
+                        intensity=PixelIntensityToQuantum(ru);
+                        
+                      hp=histogram+ScaleQuantumToChar(intensity);
+                      (*hp)++;
+                      if (*hp > count)
+                        {
+                          s=ru;
+                          count=*hp;
+                        }
+                      ru++;
+                    }
+                  r+=image->columns+width;
+                }
+              *q++=(*s);
             }
-          ru++;
+          if (!SyncImagePixelsEx(paint_image,exception))
+            thread_status=MagickFail;
         }
-        r+=image->columns+width;
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_OilPaintImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,image->rows))
+          if (!MagickMonitorFormatted(row_count,image->rows,exception,
+                                      OilPaintImageText,image->filename))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
       }
-      *q++=(*s);
     }
-    if (!SyncImagePixels(paint_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(OilPaintImageTag,y,image->rows,exception))
-        break;
-  }
-  MagickFreeMemory(histogram);
+
   paint_image->is_grayscale=image->is_grayscale;
   return(paint_image);
 }
@@ -941,28 +1110,52 @@ MagickExport Image *OilPaintImage(const Image *image,const double radius,
 %
 %
 */
-MagickExport unsigned int SolarizeImage(Image *image,const double threshold)
+static MagickPassFail
+SolarizeImagePixelsCB(void *mutable_data,         /* User provided mutable data */
+                      const void *immutable_data, /* User provided immutable data */
+                      Image *image,               /* Modify image */
+                      PixelPacket *pixels,        /* Pixel row */
+                      IndexPacket *indexes,       /* Pixel row indexes */
+                      const long npixels,         /* Number of pixels in row */
+                      ExceptionInfo *exception)   /* Exception report */
 {
-#define SolarizeImageText  "  Solarize the image colors...  "
 
-  long
-    y;
+  const Quantum
+    threshold = *((const double *) immutable_data);
 
   register long
-    i,
-    x;
+    i;  
+
+  ARG_NOT_USED(mutable_data);
+  ARG_NOT_USED(image);
+  ARG_NOT_USED(indexes);
+  ARG_NOT_USED(exception);
+
+  for (i=0; i < npixels; i++)
+    {
+      pixels[i].red=(pixels[i].red > threshold ?
+                     MaxRGB-pixels[i].red : pixels[i].red);
+      pixels[i].green=(pixels[i].green > threshold ?
+                       MaxRGB-pixels[i].green : pixels[i].green);
+      pixels[i].blue=(pixels[i].blue > threshold ?
+                      MaxRGB-pixels[i].blue : pixels[i].blue);
+    }
+
+  return MagickPass;
+}
+MagickExport MagickPassFail SolarizeImage(Image *image,const double threshold)
+{
+#define SolarizeImageText "[%s] Solarize..."
 
   unsigned int
-    is_grayscale,
-    status;
+    is_grayscale;
 
-  register PixelPacket
-    *q;
+  MagickPassFail
+    status=MagickPass;
 
   assert(image != (Image *) NULL);
   assert(image->signature == MagickSignature);
   is_grayscale=image->is_grayscale;
-  status=True;
   switch (image->storage_class)
   {
     case DirectClass:
@@ -971,34 +1164,11 @@ MagickExport unsigned int SolarizeImage(Image *image,const double threshold)
       /*
         Solarize DirectClass packets.
       */
-      for (y=0; y < (long) image->rows; y++)
-      {
-        q=GetImagePixels(image,0,y,image->columns,1);
-        if (q == (PixelPacket *) NULL)
-          {
-            status=False;
-            break;
-          }
-        for (x=0; x < (long) image->columns; x++)
-        {
-          q->red=(Quantum) (q->red > threshold ? MaxRGB-q->red : q->red);
-          q->green=(Quantum)
-            (q->green > threshold ? MaxRGB-q->green : q->green);
-          q->blue=(Quantum) (q->blue > threshold ? MaxRGB-q->blue : q->blue);
-          q++;
-        }
-        if (!SyncImagePixels(image))
-          {
-            status=False;
-            break;
-          }
-        if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(SolarizeImageText,y,image->rows,&image->exception))
-            {
-              status=False;
-              break;
-            }
-      }
+      status=PixelIterateMonoModify(SolarizeImagePixelsCB,
+                                    NULL,
+                                    SolarizeImageText,
+                                    NULL,&threshold,0,0,image->columns,image->rows,
+                                    image,&image->exception);
       break;
     }
     case PseudoClass:
@@ -1006,16 +1176,14 @@ MagickExport unsigned int SolarizeImage(Image *image,const double threshold)
       /*
         Solarize PseudoClass packets.
       */
-      for (i=0; i < (long) image->colors; i++)
-      {
-        image->colormap[i].red=(Quantum) (image->colormap[i].red > threshold ?
-          MaxRGB-image->colormap[i].red : image->colormap[i].red);
-        image->colormap[i].green=(Quantum) (image->colormap[i].green > threshold ?
-          MaxRGB-image->colormap[i].green : image->colormap[i].green);
-        image->colormap[i].blue=(Quantum) (image->colormap[i].blue > threshold ?
-          MaxRGB-image->colormap[i].blue : image->colormap[i].blue);
-      }
-      SyncImage(image);
+      SolarizeImagePixelsCB(0,
+                            &threshold,
+                            image,
+                            image->colormap,
+                            (IndexPacket *) NULL,
+                            image->colors,
+                            &image->exception);
+      status &= SyncImage(image);
       break;
     }
   }
@@ -1054,13 +1222,13 @@ MagickExport unsigned int SolarizeImage(Image *image,const double threshold)
 %
 %
 */
-MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
-  ExceptionInfo *exception)
-{
 #define GetBit(a,i) (((a) >> (i)) & 0x01)
 #define SetBit(a,i,set) \
   a=(Quantum) ((set) ? (a) | (1UL << (i)) : (a) & ~(1UL << (i)))
-#define SteganoImageText  "  Hide image...  "
+#define SteganoImageText "[%s] Stegano..."
+MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
+  ExceptionInfo *exception)
+{
 
   Image
     *stegano_image;
@@ -1097,7 +1265,7 @@ MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
   stegano_image=CloneImage(image,0,0,True,exception);
   if (stegano_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(stegano_image,TrueColorType);
+  (void) SetImageType(stegano_image,TrueColorType);
   stegano_image->depth=QuantumDepth;
   /*
     Hide watermark in low-order bits of image.
@@ -1112,7 +1280,7 @@ MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
     {
       for (x=0; (x < (long) watermark->columns) && (j < QuantumDepth); x++)
       {
-        pixel=AcquireOnePixel(watermark,x,y,exception);
+        (void) AcquireOnePixelByReference(watermark,&pixel,x,y,exception);
         q=GetImagePixels(stegano_image,k % (long) stegano_image->columns,
           k/(long) stegano_image->columns,1,1);
         if (q == (PixelPacket *) NULL)
@@ -1147,11 +1315,12 @@ MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
       }
     }
     if (QuantumTick(i,QuantumDepth))
-      if (!MagickMonitor(SteganoImageText,i,QuantumDepth,exception))
+      if (!MagickMonitorFormatted(i,QuantumDepth,exception,
+                                  SteganoImageText,image->filename))
         break;
   }
   if (stegano_image->storage_class == PseudoClass)
-    SyncImage(stegano_image);
+    (void) SyncImage(stegano_image);
   stegano_image->is_grayscale=is_grayscale;
   return(stegano_image);
 }
@@ -1192,7 +1361,7 @@ MagickExport Image *SteganoImage(const Image *image,const Image *watermark,
 MagickExport Image *StereoImage(const Image *image,const Image *offset_image,
   ExceptionInfo *exception)
 {
-#define StereoImageText  "  Stereo image...  "
+#define StereoImageText "[%s] Stereo..."
 
   Image
     *stereo_image;
@@ -1225,7 +1394,7 @@ MagickExport Image *StereoImage(const Image *image,const Image *offset_image,
   stereo_image=CloneImage(image,image->columns,image->rows,True,exception);
   if (stereo_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(stereo_image,TrueColorType);
+  (void) SetImageType(stereo_image,TrueColorType);
   /*
     Copy left image to red channel and right image to blue channel.
   */
@@ -1250,7 +1419,8 @@ MagickExport Image *StereoImage(const Image *image,const Image *offset_image,
     if (!SyncImagePixels(stereo_image))
       break;
     if (QuantumTick(y,stereo_image->rows))
-      if (!MagickMonitor(StereoImageText,y,stereo_image->rows,exception))
+      if (!MagickMonitorFormatted(y,stereo_image->rows,exception,
+                                  StereoImageText,image->filename))
         break;
   }
   return(stereo_image);
@@ -1286,21 +1456,15 @@ MagickExport Image *StereoImage(const Image *image,const Image *offset_image,
 %
 */
 MagickExport Image *SwirlImage(const Image *image,double degrees,
-  ExceptionInfo *exception)
+                               ExceptionInfo *exception)
 {
-#define SwirlImageText  "  Swirl image...  "
+#define SwirlImageText "[%s] Swirl..."
 
   double
-    cosine,
-    distance,
-    factor,
     radius,
-    sine,
     x_center,
-    x_distance,
     x_scale,
     y_center,
-    y_distance,
     y_scale;
 
   long
@@ -1308,12 +1472,6 @@ MagickExport Image *SwirlImage(const Image *image,double degrees,
 
   Image
     *swirl_image;
-
-  register PixelPacket
-    *q;
-
-  register long
-    x;
 
   /*
     Initialize swirl image attributes.
@@ -1325,8 +1483,8 @@ MagickExport Image *SwirlImage(const Image *image,double degrees,
   swirl_image=CloneImage(image,image->columns,image->rows,True,exception);
   if (swirl_image == (Image *) NULL)
     return((Image *) NULL);
-  SetImageType(swirl_image,swirl_image->background_color.opacity !=
-    OpaqueOpacity ? TrueColorMatteType : TrueColorType);
+  (void) SetImageType(swirl_image,swirl_image->background_color.opacity !=
+                      OpaqueOpacity ? TrueColorMatteType : TrueColorType);
   /*
     Compute scaling factor.
   */
@@ -1344,40 +1502,92 @@ MagickExport Image *SwirlImage(const Image *image,double degrees,
   /*
     Swirl each row.
   */
-  for (y=0; y < (long) image->rows; y++)
   {
-    q=SetImagePixels(swirl_image,0,y,swirl_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    y_distance=y_scale*(y-y_center);
-    for (x=0; x < (long) image->columns; x++)
-    {
-      /*
-        Determine if the pixel is within an ellipse.
-      */
-      x_distance=x_scale*(x-x_center);
-      distance=x_distance*x_distance+y_distance*y_distance;
-      if (distance >= (radius*radius))
-        *q=AcquireOnePixel(image,x,y,exception);
-      else
+    MagickPassFail
+      status = MagickPass;
+
+    unsigned long
+      row_count=0;
+
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(dynamic,8) shared(row_count, status)
+#endif
+    for (y=0; y < (long) image->rows; y++)
+      {
+        register PixelPacket
+          *q;
+    
+        register long
+          x;
+
+        double
+          x_distance,
+          y_distance,
+          distance;
+
+        ViewInfo
+          *image_view;
+
+        MagickPassFail
+          thread_status;
+        
+        thread_status=status;
+        if (thread_status == MagickFail)
+          continue;
+
+        image_view=AccessDefaultCacheView(image);
+        q=SetImagePixelsEx(swirl_image,0,y,swirl_image->columns,1,exception);
+        if (q == (PixelPacket *) NULL)
+          thread_status=MagickFail;
+        if (thread_status != MagickFail)
+          {
+            y_distance=y_scale*(y-y_center);
+            for (x=0; x < (long) image->columns; x++)
+              {
+                /*
+                  Determine if the pixel is within an ellipse.
+                */
+                x_distance=x_scale*(x-x_center);
+                distance=x_distance*x_distance+y_distance*y_distance;
+                if (distance >= (radius*radius))
+                  (void) AcquireOneCacheViewPixel(image_view,q,x,y,exception);
+                else
+                  {
+                    double
+                      cosine,
+                      factor,
+                      sine;
+            
+                    /*
+                      Swirl the pixel.
+                    */
+                    factor=1.0-sqrt(distance)/radius;
+                    sine=sin(degrees*factor*factor);
+                    cosine=cos(degrees*factor*factor);
+                    InterpolateViewColor(image_view,q,
+                                         (cosine*x_distance-sine*y_distance)/x_scale+x_center,
+                                         (sine*x_distance+cosine*y_distance)/y_scale+y_center,
+                                         exception);
+                  }
+                q++;
+              }
+            if (!SyncImagePixelsEx(swirl_image,exception))
+              thread_status=MagickFail;
+          }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_SwirlImage)
+#endif
         {
-          /*
-            Swirl the pixel.
-          */
-          factor=1.0-sqrt(distance)/radius;
-          sine=sin(degrees*factor*factor);
-          cosine=cos(degrees*factor*factor);
-          *q=InterpolateColor(image,
-            (cosine*x_distance-sine*y_distance)/x_scale+x_center,
-            (sine*x_distance+cosine*y_distance)/y_scale+y_center,exception);
+          row_count++;
+          if (QuantumTick(row_count,image->rows))
+            if (!MagickMonitorFormatted(row_count,image->rows,exception,
+                                        SwirlImageText,image->filename))
+              thread_status=MagickFail;
+
+          if (thread_status == MagickFail)
+            status=MagickFail;
         }
-      q++;
-    }
-    if (!SyncImagePixels(swirl_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(SwirlImageText,y,image->rows,exception))
-        break;
+      }
   }
   swirl_image->is_grayscale=image->is_grayscale;
   return(swirl_image);
@@ -1414,10 +1624,13 @@ MagickExport Image *SwirlImage(const Image *image,double degrees,
 %
 */
 MagickExport Image *WaveImage(const Image *image,const double amplitude,
-  const double wave_length,ExceptionInfo *exception)
+                              const double wave_length,ExceptionInfo *exception)
 {
-#define WaveImageText  "  Wave image...  "
+#define WaveImageText "[%s] Wave..."
 
+  VirtualPixelMethod
+    virtual_pixel_method;
+    
   double
     *sine_map;
 
@@ -1427,15 +1640,6 @@ MagickExport Image *WaveImage(const Image *image,const double amplitude,
   long
     y;
 
-  register long
-    x;
-
-  register PixelPacket
-    *q;
-
-  VirtualPixelMethod
-    virtual_pixel_method;
-
   /*
     Initialize wave image attributes.
   */
@@ -1444,7 +1648,7 @@ MagickExport Image *WaveImage(const Image *image,const double amplitude,
   assert(exception != (ExceptionInfo *) NULL);
   assert(exception->signature == MagickSignature);
   wave_image=CloneImage(image,image->columns,(long)
-    (image->rows+2.0*fabs(amplitude)),False,exception);
+                        (image->rows+2.0*fabs(amplitude)),MagickFalse,exception);
   if (wave_image == (Image *) NULL)
     return((Image *) NULL);
 
@@ -1458,40 +1662,98 @@ MagickExport Image *WaveImage(const Image *image,const double amplitude,
     SetImageOpacity(wave_image,OpaqueOpacity);
 
   /*
-    Allocate sine map.
+    Allocate and initialize sine map.
   */
-  sine_map=MagickAllocateMemory(double *,wave_image->columns*sizeof(double));
-  if (sine_map == (double *) NULL)
-    {
-      DestroyImage(wave_image);
-      ThrowImageException(ResourceLimitError,MemoryAllocationFailed,
-        MagickMsg(OptionError,UnableToWaveImage))
-    }
-  for (x=0; x < (long) wave_image->columns; x++)
-    sine_map[x]=fabs(amplitude)+amplitude*sin((2*MagickPI*x)/wave_length);
+  {
+    register long
+      x;
+
+    sine_map=MagickAllocateMemory(double *,wave_image->columns*sizeof(double));
+    if (sine_map == (double *) NULL)
+      {
+        DestroyImage(wave_image);
+        ThrowImageException(ResourceLimitError,MemoryAllocationFailed,
+                            MagickMsg(OptionError,UnableToWaveImage));
+      }
+
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(static,256)
+#endif
+    for (x=0; x < (long) wave_image->columns; x++)
+      sine_map[x]=fabs(amplitude)+amplitude*sin((2*MagickPI*x)/wave_length);
+  }
+  /*
+    Set virtual pixel method.
+  */
+
+  virtual_pixel_method=GetImageVirtualPixelMethod(image);
+  if (virtual_pixel_method == UndefinedVirtualPixelMethod)
+    (void) SetImageVirtualPixelMethod(image,ConstantVirtualPixelMethod);
   /*
     Wave image.
   */
-  virtual_pixel_method=GetImageVirtualPixelMethod(image);
-  if (virtual_pixel_method == UndefinedVirtualPixelMethod)
-    SetImageVirtualPixelMethod(image,ConstantVirtualPixelMethod);
-  for (y=0; y < (long) wave_image->rows; y++)
   {
-    q=SetImagePixels(wave_image,0,y,wave_image->columns,1);
-    if (q == (PixelPacket *) NULL)
-      break;
-    for (x=0; x < (long) wave_image->columns; x++)
-    {
-      *q=InterpolateColor(image,(double) x,(double) y-sine_map[x],exception);
-      q++;
-    }
-    if (!SyncImagePixels(wave_image))
-      break;
-    if (QuantumTick(y,wave_image->rows))
-      if (!MagickMonitor(WaveImageText,y,wave_image->rows,exception))
-        break;
+    MagickPassFail
+      status = MagickPass;
+
+    unsigned long
+      row_count=0;
+
+#if defined(HAVE_OPENMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
+    for (y=0; y < (long) wave_image->rows; y++)
+      {
+        register PixelPacket
+          *q;
+
+        register long
+          x;
+
+        ViewInfo
+          *image_view;
+
+        MagickPassFail
+          thread_status;
+        
+        thread_status=status;
+        if (thread_status == MagickFail)
+          continue;
+        
+        image_view=AccessDefaultCacheView(image);
+        q=SetImagePixelsEx(wave_image,0,y,wave_image->columns,1,exception);
+        if (q == (PixelPacket *) NULL)
+          thread_status=MagickFail;
+        if (thread_status != MagickFail)
+          {
+            for (x=0; x < (long) wave_image->columns; x++)
+              {
+                InterpolateViewColor(image_view,&q[x],(double) x,
+                                     (double) y-sine_map[x],
+                                     exception);
+              }
+            if (!SyncImagePixelsEx(wave_image,exception))
+              thread_status=MagickFail;
+          }
+#if defined(HAVE_OPENMP)
+#  pragma omp critical (GM_WaveImage)
+#endif
+        {
+          row_count++;
+          if (QuantumTick(row_count,wave_image->rows))
+            if (!MagickMonitorFormatted(row_count,wave_image->rows,exception,
+                                        WaveImageText,image->filename))
+              thread_status=MagickFail;
+          
+          if (thread_status == MagickFail)
+            status=MagickFail;
+        }
+      }
   }
-  SetImageVirtualPixelMethod(image,virtual_pixel_method);
+  /*
+    Restore virtual pixel method.
+  */
+  (void) SetImageVirtualPixelMethod(image,virtual_pixel_method);
   MagickFreeMemory(sine_map);
   wave_image->is_grayscale=(image->is_grayscale && IsGray(wave_image->background_color));
   return(wave_image);

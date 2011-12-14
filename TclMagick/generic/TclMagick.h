@@ -1,7 +1,7 @@
 /*
  * TclMagick definitions
  */
-/* $Id: TclMagick.h,v 1.2.2.3 2005/01/22 19:35:06 bfriesen Exp $ */
+/* $Id: TclMagick.h,v 1.4 2004/11/05 08:53:41 schroedt Exp $ */
 
 #ifndef _TCLMAGICK_H_
 #define _TCLMAGICK_H_

@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003-2009 GraphicsMagick Group
 % Copyright (C) 2003 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -136,6 +136,20 @@ WandExport size_t CopyMagickString(char *destination,const char *source,
 %
 %
 */
+WandExport int FormatMagickStringList(char *string,const size_t length,
+                                      const char *format,va_list operands)
+{
+  int
+    count;
+
+#if defined(HAVE_VSNPRINTF)
+  count=vsnprintf(string,length,format,operands);
+#else
+  count=vsprintf(string,format,operands);
+#endif
+
+  return(count);
+}
 WandExport int FormatMagickString(char *string,const size_t length,
   const char *format,...)
 {
@@ -145,14 +159,10 @@ WandExport int FormatMagickString(char *string,const size_t length,
   va_list
     operands;
 
-  va_start(operands,format);
-#if defined(HAVE_VSNPRINTF)
-  count=vsnprintf(string,length,format,operands);
-#else
-  count=vsprintf(string,format,operands);
-#endif
+  va_start(operands, format);
+  count=FormatMagickStringList(string,length,format,operands);
   va_end(operands);
-  return(count);
+  return (count);
 }
 
 /*
@@ -292,8 +302,8 @@ WandExport unsigned int ImportImagePixels(Image *image,const long x_offset,
     ConstituteImage(columns,rows,map,type,pixels,&image->exception);
   if (constitute_image)
     {
-      CompositeImage(image,CopyCompositeOp,constitute_image,x_offset,
-                     y_offset);
+      (void) CompositeImage(image,CopyCompositeOp,constitute_image,x_offset,
+                            y_offset);
       DestroyImage(constitute_image);
       return (image->exception.severity == UndefinedException);
     }
@@ -615,7 +625,7 @@ WandExport void *ResizeMagickMemory(void *memory,const size_t size)
     return(AcquireMagickMemory(size));
   allocation=realloc(memory,size);
   if (allocation == (void *) NULL)
-    RelinquishMagickMemory(memory);
+    (void) RelinquishMagickMemory(memory);
   return(allocation);
 }
 

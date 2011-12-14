@@ -36,13 +36,14 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -542,7 +543,7 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
         */
         offsets=MagickAllocateMemory(unsigned long *,iris_info.ysize*
           iris_info.zsize*sizeof(unsigned long));
-        max_packets=MagickAllocateMemory(unsigned char *,4*iris_info.xsize+10);
+        max_packets=MagickAllocateArray(unsigned char *,iris_info.xsize+10,4);
         runlength=MagickAllocateMemory(unsigned long *,iris_info.ysize*
           iris_info.zsize*sizeof(unsigned long));
         if ((offsets == (unsigned long *) NULL) ||
@@ -673,7 +674,9 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 break;
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                  if (!MagickMonitorFormatted(y,image->rows,exception,
+                                              LoadImageText,image->filename,
+					      image->columns,image->rows))
                     break;
             }
           }
@@ -700,7 +703,9 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               break;
             if (image->previous == (Image *) NULL)
               if (QuantumTick(y,image->rows))
-                if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                if (!MagickMonitorFormatted(y,image->rows,exception,
+                                            LoadImageText,image->filename,
+					    image->columns,image->rows))
                   break;
           }
       }
@@ -723,7 +728,7 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               q=SetImagePixels(image,0,y,image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessMutableIndexes(image);
               for (x=0; x < (long) image->columns; x++)
               {
                 indexes[x]=(*p << 8);
@@ -735,7 +740,9 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
                 break;
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                  if (!MagickMonitorFormatted(y,image->rows,exception,
+                                              LoadImageText,image->filename,
+					      image->columns,image->rows))
                     break;
             }
           }
@@ -746,7 +753,7 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
             q=SetImagePixels(image,0,y,image->columns,1);
             if (q == (PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessMutableIndexes(image);
             for (x=0; x < (long) image->columns; x++)
             {
               indexes[x]=(*p);
@@ -757,7 +764,9 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
               break;
             if (image->previous == (Image *) NULL)
               if (QuantumTick(y,image->rows))
-                if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+                if (!MagickMonitorFormatted(y,image->rows,exception,
+                                            LoadImageText,image->filename,
+					    image->columns,image->rows))
                   break;
           }
         (void) SyncImage(image);
@@ -788,7 +797,8 @@ static Image *ReadSGIImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),exception,
+                                    LoadImagesText,image->filename))
           break;
       }
   } while (iris_info.magic == 0x01DA);
@@ -830,8 +840,8 @@ ModuleExport void RegisterSGIImage(void)
   entry->decoder=(DecoderHandler) ReadSGIImage;
   entry->encoder=(EncoderHandler) WriteSGIImage;
   entry->magick=(MagickHandler) IsSGI;
-  entry->description=AcquireString("Irix RGB image");
-  entry->module=AcquireString("SGI");
+  entry->description="Irix RGB image";
+  entry->module="SGI";
   entry->seekable_stream=True;
   (void) RegisterMagickInfo(entry);
 }
@@ -988,10 +998,22 @@ static unsigned int WriteSGIImage(const ImageInfo *image_info,Image *image)
   scene=0;
   do
   {
+    ImageCharacteristics
+      characteristics;
+
+    /*
+      Ensure that image is in an RGB space.
+    */
+    (void) TransformColorspace(image,RGBColorspace);
+    /*
+      Analyze image to be written.
+    */
+    (void) GetImageCharacteristics(image,&characteristics,
+                                   (OptimizeType == image_info->type),
+                                   &image->exception);
     /*
       Initialize SGI raster file header.
     */
-    (void) TransformColorspace(image,RGBColorspace);
     iris_info.magic=0x01DA;
     if (image_info->compression == NoCompression)
       iris_info.storage=0x00;
@@ -1006,7 +1028,7 @@ static unsigned int WriteSGIImage(const ImageInfo *image_info,Image *image)
     else
       {
         if ((image_info->type != TrueColorType) &&
-            (IsGrayImage(image,&image->exception) != False))
+            (characteristics.grayscale))
           {
             iris_info.dimension=2;
             iris_info.zsize=1;
@@ -1024,7 +1046,7 @@ static unsigned int WriteSGIImage(const ImageInfo *image_info,Image *image)
 
       (void) memset(iris_info.image_name,0,sizeof(iris_info.image_name));
       if ((attribute=GetImageAttribute(image,"comment")))
-        strncpy(iris_info.image_name,attribute->value,sizeof(iris_info.image_name)-1);
+        (void) strlcpy(iris_info.image_name,attribute->value,sizeof(iris_info.image_name));
     }
     iris_info.color_map=0;
     (void) memset(iris_info.dummy2,0,sizeof(iris_info.dummy2));
@@ -1074,7 +1096,9 @@ static unsigned int WriteSGIImage(const ImageInfo *image_info,Image *image)
       }
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                      SaveImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
     if (image_info->compression == NoCompression)
@@ -1162,7 +1186,9 @@ static unsigned int WriteSGIImage(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+    if (!MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                &image->exception,SaveImagesText,
+                                image->filename))
       break;
   } while (image_info->adjoin);
   if (image_info->adjoin)

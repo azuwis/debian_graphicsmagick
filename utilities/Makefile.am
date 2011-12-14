@@ -1,52 +1,269 @@
-# Copyright (C) 2003 GraphicsMagick Group
-# Copyright (C) 2002 ImageMagick Studio
-# Copyright (C) 1999 E. I. du Pont de Nemours and Company
+# Copyright (C) 2004-2010 GraphicsMagick Group
 #
 # This program is covered by multiple licenses, which are described in
 # Copyright.txt. You should have received a copy of Copyright.txt with this
 # package; otherwise see http://www.graphicsmagick.org/www/Copyright.html.
 #
-#  Makefile for building GraphicsMagick utilities
+# Makefile for building GraphicsMagick utilities
+#
 #
 
-# Don't require all the GNU mandated files
-AUTOMAKE_OPTIONS = 1.8 foreign
+UTILITIES_PGMS = \
+	utilities/gm
 
-MAGICK_LIB	= $(top_builddir)/magick/libGraphicsMagick.la # libtool library name
-AM_CPPFLAGS	=  -I$(top_builddir) -I$(top_srcdir)
+utilities_gm_LDADD	= $(LIBMAGICK)
+utilities_gm_LDFLAGS	= $(LDFLAGS)
+utilities_gm_SOURCES	= utilities/gm.c
 
-STDMANPAGES = gm.1 miff.4 quantize.5
-X11MANPAGES = 
-ALLMANPAGES = $(STDMANPAGES) $(X11MANPAGES)
+if !HasJPEG
+UTILITIES_JPEG_XFAIL_TESTS = \
+	utilities/tests/identify.sh
+endif
 
+if !HasLCMS
+UTILITIES_LCMS_XFAIL_TESTS = \
+	utilities/tests/icc-transform.sh
+endif
 
-MANPAGES = $(ALLMANPAGES)
+if !HasTTF
+UTILITIES_TTF_XFAIL_TESTS = \
+	utilities/tests/annotate.sh \
+	utilities/tests/montage.sh \
+	utilities/tests/msl_composite.sh
+endif
 
-bin_PROGRAMS = gm
+if !HasXML
+UTILITIES_XML_XFAIL_TESTS = \
+	utilities/tests/msl_composite.sh
+endif
 
-# Libtool libraries, dependencies, and linker flags used by most executables
-if WITH_LTDL
-COMMONLDADD	= $(MAGICK_LIB) $(top_builddir)/ltdl/libltdlc.la
-COMMONLDFLAGS	= @LDFLAGS@ @DLLDFLAGS@
-else
-COMMONLDADD	= $(MAGICK_LIB)
-COMMONLDFLAGS	= @LDFLAGS@
-endif # WITH_LTDL
+if !HasX11
+UTILITIES_X11_XFAIL_TESTS = \
+	utilities/tests/help-animate.sh \
+	utilities/tests/help-import.sh
+endif
 
-gm_LDADD           = $(COMMONLDADD)
-gm_LDFLAGS         = $(COMMONLDFLAGS)
-gm_SOURCES         = gm.c
+if !WITH_SHARED_LIBS
+UTILITIES_MODULES_XFAIL_TESTS = \
+	utilities/tests/list-module.sh
+endif
 
-# Manual pages to install
-man_MANS = $(MANPAGES)
+UTILITIES_XFAIL_TESTS = \
+	$(UTILITIES_JPEG_XFAIL_TESTS) \
+	$(UTILITIES_LCMS_XFAIL_TESTS) \
+	$(UTILITIES_MODULES_XFAIL_TESTS) \
+	$(UTILITIES_TTF_XFAIL_TESTS) \
+	$(UTILITIES_XML_XFAIL_TESTS) \
+	$(UTILITIES_X11_XFAIL_TESTS)
 
-# Additional files to distribute
-EXTRA_DIST = $(ALLMANPAGES)
+# Tests to run
+UTILITIES_TESTS = \
+	utilities/tests/addnoise.sh \
+	utilities/tests/affine.sh \
+	utilities/tests/annotate.sh \
+	utilities/tests/black-threshold.sh \
+	utilities/tests/blur.sh \
+	utilities/tests/border.sh \
+	utilities/tests/channel.sh \
+	utilities/tests/charcoal.sh \
+	utilities/tests/composite.sh \
+	utilities/tests/contrast.sh \
+	utilities/tests/convert-pipe-filter.sh \
+	utilities/tests/convert-pipe-in.sh \
+	utilities/tests/convert-pipe-out.sh \
+	utilities/tests/convolve.sh \
+	utilities/tests/crop.sh \
+	utilities/tests/despeckle.sh \
+	utilities/tests/draw.sh \
+	utilities/tests/edge.sh \
+	utilities/tests/emboss.sh \
+	utilities/tests/equalize.sh \
+	utilities/tests/explode.sh \
+	utilities/tests/flip.sh \
+	utilities/tests/flop.sh \
+	utilities/tests/frame.sh \
+	utilities/tests/gamma.sh \
+	utilities/tests/gaussianblur.sh \
+	utilities/tests/gradient.sh \
+	utilities/tests/grayscale.sh \
+	utilities/tests/hald-clut-identity.sh \
+	utilities/tests/hald-clut-transform.sh \
+	utilities/tests/help-animate.sh \
+	utilities/tests/help-benchmark.sh \
+	utilities/tests/help-compare.sh \
+	utilities/tests/help-composite.sh \
+	utilities/tests/help-conjure.sh \
+	utilities/tests/help-convert.sh \
+	utilities/tests/help-identify.sh \
+	utilities/tests/help-import.sh \
+	utilities/tests/help-mogrify.sh \
+	utilities/tests/help-montage.sh \
+	utilities/tests/help-time.sh \
+	utilities/tests/help-version.sh \
+	utilities/tests/help.sh \
+	utilities/tests/icc-transform.sh \
+	utilities/tests/identify.sh \
+	utilities/tests/implode.sh \
+	utilities/tests/level.sh \
+	utilities/tests/list-color.sh \
+	utilities/tests/list-delegate.sh \
+	utilities/tests/list-format.sh \
+	utilities/tests/list-magic.sh \
+	utilities/tests/list-module.sh \
+	utilities/tests/list-modulemap.sh \
+	utilities/tests/list-resource.sh \
+	utilities/tests/list-type.sh \
+	utilities/tests/mask.sh \
+	utilities/tests/medianfilter.sh \
+	utilities/tests/modulate.sh \
+	utilities/tests/monochrome.sh \
+	utilities/tests/negate.sh \
+	utilities/tests/normalize.sh \
+	utilities/tests/oilpaint.sh \
+	utilities/tests/ordered-dither2x2.sh \
+	utilities/tests/ordered-dither3x3.sh \
+	utilities/tests/ordered-dither4x4.sh \
+	utilities/tests/plasma.sh \
+	utilities/tests/quantize.sh \
+	utilities/tests/raise.sh \
+	utilities/tests/random-threshold.sh \
+	utilities/tests/recolor.sh \
+	utilities/tests/reducenoise.sh \
+	utilities/tests/resize.sh \
+	utilities/tests/roll.sh \
+	utilities/tests/rotate.sh \
+	utilities/tests/scale.sh \
+	utilities/tests/segment.sh \
+	utilities/tests/shade.sh \
+	utilities/tests/sharpen.sh \
+	utilities/tests/shave.sh \
+	utilities/tests/shear.sh \
+	utilities/tests/solarize.sh \
+	utilities/tests/spread.sh \
+	utilities/tests/swirl.sh \
+	utilities/tests/threshold.sh \
+	utilities/tests/unsharpmask.sh \
+	utilities/tests/wave.sh \
+	utilities/tests/white-threshold.sh \
+	utilities/tests/montage.sh \
+	utilities/tests/msl_composite.sh \
+        utilities/tests/preview_addnoise.sh \
+        utilities/tests/preview_blur.sh \
+        utilities/tests/preview_brightness.sh \
+        utilities/tests/preview_charcoal.sh \
+        utilities/tests/preview_despeckle.sh \
+        utilities/tests/preview_dull.sh \
+        utilities/tests/preview_edgedetect.sh \
+        utilities/tests/preview_gamma.sh \
+        utilities/tests/preview_grayscale.sh \
+        utilities/tests/preview_hue.sh \
+        utilities/tests/preview_implode.sh \
+        utilities/tests/preview_oilpaint.sh \
+        utilities/tests/preview_quantize.sh \
+        utilities/tests/preview_raise.sh \
+        utilities/tests/preview_reducenoise.sh \
+        utilities/tests/preview_roll.sh \
+        utilities/tests/preview_rotate.sh \
+        utilities/tests/preview_saturation.sh \
+        utilities/tests/preview_segment.sh \
+        utilities/tests/preview_shade.sh \
+        utilities/tests/preview_sharpen.sh \
+        utilities/tests/preview_shear.sh \
+        utilities/tests/preview_solarize.sh \
+        utilities/tests/preview_spiff.sh \
+        utilities/tests/preview_spread.sh \
+        utilities/tests/preview_swirl.sh \
+        utilities/tests/preview_threshold.sh \
+        utilities/tests/preview_wave.sh \
+	utilities/tests/version.sh
+
+utilities/tests/montage.log : \
+	utilities/tests/addnoise.log \
+	utilities/tests/affine.log \
+	utilities/tests/annotate.log \
+	utilities/tests/black-threshold.log \
+	utilities/tests/blur.log \
+	utilities/tests/border.log \
+	utilities/tests/channel.log \
+	utilities/tests/charcoal.log \
+	utilities/tests/composite.log \
+	utilities/tests/contrast.log \
+	utilities/tests/convolve.log \
+	utilities/tests/crop.log \
+	utilities/tests/despeckle.log \
+	utilities/tests/draw.log \
+	utilities/tests/edge.log \
+	utilities/tests/emboss.log \
+	utilities/tests/equalize.log \
+	utilities/tests/explode.log \
+	utilities/tests/flip.log \
+	utilities/tests/flop.log \
+	utilities/tests/frame.log \
+	utilities/tests/gamma.log \
+	utilities/tests/gaussianblur.log \
+	utilities/tests/gradient.log \
+	utilities/tests/grayscale.log \
+	utilities/tests/implode.log \
+	utilities/tests/level.log \
+	utilities/tests/mask.log \
+	utilities/tests/medianfilter.log \
+	utilities/tests/modulate.log \
+	utilities/tests/monochrome.log \
+	utilities/tests/negate.log \
+	utilities/tests/normalize.log \
+	utilities/tests/oilpaint.log \
+	utilities/tests/ordered-dither2x2.log \
+	utilities/tests/ordered-dither3x3.log \
+	utilities/tests/ordered-dither4x4.log \
+	utilities/tests/plasma.log \
+	utilities/tests/quantize.log \
+	utilities/tests/raise.log \
+	utilities/tests/random-threshold.log \
+	utilities/tests/recolor.log \
+	utilities/tests/reducenoise.log \
+	utilities/tests/resize.log \
+	utilities/tests/roll.log \
+	utilities/tests/rotate.log \
+	utilities/tests/scale.log \
+	utilities/tests/segment.log \
+	utilities/tests/shade.log \
+	utilities/tests/sharpen.log \
+	utilities/tests/shave.log \
+	utilities/tests/shear.log \
+	utilities/tests/solarize.log \
+	utilities/tests/spread.log \
+	utilities/tests/swirl.log \
+	utilities/tests/threshold.log \
+	utilities/tests/unsharpmask.log \
+	utilities/tests/wave.log \
+	utilities/tests/white-threshold.log
+
+UTILITIES_MANS = \
+	utilities/gm.1 \
+	utilities/miff.4 \
+	utilities/quantize.5
+
+UTILITIES_EXTRA_DIST = \
+	$(UTILITIES_MANS) \
+	$(UTILITIES_TESTS) \
+	utilities/tests/BetaRGB.icc \
+	utilities/tests/common.sh \
+	utilities/tests/sunrise.jpg \
+	utilities/tests/sunrise.miff
+
+UTILITIES_CLEANFILES = \
+	utilities/tests/*_out.miff \
+	utilities/tests/*_out.pnm \
+	utilities/tests/*_out.txt \
+	utilities/tests/demo*.miff \
+	utilities/tests/gm.core \
+	utilities/tests/core
 
 # Install/Uninstall ImageMagick compatibility links
 if MAGICK_COMPAT
-MAGICKPROGRAMS=animate composite conjure convert display identify import mogrify montage
-install-exec-local:
+MAGICKPROGRAMS=animate compare composite conjure convert display identify import mogrify montage
+UTILITIES_INSTALL_EXEC_LOCAL_TARGETS=install-exec-local-utilities
+install-exec-local-utilities:
 	$(mkdir_p) $(DESTDIR)$(bindir)
 	cd $(DESTDIR)$(bindir) ; \
 	gm=`echo "gm" | sed 's,^.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/'`; \
@@ -57,7 +274,8 @@ install-exec-local:
 	  $(LN_S) $$gm $$target ; \
 	done
 
-uninstall-local:
+UTILITIES_UNINSTALL_LOCAL_TARGETS=uninstall-local-utilities
+uninstall-local-utilities:
 	cd $(DESTDIR)$(bindir) ; \
 	for name in $(MAGICKPROGRAMS) ; \
 	do \
@@ -65,101 +283,3 @@ uninstall-local:
 	  rm -f $$target ; \
 	done
 endif # MAGICK_COMPAT
-
-clean-local:
-	rm -f *_out.miff *_out.txt demo.miff gm.core core
-
-RUNENV = $(SHELL) $(top_builddir)/rungm.sh
-
-GM=@$(RUNENV) $(MEMCHECK) ./gm
-
-MODEL_MIFF=$(top_srcdir)/Magick++/demo/model.miff
-SMILE_MIFF=$(top_srcdir)/Magick++/demo/smile.miff
-GENERIC_TTF=$(top_srcdir)/PerlMagick/demo/Generic.ttf
-
-check:
-	rm -f demo.miff *_out.miff
-	${GM} convert $(MODEL_MIFF) +noise Laplacian              -label AddNoise AddNoise_out.miff
-	${GM} convert $(MODEL_MIFF) -fill gold \
-	        -pointsize 14 -font $(GENERIC_TTF) \
-	        -draw 'gravity North text 0,20 "Magick"' -label Annotate Annotate_out.miff
-	${GM} convert $(MODEL_MIFF) -blur 0x1                     -label Blur Blur_out.miff
-	${GM} convert $(MODEL_MIFF) -bordercolor gold -border 6x6 -label Border Border_out.miff
-	${GM} convert $(MODEL_MIFF)                               -label Channel Channel_out.miff
-	${GM} convert $(MODEL_MIFF) -charcoal 0x1                 -label Charcoal Charcoal_out.miff
-	${GM} composite $(SMILE_MIFF) -geometry +35+65 $(MODEL_MIFF) -label Composite Comp_out.miff
-	${GM} convert $(MODEL_MIFF) -contrast                     -label Contrast Contrast_out.miff
-	${GM} convert $(MODEL_MIFF)  -convolve 1,1,1,1,4,1,1,1,1  -label Convolve Convolve_out.miff
-	${GM} convert $(MODEL_MIFF) -despeckle                    -label Despeckle Despeckle_out.miff
-	${GM} convert $(MODEL_MIFF) -crop '80x80+25+50'           -label Crop Crop_out.miff
-	${GM} convert $(MODEL_MIFF) -fill none -stroke gold \
-	        -draw 'circle 60,90 60,120'              -label Draw Draw_out.miff
-	${GM} convert $(MODEL_MIFF) -edge 0x1                     -label Edge Edge_out.miff
-	${GM} convert $(MODEL_MIFF) -emboss 0x1                   -label Emboss Emboss_out.miff
-	${GM} convert $(MODEL_MIFF) -equalize                     -label Equalize Equalize_out.miff
-	${GM} convert $(MODEL_MIFF) -implode -1                   -label Explode Explode_out.miff
-	${GM} convert $(MODEL_MIFF) -flip                         -label Flip Flip_out.miff
-	${GM} convert $(MODEL_MIFF) -flop                         -label Flop Flop_out.miff
-	${GM} convert $(MODEL_MIFF) -frame 15x15+3+3              -label Frame Frame_out.miff
-	${GM} convert $(MODEL_MIFF) -gamma 1.6                    -label Gamma Gamma_out.miff
-	${GM} convert $(MODEL_MIFF) -gaussian 0x1.5               -label GaussianBlur GB_out.miff
-	${GM} convert -size 130x194 gradient:'#20a0ff-#ffff00'    -label Gradient Gradient_out.miff
-	${GM} convert $(MODEL_MIFF) -colorspace gray              -label Grayscale Grayscale_out.miff
-	${GM} convert $(MODEL_MIFF) -implode 0.5                  -label Implode Implode_out.miff
-	${GM} convert $(MODEL_MIFF) -level 20%                    -label Level Level_out.miff
-	${GM} convert $(MODEL_MIFF) -median 3                     -label MedianFilter Median_out.miff
-	${GM} convert $(MODEL_MIFF) -modulate 110/110/110         -label Modulate Mod_out.miff
-	${GM} convert $(MODEL_MIFF) -colorspace gray -colors 2 \
-	       +dither                                   -label Monochrome Mono_out.miff
-	${GM} convert $(MODEL_MIFF) -negate                       -label Negate Negate_out.miff
-	${GM} convert $(MODEL_MIFF) -normalize                    -label Normalize Normal_out.miff
-	${GM} convert $(MODEL_MIFF) -paint 0x1                    -label Oilpaint Oil_out.miff
-	${GM} convert -size 130x194 plasma:fractal                -label Plasma Plasma_out.miff
-	${GM} convert $(MODEL_MIFF)                               -label Quantize Quantize_out.miff
-	${GM} convert $(MODEL_MIFF) -raise 10x10                  -label Raise Raise_out.miff
-	${GM} convert $(MODEL_MIFF) -noise 0x1                    -label ReduceNoise RedN_out.miff
-	${GM} convert $(MODEL_MIFF) -resize 50%                   -label Resize Resize_out.miff
-	${GM} convert $(MODEL_MIFF) -roll +20+10                  -label Roll Roll_out.miff
-	${GM} convert $(MODEL_MIFF) -fill black -rotate 45 \
-	        -transparent black                       -label Rotate Rotate_out.miff
-	${GM} convert $(MODEL_MIFF) -scale 60%                    -label Scale Scale_out.miff
-	${GM} convert $(MODEL_MIFF) -segment 1x1.5                -label Segment Segment_out.miff
-	${GM} convert $(MODEL_MIFF) -shade 30x30                  -label Shade Shade_out.miff
-	${GM} convert $(MODEL_MIFF) -sharpen 0x1                  -label Sharpen Sharpen_out.miff
-	${GM} convert $(MODEL_MIFF) -shave 10x10                  -label Shave Shave_out.miff
-	${GM} convert $(MODEL_MIFF) -fill black -shear 45x45 \
-	        -transparent black                       -label Shear Shear_out.miff
-	${GM} convert $(MODEL_MIFF) -spread 3                     -label Spread Spread_out.miff
-	${GM} convert $(MODEL_MIFF) -solarize 50%                 -label Solarize Solar_out.miff
-	${GM} convert $(MODEL_MIFF) -background '#000000FF' \
-	        -swirl 90                                -label Swirl Swirl_out.miff
-	${GM} convert $(MODEL_MIFF) -unsharp 0x1                  -label UnsharpMask Unsharp_out.miff
-	${GM} convert $(MODEL_MIFF) -background '#000000FF' \
-	        -wave 25x150                             -label Wave Wave_out.miff
-	${GM} convert $(MODEL_MIFF) -equalize -ordered-dither intensity 2x2 -label Ordered2x2 Ordered2_out.miff
-	${GM} convert $(MODEL_MIFF) -equalize -ordered-dither intensity 3x3 -label Ordered3x3 Ordered3_out.miff
-	${GM} convert $(MODEL_MIFF) -equalize -ordered-dither intensity 4x4 -label Ordered4x4 Ordered4_out.miff
-	${GM} convert $(MODEL_MIFF) -equalize -random-threshold intensity '10%' -label 'Random10%%' Random10_out.miff
-	${GM} montage -geometry '130x194+10+5>' -gravity 'Center' \
-	  -bordercolor 'green' -borderwidth 1x1 -tile '5x1000' -compose 'over' \
-	  -background '#ffffff' -font $(GENERIC_TTF) -pointsize 18 -fill '#600' \
-	  -stroke 'none' null: null: null: null: null: 'tmp:[A-Z]*_out.miff' \
-	  -compress rle montage_out.miff
-	${GM} convert logo: -resize 40% logo_out.miff
-	${GM} composite 'tmp:logo_out.miff' -gravity north 'tmp:montage_out.miff' demo.miff
-	@echo ./gm convert -list color \> list_color_out.txt
-	${GM} convert -list color > list_color_out.txt
-	@echo ./gm convert -list delegate \> list_delegate_out.txt
-	${GM} convert -list delegate > list_delegate_out.txt
-	@echo ./gm convert -list format \> list_format_out.txt
-	${GM} convert -list format > list_format_out.txt
-	@echo ./gm convert -list magic \> list_magic_out.txt
-	${GM} convert -list magic > list_magic_out.txt
-	@echo ./gm convert -list resource \> list_resource_out.txt
-	${GM} convert -list resource > list_resource_out.txt
-if WITH_MODULES
-	@echo ./gm convert -list modules \> list_modules_out.txt
-	${GM} convert -list modules > list_modules_out.txt
-endif # WITH_MODULES
-	@echo ./gm convert -list type \> list_type_out.txt
-	${GM} convert -list type > list_type_out.txt

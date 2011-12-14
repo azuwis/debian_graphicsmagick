@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -126,8 +127,9 @@ static Image *ReadPIXImage(const ImageInfo *image_info,ExceptionInfo *exception)
   (void) ReadBlobMSBShort(image);  /* x-offset */
   (void) ReadBlobMSBShort(image);  /* y-offset */
   bits_per_pixel=ReadBlobMSBShort(image);
-  if ((width == (unsigned long) ~0) || (height == (unsigned long) ~0) ||
-      ((bits_per_pixel != 8) && (bits_per_pixel != 24)))
+  if ((EOFBlob(image)) ||
+      (width == 0) || (height == 0) ||
+       ((bits_per_pixel != 8) && (bits_per_pixel != 24)))
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
   do
   {
@@ -155,7 +157,7 @@ static Image *ReadPIXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       q=SetImagePixels(image,0,y,image->columns,1);
       if (q == (PixelPacket *) NULL)
         break;
-      indexes=GetIndexes(image);
+      indexes=AccessMutableIndexes(image);
       for (x=0; x < (long) image->columns; x++)
       {
         if (length == 0)
@@ -181,11 +183,13 @@ static Image *ReadPIXImage(const ImageInfo *image_info,ExceptionInfo *exception)
       if (!SyncImagePixels(image))
         break;
       if (image->previous == (Image *) NULL)
-        if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+        if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                    image->filename,
+				    image->columns,image->rows))
           break;
     }
     if (image->storage_class == PseudoClass)
-      SyncImage(image);
+      (void) SyncImage(image);
     if (EOFBlob(image))
       {
         ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
@@ -203,7 +207,7 @@ static Image *ReadPIXImage(const ImageInfo *image_info,ExceptionInfo *exception)
     (void) ReadBlobMSBShort(image);
     (void) ReadBlobMSBShort(image);
     bits_per_pixel=ReadBlobMSBShort(image);
-    status=(width != (unsigned long) ~0) && (height == (unsigned long) ~0) &&
+    status=(!EOFBlob(image)) && (width != 0U) && (height != 0U) &&
       ((bits_per_pixel == 8) || (bits_per_pixel == 24));
     if (status == True)
       {
@@ -217,7 +221,8 @@ static Image *ReadPIXImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),exception,
+                                    LoadImagesText,image->filename))
           break;
       }
   } while (status == True);
@@ -257,8 +262,8 @@ ModuleExport void RegisterPIXImage(void)
 
   entry=SetMagickInfo("PIX");
   entry->decoder=(DecoderHandler) ReadPIXImage;
-  entry->description=AcquireString("Alias/Wavefront RLE image format");
-  entry->module=AcquireString("PIX");
+  entry->description="Alias/Wavefront RLE image format";
+  entry->module="PIX";
   (void) RegisterMagickInfo(entry);
 }
 

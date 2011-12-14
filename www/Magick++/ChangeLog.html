@@ -8,18 +8,158 @@
 		@page { size: 8.5in 11in }
 		TD P { color: #000000; font-family: "Verdana", "Arial", "Helvetica", sans-serif; font-size: 12pt }
 		P { color: #000000; font-family: "Verdana", "Arial", "Helvetica", sans-serif; font-size: 12pt }
-		A:link { color: #0085c0 }
+		A:link { color: #00B04F }
 		A:visited { color: #800080 }
 	-->
 	</STYLE>
 </HEAD>
-<body LANG="en-US" TEXT="#000000" LINK="#0085c0" VLINK="#800080" BGCOLOR="#ffffff">
+<body LANG="en-US" TEXT="#000000" LINK="#00B04F" VLINK="#007B37" BGCOLOR="#ffffff">
 <table BORDER=0 WIDTH="100%" >
 <tr>
-<td BGCOLOR="#52799E"><img SRC="../images/right_triangle.png" ALT=">" height=14 width=15>
-<b><font face="Helvetica, Arial"><font color="#FFFFFF"><font size="+1">Magick++ ChangeLog</font></font></font></b></td>
+<td BGCOLOR="#ffffff">
+<b><font face="Helvetica, Arial"><font color="#00B04F"><font size="+1">Magick++ ChangeLog</font></font></font></b></td>
 </tr>
 </table>
+<p>
+2010-01-31  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Magick++/STL.h (Magick): Fix potential memory leak.
+
+</UL>
+<p>
+2010-01-12  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> demo/shapes.cpp (main): Floodfill shape more agressively and
+        scale fuzz factor so that it provides the same results across
+        quantum depths.
+
+</UL>
+<p>
+2009-10-14  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/STL.cpp, lib/Magick++/STL.h (shadeImage): ShadeImage was the
+        result of a botched cut-and-paste.  Corrected now.  Thanks to
+        Jukka Manner for making me aware of this.
+
+</UL>
+<p>
+2009-09-03  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (cdl): New method to apply the ASC CDL.
+        (colorMatrix): New method to apply a color matrix to the image
+        channels.<BR>
+        (haldClut): New method to apply a color lookup table (Hald CLUT)
+        to the image.
+
+</UL>
+<p>
+2009-07-06  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (attribute): Invoke modifyImage() to assure
+        exclusive access to image when updating attributes.
+
+</UL>
+<p>
+2009-03-25  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (quantumOperator): New variant of method which
+        takes a 'double' argument, as it originally should.  Previous
+        method taking a Quantum argument is still supported but marked
+        deprecated.
+
+</UL>
+<p>
+2009-01-28  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Magick++/Include.h: If the user defines STATIC_MAGICK in his
+        project, then the Windows DLL decorations are ignored.  Without
+        this, Windows DLL-based code can't use a static GraphicsMagick.
+        This is recommended by SourceForge bug 2537627.
+
+  <LI> lib/Magick++/Drawable.h: Apparently the only STL container which
+        may be DLL-exported is &lt;vector&gt; but we are using &lt;list&gt; so disable
+        DLL-export of list-based template objects.
+
+</UL>
+<p>
+2008-10-27  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Color.cpp: Added an _isValid boolean to represent an invalid
+        color.  Transparent black is no longer special and can be used in
+        drawing.<BR>
+  <LI> lib/Pixels.cpp: Update to use new cache view interfaces provided
+        by GraphicsMagick 1.3.
+
+</UL>
+<p>
+2008-09-16  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (addNoiseChannel): New method to add noise to a
+        specified channel.<BR>
+        (blurChannel): New method to blur a specified channel.
+        (gaussianBlurChannel): New method to gaussian blur a specified
+        channel.<BR>
+        (motionBlur): New method to motion blur the image.
+        (randomThresholdChannel): New method to apply random thresholding
+        or ordered dithering to the image.
+        (randomThresholdChannel): New method to apply random thresholding
+        or ordered dithering to the specified image channels.
+        (sharpenChannel): New method to sharpen a specified image channel.
+        (unsharpmaskChannel): New method to unsharpmask a specified image
+        channel.
+
+</UL>
+<p>
+2008-06-19  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (quantize): Error measurement support was being
+        performed incorrectly.  SyncImage() is not needed here.
+
+</UL>
+<p>
+2008-05-27  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> demo/demo.cpp (main): Fix segmentation parameters so they are
+        more suitable for our image.
+
+</UL>
+<p>
+2008-04-23  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (depth): Remove 8/16/32 restriction on depth value.
+
+</UL>
+<p>
+2008-03-11  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Geometry.cpp, lib/Image.cpp: Include &lt;strings.h&gt; since it is
+        needed in order to use strcpy().
+
+</UL>
+<p>
+2007-12-01  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/{Drawable.cpp, Geometry.cpp, BlobRef.cpp, Blob.cpp,
+        Montage.cpp, Options.cpp, Image.cpp}: Eliminate use of deprecated
+        GraphicsMagick functions.<BR>
+  <LI> lib/Magick++/{STL.h, Include.h}: Eliminate use of deprecated
+        GraphicsMagick functions.
+
+</UL>
 <p>
 2007-07-21  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
 
@@ -36,7 +176,69 @@
 
 </UL>
 <p>
-2004-06-05  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+2005-10-09  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (orientation): New accessor method to support
+        image orientation.
+
+</UL>
+<p>
+2005-04-24  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/STL.cpp (levelImage): New function object for leveling the
+        image channels.<BR>
+        (levelChannelImage): New function object for leveling a specific
+        image channel.<BR>
+  <LI> lib/Image.cpp (level): New method for leveling the image
+        channels.<BR>
+        (levelChannel): New method for leveling a specific image channel.
+
+</UL>
+<p>
+2005-04-13  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Magick++/Include.h (Magick): Import CineonLogRGBColorspace
+        into Magick namespace.
+
+</UL>
+<p>
+2005-04-10  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Magick++/Include.h: Import Rec601LumaColorspace (was
+        called GRAYColorspace) and Rec709LumaColorspace into Magick
+        namespace. Use of GRAYColorspace is mapped via a macro into
+        Rec601LumaColorspace in order to avoid a user-visible API
+        change.
+
+</UL>
+<p>
+2004-08-17  Volker Lukas  &lt;vlukas@gmx.de&gt;
+
+<UL>
+  <LI> lib/Drawable.cpp: Fixes to ensure that drawable objects remain
+        coherent even if an exception is thrown within the assignment
+        operator.
+
+</UL>
+<p>
+2004-07-22  Bob Friesenhahn &lt;bfriesen@simple.dallas.tx.us&gt;  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> demo/Makefile.am (AUTOMAKE_OPTIONS): Added nostdinc in order
+        to avoid accidentally using magick/list.h when including &lt;list&gt;.
+  <LI> tests/Makefile.am (AUTOMAKE_OPTIONS): Added nostdinc in order
+        to avoid accidentally using magick/list.h when including &lt;list&gt;.
+  <LI> tests/readWriteBlob.cpp: If MISSING_STD_IOS_BINARY is defined,
+        then ios::binary is not used.  Use simple ifstream rather than
+        std::ifstream since we are already using the std namespace.
+
+</UL>
+<p>
+2004-06-03  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
 
 <UL>
   <LI> lib/Magick++/Include.h: Disable unavoidable warnings under
@@ -54,6 +256,13 @@
         more lenient so that if an error occurs while loading a module it
         is not reported as an exception unless no coders were found at
         all.
+
+</UL>
+<p>
+2004-05-15  Bob Friesenhahn  &lt;bfriesen@simple.dallas.tx.us&gt;
+
+<UL>
+  <LI> lib/Image.cpp (clipMask): Use GetImageClipMask.
 
 </UL>
 <p>
@@ -2281,7 +2490,5 @@
 </UL>
 
 <hr>
-<P ALIGN=CENTER><FONT FACE="Verdana, Arial, Helvetica, sans-seri"><A HREF="Copyright.html">Copyright</A>
-<FONT FACE="Abadi Mt Condensed Extra Bold">&copy;</FONT>
-GraphicsMagick Group 2002, 2003, 2004</FONT></P></BODY>
+</BODY>
 </HTML>

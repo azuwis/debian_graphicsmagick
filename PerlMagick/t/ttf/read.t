@@ -25,7 +25,7 @@ chdir 't/ttf' || die 'Cd failed';
 #
 # 1) Test default ImageMagick read operation on font
 #
-print("Default ImageMagick read ...\n");
+print("Default GraphicsMagick read ...\n");
 testReadCompare('input.ttf', '../reference/ttf/read.miff',
                 q/size=>'512x512', depth=>8/,
                 0.16, 1.0);
@@ -55,5 +55,5 @@ testFilterCompare('xc:#FFFFFF',
                   font=>'input.ttf',
                   fill=>'#FF0000',
                   pointsize=>14!,
-                  0.16, 1.0);
+                  0.17, 1.0);
 1;

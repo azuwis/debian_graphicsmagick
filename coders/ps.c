@@ -36,9 +36,10 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/color.h"
 #include "magick/constitute.h"
 #include "magick/delegate.h"
@@ -130,14 +131,13 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
 #define DocumentMedia  "%%DocumentMedia:"
 #define PageBoundingBox  "%%PageBoundingBox:"
 #define PostscriptLevel  "%!PS-"
-#define RenderPostscriptText  "  Rendering postscript...  "
+#define RenderPostscriptText  "[%s] Rendering postscript..."
 
   char
     command[MaxTextExtent],
     density[MaxTextExtent],
     filename[MaxTextExtent],
     geometry[MaxTextExtent],
-    options[MaxTextExtent],
     postscript_filename[MaxTextExtent],
     translate_geometry[MaxTextExtent];
 
@@ -158,12 +158,12 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
     *image,
     *next_image;
 
-  ImageInfo
-    *clone_info;
-
   int
     c,
     status;
+
+  unsigned int
+    antialias=4;
 
   RectangleInfo
     page;
@@ -188,18 +188,13 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   assert(image_info->signature == MagickSignature);
   assert(exception != (ExceptionInfo *) NULL);
   assert(exception->signature == MagickSignature);
-  if (image_info->monochrome)
-    {
-      delegate_info=GetDelegateInfo("gs-mono",(char *) NULL,exception);
-      if (delegate_info == (const DelegateInfo *) NULL)
-        return((Image *) NULL);
-    }
-  else
-    {
-      delegate_info=GetDelegateInfo("gs-color",(char *) NULL,exception);
-      if (delegate_info == (const DelegateInfo *) NULL)
-        return((Image *) NULL);
-    }
+
+  /*
+    Select Postscript delegate driver
+  */
+  delegate_info=GetPostscriptDelegateInfo(image_info,&antialias,exception);
+  if (delegate_info == (const DelegateInfo *) NULL)
+    return((Image *) NULL);
   /*
     Open image file.
   */
@@ -223,7 +218,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if ((image->x_resolution == 0.0) || (image->y_resolution == 0.0))
     {
       (void) strcpy(density,PSDensityGeometry);
-      count=GetMagickDimension(density,&image->x_resolution,&image->y_resolution);
+      count=GetMagickDimension(density,&image->x_resolution,&image->y_resolution,NULL,NULL);
       if (count != 2)
         image->y_resolution=image->x_resolution;
     }
@@ -231,7 +226,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   /*
     Determine page geometry from the Postscript bounding box.
   */
-  memset(&page,0,sizeof(RectangleInfo));
+  (void) memset(&page,0,sizeof(RectangleInfo));
   filesize=0;
   if (LocaleCompare(image_info->magick,"EPT") == 0)
     {
@@ -300,7 +295,7 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   if (ferror(file))
     {
       (void) fclose(file);
-      LiberateTemporaryFile(postscript_filename);
+      (void) LiberateTemporaryFile(postscript_filename);
       ThrowReaderException(CorruptImageError,AnErrorHasOccurredWritingToFile,
         image)
     }
@@ -310,74 +305,102 @@ static Image *ReadPSImage(const ImageInfo *image_info,ExceptionInfo *exception)
   CloseBlob(image);
   filesize=GetBlobSize(image);
   DestroyImage(image);
+  image=(Image *) NULL;
   /*
     Use Ghostscript to convert Postscript image.
   */
-  *options='\0';
-  if (image_info->subrange != 0)
-    FormatString(options,"-dFirstPage=%lu -dLastPage=%lu",
-      image_info->subimage+1,image_info->subimage+image_info->subrange);
-  (void) strncpy(filename,image_info->filename,MaxTextExtent-1);
-  if (image_info->temporary)
-    LiberateTemporaryFile((char *) image_info->filename);
-  if(!AcquireTemporaryFileName((char *) image_info->filename))
-    {
-      LiberateTemporaryFile(postscript_filename);
-      ThrowReaderTemporaryFileException(image_info->filename);
-    }
-  FormatString(command,delegate_info->commands,image_info->antialias ? 4 : 1,
-    image_info->antialias ? 4 : 1,geometry,density,options,image_info->filename,
-    postscript_filename);
-  (void) MagickMonitor(RenderPostscriptText,0,8,&image->exception);
-  status=InvokePostscriptDelegate(image_info->verbose,command);
+  {
+    char
+      options[MaxTextExtent];
+    
+    options[0]='\0';
+    /*
+      Append subrange.
+    */
+    if (image_info->subrange != 0)
+      FormatString(options,"-dFirstPage=%lu -dLastPage=%lu",
+		   image_info->subimage+1,image_info->subimage+image_info->subrange);
+    /*
+      Append bounding box.
+    */
+    FormatString(options+strlen(options)," -g%s",geometry);
+    (void) strlcpy(filename,image_info->filename,MaxTextExtent);
+    if (image_info->temporary)
+      (void) LiberateTemporaryFile((char *) image_info->filename);
+    if(!AcquireTemporaryFileName((char *) image_info->filename))
+      {
+	(void) LiberateTemporaryFile(postscript_filename);
+	ThrowReaderTemporaryFileException(image_info->filename);
+      }
+    FormatString(command,delegate_info->commands,antialias,
+		 antialias,density,options,image_info->filename,
+		 postscript_filename);
+  }
+  (void) MagickMonitorFormatted(0,8,&image->exception,RenderPostscriptText,
+                                image_info->filename);
+  status=InvokePostscriptDelegate(image_info->verbose,command,exception);
   if (!IsAccessibleAndNotEmpty(image_info->filename))
     {
       /*
-        Append a showpage operator if needed.
+        Ghostscript requires a showpage operator.
       */
       file=fopen(postscript_filename,"ab");
       if (file == (FILE *) NULL)
         {
-          LiberateTemporaryFile((char *) image_info->filename);
+          (void) LiberateTemporaryFile((char *) image_info->filename);
           ThrowReaderException(FileOpenError,UnableToWriteFile,image);
         }
       (void) fputs("showpage\n",file);
       (void) fclose(file);
-      status=InvokePostscriptDelegate(image_info->verbose,command);
+      status=InvokePostscriptDelegate(image_info->verbose,command,exception);
     }
-  LiberateTemporaryFile(postscript_filename);
-  (void) MagickMonitor(RenderPostscriptText,7,8,&image->exception);
-  if (!IsAccessibleAndNotEmpty(image_info->filename))
+  (void) LiberateTemporaryFile(postscript_filename);
+  (void) MagickMonitorFormatted(7,8,&image->exception,RenderPostscriptText,
+                                image_info->filename);
+  if (IsAccessibleAndNotEmpty(image_info->filename))
+    {
+      /*
+	Read Ghostscript output.
+      */
+      ImageInfo
+	*clone_info;
+
+      clone_info=CloneImageInfo(image_info);
+      clone_info->blob=(void *) NULL;
+      clone_info->length=0;
+      clone_info->magick[0]='\0';
+      image=ReadImage(clone_info,exception);
+      DestroyImageInfo(clone_info);
+    }
+  (void) LiberateTemporaryFile((char *) image_info->filename);
+#if defined(HasDPS)
+  if (image == (Image *) NULL)
     {
       /*
         Ghostscript has failed-- try the Display Postscript Extension.
       */
-      LiberateTemporaryFile((char *) image_info->filename);
       (void) FormatString((char *) image_info->filename,"dps:%.1024s",filename);
       image=ReadImage(image_info,exception);
-      if (image != (Image *) NULL)
-        return(image);
-      ThrowReaderException(DelegateError,PostscriptDelegateFailed,image)
     }
-  clone_info=CloneImageInfo(image_info);
-  clone_info->blob=(void *) NULL;
-  clone_info->length=0;
-  clone_info->magick[0]='\0';
-  image=ReadImage(clone_info,exception);
-  DestroyImageInfo(clone_info);
-  LiberateTemporaryFile((char *) image_info->filename);
+#endif /* defined(HasDPS) */
   if (image == (Image *) NULL)
-    ThrowReaderException(DelegateError,PostscriptDelegateFailed,image);
-  do
-  {
-    (void) strcpy(image->magick,"PS");
-    (void) strncpy(image->filename,filename,MaxTextExtent-1);
-    next_image=SyncNextImageInList(image);
-    if (next_image != (Image *) NULL)
-      image=next_image;
-  } while (next_image != (Image *) NULL);
-  while (image->previous != (Image *) NULL)
-    image=image->previous;
+    {
+      if (UndefinedException == exception->severity)
+	ThrowException(exception,DelegateError,PostscriptDelegateFailed,filename);
+    }
+  else
+    {
+      do
+	{
+	  (void) strcpy(image->magick,"PS");
+	  (void) strlcpy(image->filename,filename,MaxTextExtent);
+	  next_image=SyncNextImageInList(image);
+	  if (next_image != (Image *) NULL)
+	    image=next_image;
+	} while (next_image != (Image *) NULL);
+      while (image->previous != (Image *) NULL)
+	image=image->previous;
+    }
   return(image);
 }
 
@@ -414,9 +437,9 @@ ModuleExport void RegisterPSImage(void)
   entry->encoder=(EncoderHandler) WritePSImage;
   entry->magick=(MagickHandler) IsPS;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Adobe Encapsulated PostScript Interchange format");
-  entry->module=AcquireString("PS");
+  entry->description="Adobe Encapsulated PostScript Interchange format";
+  entry->module="PS";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("EPS");
@@ -424,8 +447,9 @@ ModuleExport void RegisterPSImage(void)
   entry->encoder=(EncoderHandler) WritePSImage;
   entry->magick=(MagickHandler) IsPS;
   entry->adjoin=False;
-  entry->description=AcquireString("Adobe Encapsulated PostScript");
-  entry->module=AcquireString("PS");
+  entry->description="Adobe Encapsulated PostScript";
+  entry->module="PS";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("EPSF");
@@ -433,8 +457,9 @@ ModuleExport void RegisterPSImage(void)
   entry->encoder=(EncoderHandler) WritePSImage;
   entry->magick=(MagickHandler) IsPS;
   entry->adjoin=False;
-  entry->description=AcquireString("Adobe Encapsulated PostScript");
-  entry->module=AcquireString("PS");
+  entry->description="Adobe Encapsulated PostScript";
+  entry->module="PS";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("EPSI");
@@ -442,17 +467,18 @@ ModuleExport void RegisterPSImage(void)
   entry->encoder=(EncoderHandler) WritePSImage;
   entry->magick=(MagickHandler) IsPS;
   entry->adjoin=False;
-  entry->description=
-    AcquireString("Adobe Encapsulated PostScript Interchange format");
-  entry->module=AcquireString("PS");
+  entry->description="Adobe Encapsulated PostScript Interchange format";
+  entry->module="PS";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("PS");
   entry->decoder=(DecoderHandler) ReadPSImage;
   entry->encoder=(EncoderHandler) WritePSImage;
   entry->magick=(MagickHandler) IsPS;
-  entry->description=AcquireString("Adobe PostScript");
-  entry->module=AcquireString("PS");
+  entry->description="Adobe PostScript";
+  entry->module="PS";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -516,19 +542,70 @@ ModuleExport void UnregisterPSImage(void)
 %
 %
 */
-static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
-{
-#define WriteRunlengthPacket(image,pixel,length,p) \
+#define WriteRunlengthPacket(image,bp,pixel,length,p) \
 { \
   if (image->matte && (p->opacity == TransparentOpacity)) \
-    FormatString(buffer,"ffffff%02lX",Min(length,0xff)); \
+    { \
+      bp=AppendHexTriplet(bp,0xff,0xff,0xff); \
+    } \
   else \
-    FormatString(buffer,"%02X%02X%02X%02lX",ScaleQuantumToChar(pixel.red), \
-      ScaleQuantumToChar(pixel.green),ScaleQuantumToChar(pixel.blue), \
-      Min(length,0xff)); \
-  (void) WriteBlobString(image,buffer); \
+    { \
+      bp=AppendHexTriplet(bp, \
+                          ScaleQuantumToChar(pixel.red), \
+                          ScaleQuantumToChar(pixel.green), \
+                          ScaleQuantumToChar(pixel.blue)); \
+    } \
+  bp=AppendHexVal(bp,Min(length,0xff)); \
 }
 
+static char* hexvals[] =
+  {
+    "00","01","02","03","04","05","06","07","08","09","0A","0B",
+    "0C","0D","0E","0F","10","11","12","13","14","15","16","17",
+    "18","19","1A","1B","1C","1D","1E","1F","20","21","22","23",
+    "24","25","26","27","28","29","2A","2B","2C","2D","2E","2F",
+    "30","31","32","33","34","35","36","37","38","39","3A","3B",
+    "3C","3D","3E","3F","40","41","42","43","44","45","46","47",
+    "48","49","4A","4B","4C","4D","4E","4F","50","51","52","53",
+    "54","55","56","57","58","59","5A","5B","5C","5D","5E","5F",
+    "60","61","62","63","64","65","66","67","68","69","6A","6B",
+    "6C","6D","6E","6F","70","71","72","73","74","75","76","77",
+    "78","79","7A","7B","7C","7D","7E","7F","80","81","82","83",
+    "84","85","86","87","88","89","8A","8B","8C","8D","8E","8F",
+    "90","91","92","93","94","95","96","97","98","99","9A","9B",
+    "9C","9D","9E","9F","A0","A1","A2","A3","A4","A5","A6","A7",
+    "A8","A9","AA","AB","AC","AD","AE","AF","B0","B1","B2","B3",
+    "B4","B5","B6","B7","B8","B9","BA","BB","BC","BD","BE","BF",
+    "C0","C1","C2","C3","C4","C5","C6","C7","C8","C9","CA","CB",
+    "CC","CD","CE","CF","D0","D1","D2","D3","D4","D5","D6","D7",
+    "D8","D9","DA","DB","DC","DD","DE","DF","E0","E1","E2","E3",
+    "E4","E5","E6","E7","E8","E9","EA","EB","EC","ED","EE","EF",
+    "F0","F1","F2","F3","F4","F5","F6","F7","F8","F9","FA","FB",
+    "FC","FD","FE","FF",NULL
+  };
+static inline char *AppendHexVal(char *q,unsigned int val)
+{
+  char
+    *hexval;
+
+  assert(val < 256);
+  hexval=hexvals[val];
+  *q++=*hexval++;
+  *q++=*hexval++;
+  return q;
+}
+static inline char* AppendHexTriplet(char *q,
+                                     unsigned int a,
+                                     unsigned int b,
+                                     unsigned int c)
+{
+  q=AppendHexVal(q,a);
+  q=AppendHexVal(q,b);
+  q=AppendHexVal(q,c);
+  return q;
+}
+static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
+{
   static const char
     *PostscriptProlog[]=
     {
@@ -788,6 +865,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     };
 
   char
+    *bp,
     buffer[MaxTextExtent],
     date[MaxTextExtent],
     density[MaxTextExtent],
@@ -827,7 +905,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -835,7 +913,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     x;
 
   SegmentInfo
-    bounds;
+    bounds={0.0,0.0,0.0,0.0};
 
   time_t
     timer;
@@ -869,10 +947,13 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
   scene=0;
   do
   {
+    ImageCharacteristics
+      characteristics;
+
     /*
       Scale image to size of Postscript page.
     */
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
     text_size=0;
     attribute=GetImageAttribute(image,"label");
     if (attribute != (const ImageAttribute *) NULL)
@@ -882,7 +963,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     geometry.y=(long) text_size;
     FormatString(page_geometry,"%lux%lu",image->columns,image->rows);
     if (image_info->page != (char *) NULL)
-      (void) strncpy(page_geometry,image_info->page,MaxTextExtent-1);
+      (void) strlcpy(page_geometry,image_info->page,MaxTextExtent);
     else
       if ((image->page.width != 0) && (image->page.height != 0))
         (void) FormatString(page_geometry,"%lux%lu%+ld%+ld",image->page.width,
@@ -899,12 +980,12 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     dy_resolution=72.0;
     x_resolution=72.0;
     (void) strcpy(density,PSDensityGeometry);
-    count=GetMagickDimension(density,&x_resolution,&y_resolution);
+    count=GetMagickDimension(density,&x_resolution,&y_resolution,NULL,NULL);
     if (count != 2)
       y_resolution=x_resolution;
     if (image_info->density != (char *) NULL)
       {
-        count=GetMagickDimension(image_info->density,&x_resolution,&y_resolution);
+        count=GetMagickDimension(image_info->density,&x_resolution,&y_resolution,NULL,NULL);
         if (count != 2)
           y_resolution=x_resolution;
       }
@@ -927,7 +1008,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
         (void) WriteBlobString(image,buffer);
         timer=time((time_t *) NULL);
         (void) localtime(&timer);
-        (void) strncpy(date,ctime(&timer),MaxTextExtent-1);
+        (void) strlcpy(date,ctime(&timer),MaxTextExtent);
         date[strlen(date)-1]='\0';
         FormatString(buffer,"%%%%CreationDate: (%.1024s)\n",date);
         (void) WriteBlobString(image,buffer);
@@ -971,12 +1052,6 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
             Image
               *preview_image;
 
-            long
-              y;
-
-            register long
-              x;
-
             /*
               Create preview image.
             */
@@ -987,7 +1062,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
             /*
               Dump image as bitmap.
             */
-            SetImageType(preview_image,BilevelType);
+            (void) SetImageType(preview_image,BilevelType);
             polarity=
               PixelIntensityToQuantum(&preview_image->colormap[0]) < (MaxRGB/2);
             if (preview_image->colors == 2)
@@ -998,13 +1073,14 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
               (((preview_image->columns+7) >> 3)*preview_image->rows+35)/36);
             (void) WriteBlobString(image,buffer);
             count=0;
+            bp=buffer;
             for (y=0; y < (long) image->rows; y++)
             {
               p=AcquireImagePixels(preview_image,0,y,preview_image->columns,1,
                 &preview_image->exception);
               if (p == (const PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(preview_image);
+              indexes=AccessImmutableIndexes(preview_image);
               bit=0;
               byte=0;
               for (x=0; x < (long) preview_image->columns; x++)
@@ -1015,13 +1091,17 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 bit++;
                 if (bit == 8)
                   {
-                    FormatString(buffer,"%02X",byte & 0xff);
-                    (void) WriteBlobString(image,buffer);
+                    bp=AppendHexVal(bp,byte & 0xff);
                     count++;
                     if (count == 36)
                       {
-                        (void) WriteBlobString(image,"\n%  ");
                         count=0;
+                        *bp++='\n';
+                        *bp++='%';
+                        *bp++=' ';
+                        *bp++=' ';
+                        (void) WriteBlob(image,bp-buffer,buffer);
+                        bp=buffer;
                       };
                     bit=0;
                     byte=0;
@@ -1030,16 +1110,25 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
               if (bit != 0)
                 {
                   byte<<=(8-bit);
-                  FormatString(buffer,"%02X",byte & 0xff);
-                  (void) WriteBlobString(image,buffer);
+                  bp=AppendHexVal(bp,byte & 0xff);
                   count++;
                   if (count == 36)
                     {
-                      (void) WriteBlobString(image,"\n%  ");
                       count=0;
+                      *bp++='\n';
+                      *bp++='%';
+                      *bp++=' ';
+                      *bp++=' ';
+                      (void) WriteBlob(image,bp-buffer,buffer);
+                      bp=buffer;
                     };
                 };
             }
+            if (bp != buffer)
+              {
+                (void) WriteBlob(image,bp-buffer,buffer);
+                bp=buffer;
+              }
             (void) WriteBlobString(image,"\n%%EndPreview\n");
             DestroyImage(preview_image);
           }
@@ -1116,18 +1205,25 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     i=0;
     index=0;
     x=0;
+    /*
+      Analyze image to be written.
+    */
+    (void) GetImageCharacteristics(image,&characteristics,
+                                   (OptimizeType == image_info->type),
+                                   &image->exception);
     if ((image_info->type != TrueColorType) &&
-        IsGrayImage(image,&image->exception))
+        (characteristics.grayscale))
       {
         FormatString(buffer,"%lu %lu\n1\n1\n1\n%d\n",image->columns,
-          image->rows,IsMonochromeImage(image,&image->exception) ? 1 : 8);
+          image->rows,((characteristics.monochrome) ? 1 : 8));
         (void) WriteBlobString(image,buffer);
-        if (!IsMonochromeImage(image,&image->exception))
+        if (!characteristics.monochrome)
           {
             /*
               Dump image as grayscale.
             */
             i++;
+            bp=buffer;
             for (y=0; y < (long) image->rows; y++)
             {
               p=AcquireImagePixels(image,0,y,image->columns,1,
@@ -1136,44 +1232,58 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 break;
               for (x=0; x < (long) image->columns; x++)
               {
-                FormatString(buffer,"%02X",
-                  ScaleQuantumToChar(PixelIntensityToQuantum(p)));
-                (void) WriteBlobString(image,buffer);
+                Quantum
+                  quantum;
+
+                if (image->is_grayscale)
+                  quantum=GetGraySample(p);
+                else
+                  quantum=PixelIntensityToQuantum(p);
+
+                bp=AppendHexVal(bp,ScaleQuantumToChar(quantum));
                 i++;
                 if (i == 36)
                   {
-                    (void) WriteBlobByte(image,'\n');
                     i=0;
+                    *bp++='\n';
+                    (void) WriteBlob(image,bp-buffer,buffer);
+                    bp=buffer;
                   }
                 p++;
               }
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                  if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                              SaveImageText,image->filename,
+					      image->columns,image->rows))
                     break;
-            }
+            } 
+            if (bp != buffer)
+              {
+                *bp++='\n';
+                (void) WriteBlob(image,bp-buffer,buffer);
+                bp=buffer;
+              }
           }
         else
           {
-            int
-              y;
-
             /*
               Dump image as bitmap.
             */
-            SetImageType(image,BilevelType);
+            (void) SetImageType(image,BilevelType);
             polarity=PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2);
             if (image->colors == 2)
               polarity=PixelIntensityToQuantum(&image->colormap[1]) <
                 PixelIntensityToQuantum(&image->colormap[0]);
             count=0;
+            bp=buffer;
             for (y=0; y < (long) image->rows; y++)
             {
               p=AcquireImagePixels(image,0,y,image->columns,1,
                 &image->exception);
               if (p == (const PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(image);
+              indexes=AccessImmutableIndexes(image);
               bit=0;
               byte=0;
               for (x=0; x < (long) image->columns; x++)
@@ -1184,14 +1294,15 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 bit++;
                 if (bit == 8)
                   {
-                    FormatString(buffer,"%02X",byte & 0xff);
-                    (void) WriteBlobString(image,buffer);
+                    bp=AppendHexVal(bp,byte & 0xff);
                     count++;
                     if (count == 36)
                       {
-                        (void) WriteBlobByte(image,'\n');
                         count=0;
-                      };
+                        *bp++='\n';
+                        (void) WriteBlob(image,bp-buffer,buffer);
+                        bp=buffer;
+                      }
                     bit=0;
                     byte=0;
                   }
@@ -1200,20 +1311,28 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
               if (bit != 0)
                 {
                   byte<<=(8-bit);
-                  FormatString(buffer,"%02X",byte & 0xff);
-                  (void) WriteBlobString(image,buffer);
+                  bp=AppendHexVal(bp,byte & 0xff);
                   count++;
                   if (count == 36)
                     {
-                      (void) WriteBlobByte(image,'\n');
                       count=0;
+                      *bp++='\n';
+                      (void) WriteBlob(image,bp-buffer,buffer);
+                      bp=buffer;
                     };
                 };
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
-                  if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                  if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                              SaveImageText,image->filename,
+					      image->columns,image->rows))
                     break;
             }
+            if (bp != buffer)
+              {
+                (void) WriteBlob(image,bp-buffer,buffer);
+                bp=buffer;
+              }
           }
         if (count != 0)
           (void) WriteBlobByte(image,'\n');
@@ -1234,6 +1353,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
               /*
                 Dump runlength-encoded DirectColor packets.
               */
+              bp=buffer;
               for (y=0; y < (long) image->rows; y++)
               {
                 p=AcquireImagePixels(image,0,y,image->columns,1,
@@ -1252,11 +1372,13 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                     {
                       if (x > 0)
                         {
-                          WriteRunlengthPacket(image,pixel,length,p);
+                          WriteRunlengthPacket(image,bp,pixel,length,p);
                           i++;
                           if (i == 9)
                             {
-                              (void) WriteBlobByte(image,'\n');
+                              *bp++='\n';
+                              (void) WriteBlob(image,bp-buffer,buffer);
+                              bp=buffer;
                               i=0;
                             }
                         }
@@ -1265,12 +1387,19 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                   pixel=(*p);
                   p++;
                 }
-                WriteRunlengthPacket(image,pixel,length,p);
+                WriteRunlengthPacket(image,bp,pixel,length,p);
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
-                    if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                    if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                                SaveImageText,image->filename,
+						image->columns,image->rows))
                       break;
               }
+              if (bp != buffer)
+                {
+                  (void) WriteBlob(image,bp-buffer,buffer);
+                  bp=buffer;
+                }
               break;
             }
             case NoCompression:
@@ -1280,6 +1409,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 Dump uncompressed DirectColor packets.
               */
               i=0;
+              bp=buffer;
               for (y=0; y < (long) image->rows; y++)
               {
                 p=AcquireImagePixels(image,0,y,image->columns,1,
@@ -1289,25 +1419,35 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 for (x=0; x < (long) image->columns; x++)
                 {
                   if (image->matte && (p->opacity == TransparentOpacity))
-                    (void) strcpy(buffer,"ffffff");
+                    bp=AppendHexTriplet(bp,0xff,0xff,0xff);
                   else
-                    FormatString(buffer,"%02X%02X%02X",
-                      ScaleQuantumToChar(p->red),ScaleQuantumToChar(p->green),
-                      ScaleQuantumToChar(p->blue));
-                  (void) WriteBlobString(image,buffer);
+                    bp=AppendHexTriplet(bp,
+                                        ScaleQuantumToChar(p->red),
+                                        ScaleQuantumToChar(p->green),
+                                        ScaleQuantumToChar(p->blue));
                   i++;
                   if (i == 12)
                     {
                       i=0;
-                      (void) WriteBlobByte(image,'\n');
+                      *bp++='\n';
+                      (void) WriteBlob(image,bp-buffer,buffer);
+                      bp=buffer;
                     }
                   p++;
                 }
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
-                    if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                    if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                                SaveImageText,image->filename,
+						image->columns,image->rows))
                       break;
               }
+              if (bp != buffer)
+                {
+                  *bp++='\n';
+                  (void) WriteBlob(image,bp-buffer,buffer);
+                  bp=buffer;
+                }
               break;
             }
           }
@@ -1325,7 +1465,7 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
           /*
             Dump number of colors and colormap.
           */
-          FormatString(buffer,"%lu\n",image->colors);
+          FormatString(buffer,"%u\n",image->colors);
           (void) WriteBlobString(image,buffer);
           for (i=0; i < (long) image->colors; i++)
           {
@@ -1343,13 +1483,14 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 Dump runlength-encoded PseudoColor packets.
               */
               i=0;
+              bp=buffer;
               for (y=0; y < (long) image->rows; y++)
               {
                 p=AcquireImagePixels(image,0,y,image->columns,1,
                   &image->exception);
                 if (p == (const PixelPacket *) NULL)
                   break;
-                indexes=GetIndexes(image);
+                indexes=AccessImmutableIndexes(image);
                 index=(*indexes);
                 length=255;
                 for (x=0; x < (long) image->columns; x++)
@@ -1361,13 +1502,14 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                     {
                       if (x > 0)
                         {
-                          FormatString(buffer,"%02X%02lX",index,
-                            Min(length,0xff));
-                          (void) WriteBlobString(image,buffer);
+                          bp=AppendHexVal(bp,index);
+                          bp=AppendHexVal(bp,Min(length,0xff));
                           i++;
                           if (i == 18)
                             {
-                              (void) WriteBlobByte(image,'\n');
+                              *bp++='\n';
+                              (void) WriteBlob(image,bp-buffer,buffer);
+                              bp=buffer;
                               i=0;
                             }
                         }
@@ -1377,12 +1519,19 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                   pixel=(*p);
                   p++;
                 }
-                FormatString(buffer,"%02X%02lX",index,Min(length,0xff));
-                (void) WriteBlobString(image,buffer);
+                bp=AppendHexVal(bp,index);
+                bp=AppendHexVal(bp,Min(length,0xff));
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
-                    if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                    if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                                SaveImageText,image->filename,
+						image->columns,image->rows))
                       break;
+              }
+              if (bp != buffer)
+              {
+                (void) WriteBlob(image,bp-buffer,buffer);
+                bp=buffer;
               }
               break;
             }
@@ -1393,30 +1542,39 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
                 Dump uncompressed PseudoColor packets.
               */
               i=0;
+              bp=buffer;
               for (y=0; y < (long) image->rows; y++)
               {
                 p=AcquireImagePixels(image,0,y,image->columns,1,
                   &image->exception);
                 if (p == (const PixelPacket *) NULL)
                   break;
-                indexes=GetIndexes(image);
+                indexes=AccessImmutableIndexes(image);
                 for (x=0; x < (long) image->columns; x++)
                 {
-                  FormatString(buffer,"%02X",indexes[x]);
-                  (void) WriteBlobString(image,buffer);
+                  bp=AppendHexVal(bp,indexes[x]);
                   i++;
                   if (i == 36)
                     {
-                      (void) WriteBlobByte(image,'\n');
+                      *bp++='\n';
+                      (void) WriteBlob(image,bp-buffer,buffer);
+                      bp=buffer;
                       i=0;
                     }
                   p++;
                 }
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
-                    if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+                    if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                                SaveImageText,image->filename,
+						image->columns,image->rows))
                       break;
               }
+              if (bp != buffer)
+                {
+                  (void) WriteBlob(image,bp-buffer,buffer);
+                  bp=buffer;
+                }
               break;
             }
           }
@@ -1428,7 +1586,8 @@ static unsigned int WritePSImage(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    if (!MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),&image->exception))
+    if (!MagickMonitorFormatted(scene++,GetImageListLength(image),&image->exception,
+                                SaveImagesText,image->filename))
       break;
   } while (image_info->adjoin);
   if (image_info->adjoin)

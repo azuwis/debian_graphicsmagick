@@ -37,6 +37,7 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
+#include "magick/colormap.h"
 #include "magick/compress.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
@@ -199,31 +200,24 @@ ModuleExport void RegisterFAXImage(void)
   MagickInfo
     *entry;
 
-  static const char
-    *FAXNote=
-    {
-      "See TIFF format.  Note that FAX machines use non-square pixels\n"
-      "which are 1.5 times wider than they are tall but computer displays\n"
-      "use square pixels, so FAX images may appear to be narrow unless\n"
-      "they are explicitly resized using a resize specification of\n"
-      "\"150x100%\"."
-    };
-
   entry=SetMagickInfo("FAX");
   entry->decoder=(DecoderHandler) ReadFAXImage;
   entry->encoder=(EncoderHandler) WriteFAXImage;
   entry->magick=(MagickHandler) IsFAX;
-  entry->description=AcquireString("Group 3 FAX");
-  entry->note=AcquireString(FAXNote);
-  entry->module=AcquireString("FAX");
+  entry->description="Group 3 FAX (Not TIFF Group3 FAX!)";
+  entry->module="FAX";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("G3");
   entry->decoder=(DecoderHandler) ReadFAXImage;
   entry->encoder=(EncoderHandler) WriteFAXImage;
   entry->magick=(MagickHandler) IsFAX;
   entry->adjoin=False;
-  entry->description=AcquireString("Group 3 FAX");
-  entry->module=AcquireString("FAX");
+  entry->description="Group 3 FAX (same as \"FAX\")";
+  entry->stealth=MagickTrue;
+  entry->module="FAX";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -311,13 +305,14 @@ static unsigned int WriteFAXImage(const ImageInfo *image_info,Image *image)
     /*
       Convert MIFF to monochrome.
     */
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
     status=HuffmanEncodeImage(clone_info,image);
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
   } while (clone_info->adjoin);

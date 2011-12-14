@@ -37,7 +37,7 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/draw.h"
 #include "magick/magick.h"
 #include "magick/render.h"
@@ -87,8 +87,8 @@ static unsigned int IsTTF(const unsigned char *magick,const size_t length)
 {
   if (length < 5)
     return(False);
-  if ((magick[0] == 0x00) && (magick[1] == 0x01) && (magick[2] == 0x00) &&
-      (magick[3] == 0x00) && (magick[4] == 0x0))
+  if ((magick[0] == 0x00U) && (magick[1] == 0x01U) && (magick[2] == 0x00U) &&
+      (magick[3] == 0x00U) && (magick[4] == 0x0U))
     return(True);
   return(False);
 }
@@ -188,8 +188,8 @@ static Image *ReadTTFImage(const ImageInfo *image_info,ExceptionInfo *exception)
     if (!SyncImagePixels(image))
       break;
   }
-  (void) strncpy(image->magick,image_info->magick,MaxTextExtent-1);
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(image->magick,image_info->magick,MaxTextExtent);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
   /*
     Prepare drawing commands
   */
@@ -253,7 +253,7 @@ static Image *ReadTTFImage(const ImageInfo *image_info,ExceptionInfo *exception)
 */
 ModuleExport void RegisterTTFImage(void)
 {
-  char
+  static char
     version[MaxTextExtent];
 
   MagickInfo
@@ -263,38 +263,44 @@ ModuleExport void RegisterTTFImage(void)
 #if defined(FREETYPE_MAJOR) && defined(FREETYPE_MINOR)
   FormatString(version,"%d.%d",FREETYPE_MAJOR,FREETYPE_MINOR);
 #endif
+
   entry=SetMagickInfo("TTF");
 #if defined(HasTTF)
   entry->decoder=(DecoderHandler) ReadTTFImage;
 #endif
   entry->magick=(MagickHandler) IsTTF;
   entry->adjoin=False;
-  entry->description=AcquireString("TrueType font");
+  entry->description="TrueType font";
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("TTF");
+    entry->version=version;
+  entry->module="TTF";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PFA");
 #if defined(HasTTF)
   entry->decoder=(DecoderHandler) ReadTTFImage;
 #endif
   entry->magick=(MagickHandler) IsPFA;
   entry->adjoin=False;
-  entry->description=AcquireString("Postscript Type 1 font (ASCII)");
+  entry->description="Postscript Type 1 font (ASCII)";
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("TTF");
+    entry->version=version;
+  entry->module="TTF";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PFB");
 #if defined(HasTTF)
   entry->decoder=(DecoderHandler) ReadTTFImage;
 #endif
   entry->magick=(MagickHandler) IsPFA;
   entry->adjoin=False;
-  entry->description=AcquireString("Postscript Type 1 font (binary)");
+  entry->description="Postscript Type 1 font (binary)";
   if (*version != '\0')
-    entry->version=AcquireString(version);
-  entry->module=AcquireString("TTF");
+    entry->version=version;
+  entry->module="TTF";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 

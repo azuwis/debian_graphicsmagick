@@ -1,7 +1,5 @@
-# Copyright (C) 2003 GraphicsMagick Group
-# Copyright (C) 2002 ImageMagick Studio
-# Copyright (C) 1999 E. I. du Pont de Nemours and Company
-#
+# Copyright (C) 2004-2009 GraphicsMagick Group
+
 # This program is covered by multiple licenses, which are described in
 # Copyright.txt. You should have received a copy of Copyright.txt with this
 # package; otherwise see http://www.graphicsmagick.org/www/Copyright.html.
@@ -10,233 +8,315 @@
 #
 #
 
-# Don't require all the GNU mandated files
-AUTOMAKE_OPTIONS = 1.8 foreign
+magickincdir = $(topincludedir)/magick
 
-includedir = @includedir@/GraphicsMagick
-pkgincludedir = $(includedir)/magick
+# Headers which are installed
+magickinc_HEADERS = \
+	$(MAGICK_INCLUDE_HDRS)
 
-# Shared libraries built in this directory
-lib_LTLIBRARIES = libGraphicsMagick.la
+MAGICK_BIN_SCRPTS = \
+        magick/GraphicsMagick-config
 
-LIBRARY_CURRENT    = $(MAGICK_LIBRARY_CURRENT)
-LIBRARY_REVISION   = $(MAGICK_LIBRARY_REVISION)
-LIBRARY_AGE        = $(MAGICK_LIBRARY_AGE)
+MAGICK_PKGCONFIG = \
+        magick/GraphicsMagick.pc
 
-BUILT_SOURCES = magick_config.h magick_config_api.h
+MAGICK_MANS = \
+        magick/GraphicsMagick-config.1
 
-ALLMANPAGES = GraphicsMagick-config.1
+LIBMAGICK=magick/libGraphicsMagick.la
 
-libGraphicsMagick_la_LDFLAGS = -no-undefined \
-	-version-info $(LIBRARY_CURRENT):$(LIBRARY_REVISION):$(LIBRARY_AGE)
+if WITH_MODULES
+magick_libGraphicsMagick_la_SOURCES = $(MAGICK_BASE_SRCS) $(MAGICK_PLATFORM_SRCS)
+magick_libGraphicsMagick_la_LIBADD = $(MAGICK_DEP_LIBS) $(MAGICK_LIBLTDL)
+else
+magick_libGraphicsMagick_la_SOURCES = $(MAGICK_BASE_SRCS) $(MAGICK_PLATFORM_SRCS) $(MAGICK_CODER_SRCS) $(MAGICK_FILTER_SRCS)
+magick_libGraphicsMagick_la_LIBADD = $(MAGICK_DEP_LIBS) $(MAGICK_LIBLTDL)
+endif # WITH_MODULES
+magick_libGraphicsMagick_la_CPPFLAGS = -I$(top_builddir)/ltdl -I$(top_srcdir)/ltdl $(LIBRARY_EXTRA_CPPFLAGS)
+magick_libGraphicsMagick_la_LDFLAGS = -no-undefined -export-symbols-regex ".*" \
+	-version-info $(MAGICK_LIBRARY_CURRENT):$(MAGICK_LIBRARY_REVISION):$(MAGICK_LIBRARY_AGE)
+magick_libGraphicsMagick_la_DEPENDENCIES = $(MAGICK_LTDLDEPS)
 
-AM_CPPFLAGS = -I$(top_builddir) -I$(top_srcdir) $(INCLTDL) $(LIBRARY_EXTRA_CPPFLAGS)
+if HasX11
+MAGICK_X11_BASE_SRCS = \
+	magick/animate.c \
+	magick/animate.h \
+	magick/display.c \
+	magick/display.h \
+	magick/PreRvIcccm.c \
+	magick/PreRvIcccm.h \
+	magick/widget.c \
+	magick/widget.h \
+	magick/xwindow.c \
+	magick/xwindow.h
+endif
 
 # Library base sources
 MAGICK_BASE_SRCS = \
-	animate.c \
-	annotate.c \
-	attribute.c \
-	blob.c \
-	cache.c \
-	cache_view.c \
-	color.c \
-	command.c \
-	composite.c \
-	compress.c \
-	constitute.c \
-	decorate.c \
-	delegate.c \
-	deprecate.c \
-	display.c \
-	draw.c \
-	effect.c \
-	enhance.c \
-	error.c \
-	fx.c \
-	gem.c \
-	image.c \
-	list.c \
-	locale.c \
-	log.c \
-	magic.c \
-	magick.c \
-	magick_endian.c \
-	map.c \
-	memory.c \
-	module.c \
-	monitor.c \
-	montage.c \
-	paint.c \
-	pixel_iterator.c \
-	profile.c \
-	PreRvIcccm.c \
-	quantize.c \
-	registry.c \
-	render.c \
-	resize.c \
-	resource.c \
-	segment.c \
-	semaphore.c \
-	shear.c \
-	signature.c \
-	static.c \
-	stream.c \
-	tempfile.c \
-	timer.c \
-	transform.c \
-	type.c \
-	unix_port.c \
-	utility.c \
-	version.c \
-	widget.c \
-	xwindow.c
-
-# Platform specific source files that may appear in the library
-EXTRA_libGraphicsMagick_la_SOURCES = nt_base.c nt_feature.c
+	magick/alpha_composite.h \
+	magick/analyze.c \
+	magick/analyze.h \
+	magick/annotate.c \
+	magick/api.h \
+	magick/attribute.c \
+	magick/attribute.h \
+	magick/average.c \
+	magick/average.h \
+	magick/bit_stream.c \
+	magick/bit_stream.h \
+	magick/blob.c \
+	magick/blob.h \
+	magick/cdl.c \
+	magick/cdl.h \
+	magick/channel.c \
+	magick/channel.h \
+	magick/common.h \
+	magick/compare.c \
+	magick/compare.h \
+	magick/confirm_access.c \
+	magick/confirm_access.h \
+	magick/color.c \
+	magick/color.h \
+	magick/color_lookup.c \
+	magick/color_lookup.h \
+	magick/colormap.c \
+	magick/colormap.h \
+	magick/colorspace.c \
+	magick/colorspace.h \
+	magick/command.c \
+	magick/command.h \
+	magick/composite.c \
+	magick/composite.h \
+	magick/compress.c \
+	magick/compress.h \
+	magick/constitute.c \
+	magick/constitute.h \
+	magick/decorate.c \
+	magick/decorate.h \
+	magick/delegate.c \
+	magick/delegate.h \
+	magick/deprecate.c \
+	magick/deprecate.h \
+	magick/describe.c \
+	magick/describe.h \
+	magick/draw.c \
+	magick/draw.h \
+	magick/effect.c \
+	magick/effect.h \
+	magick/enhance.c \
+	magick/enhance.h \
+	magick/enum_strings.c \
+	magick/enum_strings.h \
+	magick/error.c \
+	magick/error.h \
+	magick/forward.h \
+	magick/fx.c \
+	magick/fx.h \
+	magick/gem.c \
+	magick/gem.h \
+	magick/gradient.c \
+	magick/gradient.h \
+	magick/hclut.c \
+	magick/hclut.h \
+	magick/image.c \
+	magick/image.h \
+	magick/list.c \
+	magick/list.h \
+	magick/locale.c \
+	magick/locale_c.h \
+	magick/log.c \
+	magick/log.h \
+	magick/magic.c \
+	magick/magic.h \
+	magick/magick.c \
+	magick/magick.h \
+	magick/magick_endian.c \
+	magick/magick_endian.h \
+	magick/map.c \
+	magick/map.h \
+	magick/memory.c \
+	magick/memory.h \
+	magick/module.c \
+	magick/module.h \
+	magick/monitor.c \
+	magick/monitor.h \
+	magick/montage.c \
+	magick/montage.h \
+	magick/omp_data_view.c \
+	magick/omp_data_view.h \
+	magick/operator.c \
+	magick/operator.h \
+	magick/paint.c \
+	magick/paint.h \
+	magick/pixel_cache.h \
+	magick/pixel_cache.c \
+	magick/pixel_iterator.c \
+	magick/pixel_iterator.h \
+	magick/plasma.c \
+	magick/plasma.h \
+	magick/profile.c \
+	magick/profile.h \
+	magick/quantize.c \
+	magick/quantize.h \
+	magick/registry.c \
+	magick/registry.h \
+	magick/random.c \
+	magick/random.h \
+	magick/render.c \
+	magick/render.h \
+	magick/resize.c \
+	magick/resize.h \
+	magick/resource.c \
+	magick/resource.h \
+	magick/segment.c \
+	magick/semaphore.c \
+	magick/semaphore.h \
+	magick/shear.c \
+	magick/shear.h \
+	magick/signature.c \
+	magick/signature.h \
+	magick/spinlock.h \
+	magick/static.c \
+	magick/static.h \
+	magick/statistics.c \
+	magick/statistics.h \
+	magick/studio.h \
+	magick/symbols.h \
+	magick/tempfile.c \
+	magick/tempfile.h \
+	magick/texture.c \
+	magick/texture.h \
+	magick/timer.c \
+	magick/timer.h \
+	magick/transform.c \
+	magick/transform.h \
+	magick/tsd.c \
+	magick/tsd.h \
+	magick/type.c \
+	magick/type.h \
+	magick/unix_port.c \
+	magick/utility.c \
+	magick/utility.h \
+	magick/version.c \
+	magick/version.h \
+	$(MAGICK_X11_BASE_SRCS)
 
 if WIN32_NATIVE_BUILD
-MAGICK_PLATFORM_SRCS = nt_base.c nt_feature.c
+MAGICK_PLATFORM_SRCS = 	\
+	magick/nt_base.c \
+	magick/nt_base.h \
+	magick/nt_feature.c \
+	magick/nt_feature.h
 else
 if CYGWIN_BUILD
-MAGICK_PLATFORM_SRCS = nt_feature.c
+MAGICK_PLATFORM_SRCS = \
+	magick/nt_feature.c \
+	magick/nt_feature.h
 else
 MAGICK_PLATFORM_SRCS =
 endif # if CYGWIN_BUILD
 endif # if WIN32_NATIVE_BUILD
 
-#
-# Library sources
-#
-if WITH_LTDL
-LIB_LTDL=$(LIBLTDL)
-else
-LIB_LTDL=
-endif
+MAGICK_INCLUDE_HDRS = \
+	magick/api.h \
+	magick/analyze.h \
+	magick/attribute.h \
+	magick/average.h \
+	magick/blob.h \
+	magick/cdl.h \
+	magick/channel.h \
+	magick/color.h \
+	magick/color_lookup.h \
+	magick/colormap.h \
+	magick/colorspace.h \
+	magick/command.h \
+	magick/common.h \
+	magick/compare.h \
+	magick/composite.h \
+	magick/compress.h \
+	magick/confirm_access.h \
+	magick/constitute.h \
+	magick/decorate.h \
+	magick/delegate.h \
+	magick/describe.h \
+	magick/deprecate.h \
+	magick/draw.h \
+	magick/effect.h \
+	magick/enhance.h \
+	magick/error.h \
+	magick/forward.h \
+	magick/fx.h \
+	magick/gem.h \
+	magick/gradient.h \
+	magick/hclut.h \
+	magick/image.h \
+	magick/list.h \
+	magick/log.h \
+	magick/magic.h \
+	magick/magick.h \
+	magick/magick_types.h \
+	magick/memory.h \
+	magick/module.h \
+	magick/monitor.h \
+	magick/montage.h \
+	magick/operator.h \
+	magick/paint.h \
+	magick/pixel_cache.h \
+	magick/pixel_iterator.h \
+	magick/plasma.h \
+	magick/profile.h \
+	magick/quantize.h \
+	magick/random.h \
+	magick/registry.h \
+	magick/render.h \
+	magick/resize.h \
+	magick/resource.h \
+	magick/shear.h \
+	magick/signature.h \
+	magick/statistics.h \
+	magick/symbols.h \
+	magick/texture.h \
+	magick/timer.h \
+	magick/transform.h \
+	magick/type.h \
+	magick/utility.h \
+	magick/version.h
 
-if WITH_MODULES
-libGraphicsMagick_la_SOURCES = $(MAGICK_BASE_SRCS) $(MAGICK_PLATFORM_SRCS)
-libGraphicsMagick_la_LIBADD = $(MAGICK_DEP_LIBS) $(LIB_LTDL)
-else
-libGraphicsMagick_la_SOURCES = $(MAGICK_BASE_SRCS) $(MAGICK_PLATFORM_SRCS)
-libGraphicsMagick_la_LIBADD = ../coders/libCoders.la ../filters/libFilters.la $(MAGICK_DEP_LIBS) $(LIB_LTDL)
-endif # WITH_MODULES
-
-# Binary scripts
-bin_SCRIPTS = GraphicsMagick-config
-
-# Headers which are installed
-pkginclude_HEADERS = \
-	PreRvIcccm.h \
-	api.h \
-	attribute.h \
-	blob.h \
-	cache.h \
-	cache.h \
-	cache_view.h \
-	color.h \
-	command.h \
-	command.h \
-	composite.h \
-	compress.h \
-	constitute.h \
-	decorate.h \
-	delegate.h \
-	deprecate.h \
-	draw.h \
-	effect.h \
-	enhance.h \
-	error.h \
-	fx.h \
-	gem.h \
-	image.h \
-	list.h \
-	log.h \
-	magic.h \
-	magick.h \
-	magick_types.h \
-	module.h \
-	monitor.h \
-	montage.h \
-	paint.h \
-	profile.h \
-	quantize.h \
-	registry.h \
-	render.h \
-	resize.h \
-	resource.h \
-	shear.h \
-	signature.h \
-	stream.h \
-	symbols.h \
-	timer.h \
-	transform.h \
-	utility.h \
-	version.h \
-	widget.h \
-	xwindow.h
+MAGICK_NOINST_HDRS = \
+	magick/alpha_composite.h \
+	magick/animate.h \
+	magick/bit_stream.h \
+	magick/display.h \
+	magick/locale_c.h \
+	magick/map.h \
+	magick/nt_base.h \
+	magick/nt_feature.h \
+	magick/omp_data_view.h \
+	magick/semaphore.h \
+	magick/spinlock.h \
+	magick/static.h \
+	magick/studio.h \
+	magick/tempfile.h \
+	magick/unix_port.h \
+	magick/widget.h \
+	magick/xwindow.h
 
 
-# Headers which are not installed but which are distributed
-noinst_HEADERS = \
-	animate.h \
-	bit_stream.h \
-	display.h \
-	locale_c.h \
-	mac.h \
-	magick_endian.h \
-	map.h \
-	nt_base.h \
-	nt_feature.h \
-	pixel_iterator.h \
-	semaphore.h \
-	spinlock.h \
-	static.h \
-	studio.h \
-	unix_port.h \
-	tempfile.h \
-	vms.h
+MAGICK_EXTRA_DIST = \
+	magick/GraphicsMagick-config.in \
+	$(MAGICK_MANS) \
+	magick/GraphicsMagick.pc.in \
+	magick/nt_base.c \
+	magick/nt_feature.c
 
 # Install magick_config_api.h as magick_config.h
-install-data-local:
-	$(mkinstalldirs) $(DESTDIR)$(pkgincludedir)
-	$(INSTALL_HEADER) magick_config_api.h $(DESTDIR)$(pkgincludedir)/magick_config.h
+MAGICK_INSTALL_DATA_LOCAL_TARGETS = magick-install-data-local
+magick-install-data-local:
+	$(mkinstalldirs) $(DESTDIR)$(magickincdir)
+	$(INSTALL_HEADER) magick/magick_config_api.h $(DESTDIR)$(magickincdir)/magick_config.h
 
-uninstall-hook:
-	rm -f $(DESTDIR)$(pkgincludedir)/magick_config.h
+# Uninstall magick_config.h
+MAGICK_UNINSTALL_LOCAL_TARGETS = magick-uninstall-local
+magick-uninstall-local:
+	rm -f $(DESTDIR)$(magickincdir)/magick_config.h
 
-# Additional files to distribute
-EXTRA_DIST = \
-	$(ALLMANPAGES) \
-	GraphicsMagick-config.in \
-	GraphicsMagick.pc.in \
-	Make.com mac.c \
-	nt_base.c \
-	nt_feature.c \
-	vms.c \
-	$(MAGICK_BASE_SRCS)
-
-# Where configuration files get installed
-pkgdir = $(MagickLibPath)
-
-# Architecture-dependent data files installed into GraphicsMagick/lib
-pkg_DATA = 
-
-# Architecture independent data files installed into GraphicsMagick/share
-pkgdata_DATA = 
-
-# Pkgconfig directory
-pkgconfigdir = $(libdir)/pkgconfig
-
-# Files to install in Pkgconfig directory
-pkgconfig_DATA = GraphicsMagick.pc
-
-# Manual pages to install
-man_MANS = $(ALLMANPAGES)
-
-# Ensure that configuration header is not distributed
-dist-hook:
-	-rm -f $(distdir)/magick_config.h
-	-rm -f $(distdir)/magick_config_api.h
-
-DEFS = @DEFS@ -I../

@@ -1,3 +1,4 @@
+/* Copyright (C) 2003-2009 GraphicsMagick Group */
 /*
   ImageMagick Drawing Wand API.
 */
@@ -10,6 +11,8 @@ extern "C" {
 
 #include "wand/pixel_wand.h"
 
+#undef CloneDrawingWand
+#define CloneDrawingWand MagickCloneDrawingWand
 #undef DestroyDrawingWand
 #define DestroyDrawingWand MagickDestroyDrawingWand
 #undef DrawAffine
@@ -22,6 +25,8 @@ extern "C" {
 #define DrawArc MagickDrawArc
 #undef DrawBezier
 #define DrawBezier MagickDrawBezier
+#undef DrawClearException
+#define DrawClearException MagickDrawClearException
 #undef DrawCircle
 #define DrawCircle MagickDrawCircle
 #undef DrawColor
@@ -38,6 +43,8 @@ extern "C" {
 #define DrawGetClipRule MagickDrawGetClipRule
 #undef DrawGetClipUnits
 #define DrawGetClipUnits MagickDrawGetClipUnits
+#undef DrawGetException
+#define DrawGetException MagickDrawGetException
 #undef DrawGetFillColor
 #define DrawGetFillColor MagickDrawGetFillColor
 #undef DrawGetFillOpacity
@@ -232,11 +239,11 @@ extern "C" {
 #define NewDrawingWand MagickNewDrawingWand
 
 typedef struct _DrawingWand
-/*  *DrawContext, */
   DrawingWand;
 
 extern WandExport char
   *DrawGetClipPath(const DrawingWand *),
+  *DrawGetException(const DrawingWand *,ExceptionType *),
   *DrawGetFont(const DrawingWand *),
   *DrawGetFontFamily(const DrawingWand *),
   *DrawGetTextEncoding(const DrawingWand *);
@@ -259,7 +266,8 @@ extern WandExport DrawInfo
   *DrawPeekGraphicContext(const DrawingWand *);
 
 extern WandExport DrawingWand
-  *DrawAllocateWand(const DrawInfo *,Image *),
+  *CloneDrawingWand(const DrawingWand *drawing_wand),
+  *DrawAllocateWand(const DrawInfo *,Image *) __attribute__ ((deprecated)),
   *NewDrawingWand(void);
 
 extern WandExport FillRule
@@ -282,9 +290,10 @@ extern WandExport StyleType
   DrawGetFontStyle(const DrawingWand *);
 
 extern WandExport unsigned int
+  DrawClearException(DrawingWand *),
   DrawGetStrokeAntialias(const DrawingWand *),
   DrawGetTextAntialias(const DrawingWand *),
-  DrawRender(const DrawingWand *);
+  DrawRender(const DrawingWand *) __attribute__ ((deprecated));
 
 extern WandExport unsigned long
   DrawGetFontWeight(const DrawingWand *),
@@ -396,3 +405,11 @@ extern WandExport void
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

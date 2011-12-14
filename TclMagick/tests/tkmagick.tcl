@@ -1,6 +1,6 @@
 # tkmagick.tcl -- Test the TkMagick functions.
 
-# $Id: tkmagick.tcl,v 1.1.2.3 2005/01/22 19:35:06 bfriesen Exp $
+# $Id: tkmagick.tcl,v 1.2 2004/09/20 09:38:10 davidw Exp $
 
 package require Tk
 

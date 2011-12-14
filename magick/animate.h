@@ -146,7 +146,7 @@ typedef enum
   Function prototypes.
 */
 static Image
-  *XMagickCommand(Display *,XResourceInfo *,XWindows *,const CommandType,
+  *MagickXMagickCommand(Display *,MagickXResourceInfo *,MagickXWindows *,const CommandType,
     Image **,unsigned int *);
 
 
@@ -155,3 +155,11 @@ static Image
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

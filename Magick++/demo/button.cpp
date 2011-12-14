@@ -77,6 +77,8 @@ int main( int /*argc*/, char ** argv)
     button.borderColor( border );
     button.frame( "6x6+3+3" );
 
+    button.depth( 8 );
+
     // Quantize to desired colors
     // button.quantizeTreeDepth(8);
     button.quantizeDither(false);
@@ -85,7 +87,7 @@ int main( int /*argc*/, char ** argv)
 
     // Save to file
     cout << "Writing to \"button_out.miff\" ..." << endl;
-    button.compressType( RunlengthEncodedCompression );
+    button.compressType( RLECompression );
     button.write("button_out.miff");
 
     // Display on screen

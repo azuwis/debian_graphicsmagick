@@ -36,9 +36,10 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/color.h"
 #include "magick/constitute.h"
 #include "magick/compress.h"
@@ -137,7 +138,7 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   huffman_image=CloneImage(image,0,0,True,&image->exception);
   if (huffman_image == (Image *) NULL)
     return(False);
-  SetImageType(huffman_image,BilevelType);
+  (void) SetImageType(huffman_image,BilevelType);
   if(!AcquireTemporaryFileName(filename))
     {
       DestroyImage(huffman_image);
@@ -147,6 +148,9 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   FormatString(huffman_image->filename,"tiff:%s",filename);
   clone_info=CloneImageInfo(image_info);
   clone_info->compression=Group4Compression;
+  clone_info->type=BilevelType;
+  (void) AddDefinitions(clone_info,"tiff:fill-order=msb2lsb",
+                        &image->exception);
   status=WriteImage(clone_info,huffman_image);
   DestroyImageInfo(clone_info);
   DestroyImage(huffman_image);
@@ -155,7 +159,7 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   tiff=TIFFOpen(filename,"rb");
   if (tiff == (TIFF *) NULL)
     {
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       ThrowBinaryException(FileOpenError,UnableToOpenFile,
         image_info->filename)
     }
@@ -171,7 +175,7 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   if (buffer == (unsigned char *) NULL)
     {
       TIFFClose(tiff);
-      LiberateTemporaryFile(filename);
+      (void) LiberateTemporaryFile(filename);
       ThrowBinaryException(ResourceLimitError,MemoryAllocationFailed,
         (char *) NULL)
     }
@@ -191,7 +195,7 @@ static unsigned int Huffman2DEncodeImage(const ImageInfo *image_info,
   }
   MagickFreeMemory(buffer);
   TIFFClose(tiff);
-  LiberateTemporaryFile(filename);
+  (void) LiberateTemporaryFile(filename);
   return(True);
 }
 #else
@@ -236,15 +240,17 @@ ModuleExport void RegisterPS2Image(void)
   entry->encoder=(EncoderHandler) WritePS2Image;
   entry->adjoin=False;
   entry->seekable_stream=True;
-  entry->description=AcquireString("Adobe Level II Encapsulated PostScript");
-  entry->module=AcquireString("PS2");
+  entry->description="Adobe Level II Encapsulated PostScript";
+  entry->module="PS2";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("PS2");
   entry->encoder=(EncoderHandler) WritePS2Image;
   entry->seekable_stream=True;
-  entry->description=AcquireString("Adobe Level II PostScript");
-  entry->module=AcquireString("PS2");
+  entry->description="Adobe Level II PostScript";
+  entry->module="PS2";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -489,9 +495,6 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
     start,
     stop;
 
-  Image
-    *jpeg_image;
-
   int
     count,
     status;
@@ -506,7 +509,7 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register long
@@ -516,7 +519,7 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
     i;
 
   SegmentInfo
-    bounds;
+    bounds={0.0,0.0,0.0,0.0};
 
   size_t
     length;
@@ -559,14 +562,6 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
       break;
     }
 #endif
-#if !defined(HasLZW)
-    case LZWCompression:
-    {
-      compression=RLECompression;
-      ThrowException(&image->exception,MissingDelegateError,LZWEncodingNotEnabled,image->filename);
-      break;
-    }
-#endif
 #if !defined(HasZLIB)
     case ZipCompression:
     {
@@ -582,6 +577,9 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
   scene=0;
   do
   {
+    ImageCharacteristics
+      characteristics;
+
     /*
       Scale image to size of Postscript page.
     */
@@ -594,7 +592,7 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
     geometry.y=(long) text_size;
     FormatString(page_geometry,"%lux%lu",image->columns,image->rows);
     if (image_info->page != (char *) NULL)
-      (void) strncpy(page_geometry,image_info->page,MaxTextExtent-1);
+      (void) strlcpy(page_geometry,image_info->page,MaxTextExtent);
     else
       if ((image->page.width != 0) && (image->page.height != 0))
         (void) FormatString(page_geometry,"%lux%lu%+ld%+ld",image->page.width,
@@ -611,13 +609,13 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
     dy_resolution=72.0;
     x_resolution=72.0;
     (void) strcpy(density,PSDensityGeometry);
-    count=GetMagickDimension(density,&x_resolution,&y_resolution);
+    count=GetMagickDimension(density,&x_resolution,&y_resolution,NULL,NULL);
     if (count != 2)
       y_resolution=x_resolution;
     if (image_info->density != (char *) NULL)
       {
         count=GetMagickDimension(image_info->density,&x_resolution,
-          &y_resolution);
+          &y_resolution,NULL,NULL);
         if (count != 2)
           y_resolution=x_resolution;
       }
@@ -640,7 +638,7 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
         (void) WriteBlobString(image,buffer);
         timer=time((time_t *) NULL);
         (void) localtime(&timer);
-        (void) strncpy(date,ctime(&timer),MaxTextExtent-1);
+        (void) strlcpy(date,ctime(&timer),MaxTextExtent);
         date[strlen(date)-1]='\0';
         FormatString(buffer,"%%%%CreationDate: (%.1024s)\n",date);
         (void) WriteBlobString(image,buffer);
@@ -758,9 +756,16 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
         MagickFreeMemory(labels);
       }
     number_pixels=image->columns*image->rows;
+
+    /*
+      Analyze image to be written.
+    */
+    (void) GetImageCharacteristics(image,&characteristics,
+                                   (OptimizeType == image_info->type),
+                                   &image->exception);
     if ((compression == FaxCompression) ||
         ((image_info->type != TrueColorType) &&
-         IsGrayImage(image,&image->exception)))
+         (characteristics.grayscale)))
       {
         FormatString(buffer,"%lu %lu\n1\n%d\n",image->columns,image->rows,
           (int) (image->colorspace == CMYKColorspace));
@@ -787,13 +792,10 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
             /*
               Write image in JPEG format.
             */
-            jpeg_image=CloneImage(image,0,0,True,&image->exception);
-            if (jpeg_image == (Image *) NULL)
-              ThrowWriterException2(CoderError,image->exception.reason,image);
-            (void) strcpy(jpeg_image->magick,"JPEG");
-            blob=ImageToBlob(image_info,jpeg_image,&length,&image->exception);
-            (void) WriteBlob(image,length,blob);
-            DestroyImage(jpeg_image);
+	    blob=ImageToJPEGBlob(image,image_info,&length,&image->exception);
+	    if (blob == (char *) NULL)
+	      ThrowWriterException2(CoderError,image->exception.reason,image);
+	    (void) WriteBlob(image,length,blob);
             MagickFreeMemory(blob);
             break;
           }
@@ -829,8 +831,11 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(SaveImageText,y,image->rows,
-                      &image->exception);
+                    status=MagickMonitorFormatted(y,image->rows,
+                                                  &image->exception,
+                                                  SaveImageText,
+                                                  image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -868,8 +873,11 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
               if (image->previous == (Image *) NULL)
                 if (QuantumTick(y,image->rows))
                   {
-                    status=MagickMonitor(SaveImageText,y,image->rows,
-                      &image->exception);
+                    status=MagickMonitorFormatted(y,image->rows,
+                                                  &image->exception,
+                                                  SaveImageText,
+                                                  image->filename,
+						  image->columns,image->rows);
                     if (status == False)
                       break;
                   }
@@ -892,17 +900,14 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
           {
             case JPEGCompression:
             {
-              /*
-                Write image in JPEG format.
-              */
-              jpeg_image=CloneImage(image,0,0,True,&image->exception);
-              if (jpeg_image == (Image *) NULL)
-                ThrowWriterException2(CoderError,image->exception.reason,image);
-              (void) strcpy(jpeg_image->magick,"JPEG");
-              blob=ImageToBlob(image_info,jpeg_image,&length,&image->exception);
-              (void) WriteBlob(image,length,blob);
-              DestroyImage(jpeg_image);
-              MagickFreeMemory(blob);
+	      /*
+		Write image in JPEG format.
+	      */
+	      blob=ImageToJPEGBlob(image,image_info,&length,&image->exception);
+	      if (blob == (char *) NULL)
+		ThrowWriterException2(CoderError,image->exception.reason,image);
+	      (void) WriteBlob(image,length,blob);
+	      MagickFreeMemory(blob);
               break;
             }
             case RLECompression:
@@ -956,8 +961,11 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
                     {
-                      status=MagickMonitor(SaveImageText,y,image->rows,
-                        &image->exception);
+                      status=MagickMonitorFormatted(y,image->rows,
+                                                    &image->exception,
+                                                    SaveImageText,
+                                                    image->filename,
+						    image->columns,image->rows);
                       if (status == False)
                         break;
                     }
@@ -1013,8 +1021,11 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
                     {
-                      status=MagickMonitor(SaveImageText,y,image->rows,
-                        &image->exception);
+                      status=MagickMonitorFormatted(y,image->rows,
+                                                    &image->exception,
+                                                    SaveImageText,
+                                                    image->filename,
+						    image->columns,image->rows);
                       if (status == False)
                         break;
                     }
@@ -1034,7 +1045,7 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
           (void) WriteBlobString(image,buffer);
           FormatString(buffer,"%d\n",(int) (compression == NoCompression));
           (void) WriteBlobString(image,buffer);
-          FormatString(buffer,"%lu\n",image->colors);
+          FormatString(buffer,"%u\n",image->colors);
           (void) WriteBlobString(image,buffer);
           for (i=0; i < (long) image->colors; i++)
           {
@@ -1069,14 +1080,17 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
                   &image->exception);
                 if (p == (const PixelPacket *) NULL)
                   break;
-                indexes=GetIndexes(image);
+                indexes=AccessImmutableIndexes(image);
                 for (x=0; x < (long) image->columns; x++)
                   *q++=indexes[x];
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
                     {
-                      status=MagickMonitor(SaveImageText,y,image->rows,
-                        &image->exception);
+                      status=MagickMonitorFormatted(y,image->rows,
+                                                    &image->exception,
+                                                    SaveImageText,
+                                                    image->filename,
+						    image->columns,image->rows);
                       if (status == False)
                         break;
                     }
@@ -1105,14 +1119,17 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
                   &image->exception);
                 if (p == (const PixelPacket *) NULL)
                   break;
-                indexes=GetIndexes(image);
+                indexes=AccessImmutableIndexes(image);
                 for (x=0; x < (long) image->columns; x++)
                   Ascii85Encode(image,indexes[x]);
                 if (image->previous == (Image *) NULL)
                   if (QuantumTick(y,image->rows))
                     {
-                      status=MagickMonitor(SaveImageText,y,image->rows,
-                        &image->exception);
+                      status=MagickMonitorFormatted(y,image->rows,
+                                                    &image->exception,
+                                                    SaveImageText,
+                                                    image->filename,
+						    image->columns,image->rows);
                       if (status == False)
                         break;
                     }
@@ -1137,8 +1154,9 @@ static unsigned int WritePS2Image(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
   } while (image_info->adjoin);

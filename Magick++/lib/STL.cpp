@@ -1,11 +1,12 @@
 // This may look like C code, but it is really -*- C++ -*-
 //
-// Copyright Bob Friesenhahn, 1999, 2002
+// Copyright Bob Friesenhahn, 1999, 2002, 2009
 //
 // Implementation of STL classes and functions
 //
 
 #define MAGICK_IMPLEMENTATION
+#define MAGICK_PLUSPLUS_IMPLEMENTATION
 
 #include <Magick++/Image.h>
 #include <Magick++/STL.h>
@@ -113,6 +114,16 @@ void Magick::borderImage::operator()( Magick::Image &image_ ) const
   image_.border( _geometry );
 }
 
+// Extract channel from image
+Magick::channelImage::channelImage( const Magick::ChannelType channel_ )
+  : _channel( channel_ )
+{
+}
+void Magick::channelImage::operator()( Magick::Image &image_ ) const
+{
+  image_.channel( _channel );
+}
+
 // Charcoal effect image (looks like charcoal sketch)
 Magick::charcoalImage::charcoalImage( const double radius_, const double sigma_ )
       : _radius( radius_ ),
@@ -156,6 +167,33 @@ Magick::colorizeImage::colorizeImage( const unsigned int opacity_,
 void Magick::colorizeImage::operator()( Magick::Image &image_ ) const
 {
   image_.colorize( _opacityRed, _opacityGreen, _opacityBlue, _penColor );
+}
+
+// Bake in the ASC-CDL, which is a convention for the for the exchange
+// of basic primary color grading information between for the exchange
+// of basic primary color grading information between equipment and
+// software from different manufacturers.  It is a useful transform
+// for other purposes as well.
+Magick::cdlImage::cdlImage( const std::string &cdl_ )
+  : _cdl ( cdl_ )
+{
+}
+void Magick::cdlImage::operator()( Image &image_ ) const
+{
+  image_.cdl( _cdl.c_str() );
+}
+
+// Apply a color matrix to the image channels.  The user supplied
+// matrix may be of order 1 to 5 (1x1 through 5x5).
+Magick::colorMatrixImage::colorMatrixImage( const unsigned int order_,
+					    const double *color_matrix_ )
+  : _order( order_ ),
+    _color_matrix( color_matrix_ )
+{
+}
+void Magick::colorMatrixImage::operator()( Image &image_ ) const
+{
+  image_.colorMatrix( _order, _color_matrix );
 }
 
 // Convert the image colorspace representation
@@ -507,6 +545,16 @@ void Magick::implodeImage::operator()( Magick::Image &image_ ) const
   image_.implode( _factor );
 }
 
+// Apply a color lookup table (Hald CLUT) to the image.
+Magick::haldClutImage::haldClutImage( const Image &haldClutImage_ )
+  : _haldClutImage ( haldClutImage_ )
+{
+}
+void Magick::haldClutImage::operator()( Image &image_ ) const
+{
+  image_.haldClut( _haldClutImage );
+}
+
 // Set image validity. Valid images become empty (inValid) if argument
 // is false.
 Magick::isValidImage::isValidImage( const bool isValid_  )
@@ -528,14 +576,34 @@ void Magick::labelImage::operator()( Magick::Image &image_ ) const
   image_.label( _label );
 }
 
-// Extract channel from image
-Magick::channelImage::channelImage( const Magick::ChannelType channel_ )
-  : _channel( channel_ )
+// Level image
+Magick::levelImage::levelImage( const double black_point,
+                                const double white_point,
+                                const double mid_point )
+  : _black_point(black_point),
+    _white_point(white_point),
+    _mid_point(mid_point)
 {
 }
-void Magick::channelImage::operator()( Magick::Image &image_ ) const
+void Magick::levelImage::operator()( Magick::Image &image_ ) const
 {
-  image_.channel( _channel );
+  image_.level( _black_point, _white_point, _mid_point );
+}
+
+// Level image channel
+Magick::levelChannelImage::levelChannelImage( const Magick::ChannelType channel,
+                                              const double black_point,
+                                              const double white_point,
+                                              const double mid_point )
+  : _channel(channel),
+    _black_point(black_point),
+    _white_point(white_point),
+    _mid_point(mid_point)
+{
+}
+void Magick::levelChannelImage::operator()( Magick::Image &image_ ) const
+{
+  image_.levelChannel( _channel, _black_point, _white_point, _mid_point );
 }
 
 // Magnify image by integral size
@@ -769,15 +837,17 @@ void Magick::segmentImage::operator()( Magick::Image &image_ ) const
 }
 
 // Shade image using distant light source
-Magick::shadeImage::shadeImage( const double clusterThreshold_, 
-                                const double smoothingThreshold_ )
-  : _clusterThreshold( clusterThreshold_ ),
-    _smoothingThreshold( smoothingThreshold_ )
+Magick::shadeImage::shadeImage( const double azimuth_,
+                                const double elevation_,
+				const bool colorShading_)
+  : _azimuth( azimuth_ ),
+    _elevation( elevation_ ),
+    _colorShading (colorShading_)
 {
 }
 void Magick::shadeImage::operator()( Magick::Image &image_ ) const
 {
-  image_.shade( _clusterThreshold, _smoothingThreshold );
+  image_.shade( _azimuth, _elevation, _colorShading );
 }
 
 // Sharpen pixels in image

@@ -40,9 +40,10 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/blob.h"
-#include "magick/color.h"
 #include "magick/magick.h"
+#include "magick/texture.h"
 #include "magick/utility.h"
 
 
@@ -5118,7 +5119,7 @@ static Image *ReadLOGOImage(const ImageInfo *image_info,
   */
   if (!(LocaleCompare(image_info->magick,"IMAGE") == 0) &&
       !(LocaleCompare(image_info->magick,"PATTERN") == 0))
-    strcpy(clone_info->filename,image_info->magick);
+    (void) strcpy(clone_info->filename,image_info->magick);
 
   /*
     Search for image name in list
@@ -5151,7 +5152,7 @@ static Image *ReadLOGOImage(const ImageInfo *image_info,
       */
       pattern_image=image;
       image=AllocateImage(clone_info);
-      TextureImage(image,pattern_image);
+      (void) TextureImage(image,pattern_image);
       DestroyImage(pattern_image);
     }
 
@@ -5191,8 +5192,9 @@ ModuleExport void RegisterLOGOImage(void)
   entry->decoder=(DecoderHandler) ReadLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Granite texture");
-  entry->module=AcquireString("LOGO");
+  entry->description="Granite texture";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("H");
@@ -5200,15 +5202,17 @@ ModuleExport void RegisterLOGOImage(void)
   entry->encoder=(EncoderHandler) WriteLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Internal format");
-  entry->module=AcquireString("LOGO");
+  entry->description="Internal format";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("IMAGE");
   entry->decoder=(DecoderHandler) ReadLOGOImage;
   entry->adjoin=False;
-  entry->description=AcquireString("GraphicsMagick Embedded Image");
-  entry->module=AcquireString("LOGO");
+  entry->description="GraphicsMagick Embedded Image";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("LOGO");
@@ -5216,32 +5220,36 @@ ModuleExport void RegisterLOGOImage(void)
   entry->encoder=(EncoderHandler) WriteLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("GraphicsMagick Logo");
-  entry->module=AcquireString("LOGO");
+  entry->description="GraphicsMagick Logo";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("NETSCAPE");
   entry->decoder=(DecoderHandler) ReadLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Netscape 216 color cube");
-  entry->module=AcquireString("LOGO");
+  entry->description="Netscape 216 color cube";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("PATTERN");
   entry->decoder=(DecoderHandler) ReadLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("Tiled pattern image");
-  entry->module=AcquireString("LOGO");
+  entry->description="Tiled pattern image";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("ROSE");
   entry->decoder=(DecoderHandler) ReadLOGOImage;
   entry->adjoin=False;
   entry->stealth=True;
-  entry->description=AcquireString("70x46 Truecolor rose");
-  entry->module=AcquireString("LOGO");
+  entry->description="70x46 Truecolor rose";
+  entry->module="LOGO";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -5329,6 +5337,9 @@ static unsigned int WriteLOGOImage(const ImageInfo *image_info,Image *image)
   void
     *blob;
 
+  ImageCharacteristics
+    characteristics;
+
   /*
     Write logo image.
   */
@@ -5342,10 +5353,16 @@ static unsigned int WriteLOGOImage(const ImageInfo *image_info,Image *image)
   logo_image=CloneImage(image,0,0,True,&image->exception);
   if (logo_image == (Image *) NULL)
     ThrowWriterException2(ResourceLimitError,image->exception.reason,image);
-  if (IsMonochromeImage(logo_image,&image->exception) &&
+  /*
+    Analyze image to be written.
+  */
+  (void) GetImageCharacteristics(logo_image,&characteristics,
+                                 (OptimizeType == image_info->type),
+                                 &image->exception);
+  if ((characteristics.monochrome) &&
       (logo_image->columns*logo_image->rows < 4097))
     {
-      strcpy(logo_image->magick,"PBM");
+      (void) strcpy(logo_image->magick,"PBM");
       length=((logo_image->columns*logo_image->rows)/8)+16;
     }
   else if (LocaleCompare(image_info->magick,"ROSE") == 0)

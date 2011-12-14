@@ -37,7 +37,7 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
 #include "magick/utility.h"
@@ -125,11 +125,16 @@ static Image *ReadMTVImage(const ImageInfo *image_info,ExceptionInfo *exception)
     Read MTV image.
   */
   (void) ReadBlobString(image,buffer);
+  columns=0;
+  rows=0;
   count=sscanf(buffer,"%lu %lu\n",&columns,&rows);
-  if (count <= 0)
+  if (count != 2)
     ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
   do
   {
+    size_t
+      row_size;
+    
     /*
       Initialize image structure.
     */
@@ -142,15 +147,14 @@ static Image *ReadMTVImage(const ImageInfo *image_info,ExceptionInfo *exception)
     /*
       Convert MTV raster image to pixel packets.
     */
-    pixels=MagickAllocateMemory(unsigned char *,3*image->columns);
+    pixels=MagickAllocateArray(unsigned char *,image->columns,3);
     if (pixels == (unsigned char *) NULL)
       ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+    row_size=image->columns*3;
     for (y=0; y < (long) image->rows; y++)
     {
-      count=(long) ReadBlob(image,3*image->columns,pixels);
-      if (count == 0)
-        ThrowReaderException(CorruptImageError,UnableToReadImageData,
-          image);
+      if (ReadBlob(image,row_size,pixels) != row_size)
+        ThrowReaderException(CorruptImageError,UnexpectedEndOfFile,image);
       p=pixels;
       q=SetImagePixels(image,0,y,image->columns,1);
       if (q == (PixelPacket *) NULL)
@@ -166,7 +170,9 @@ static Image *ReadMTVImage(const ImageInfo *image_info,ExceptionInfo *exception)
         break;
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(LoadImageText,y,image->rows,exception))
+          if (!MagickMonitorFormatted(y,image->rows,exception,LoadImageText,
+                                      image->filename,
+				      image->columns,image->rows))
             break;
     }
     MagickFreeMemory(pixels);
@@ -185,7 +191,7 @@ static Image *ReadMTVImage(const ImageInfo *image_info,ExceptionInfo *exception)
     *buffer='\0';
     (void) ReadBlobString(image,buffer);
     count=sscanf(buffer,"%lu %lu\n",&columns,&rows);
-    if (count > 0)
+    if (count == 2)
       {
         /*
           Allocate next image structure.
@@ -197,10 +203,12 @@ static Image *ReadMTVImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                    exception,LoadImagesText,
+                                    image->filename))
           break;
       }
-  } while (count > 0);
+  } while (count == 2);
   while (image->previous != (Image *) NULL)
     image=image->previous;
   CloseBlob(image);
@@ -238,8 +246,9 @@ ModuleExport void RegisterMTVImage(void)
   entry=SetMagickInfo("MTV");
   entry->decoder=(DecoderHandler) ReadMTVImage;
   entry->encoder=(EncoderHandler) WriteMTVImage;
-  entry->description=AcquireString("MTV Raytracing image format");
-  entry->module=AcquireString("MTV");
+  entry->description="MTV Raytracing image format";
+  entry->module="MTV";
+  entry->coder_class=UnstableCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -339,7 +348,7 @@ static unsigned int WriteMTVImage(const ImageInfo *image_info,Image *image)
     /*
       Allocate memory for pixels.
     */
-    TransformColorspace(image,RGBColorspace);
+    (void) TransformColorspace(image,RGBColorspace);
     pixels=MagickAllocateMemory(unsigned char *,
       image->columns*sizeof(PixelPacket));
     if (pixels == (unsigned char *) NULL)
@@ -365,15 +374,18 @@ static unsigned int WriteMTVImage(const ImageInfo *image_info,Image *image)
       (void) WriteBlob(image,q-pixels,(char *) pixels);
       if (image->previous == (Image *) NULL)
         if (QuantumTick(y,image->rows))
-          if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+          if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                      SaveImageText,image->filename,
+				      image->columns,image->rows))
             break;
     }
     MagickFreeMemory(pixels);
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
   } while (image_info->adjoin);

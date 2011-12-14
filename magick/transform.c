@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003 - 2010 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -37,11 +37,13 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
+#include "magick/analyze.h"
 #include "magick/color.h"
 #include "magick/composite.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/resize.h"
+#include "magick/texture.h"
 #include "magick/transform.h"
 #include "magick/utility.h"
 #include "magick/log.h"
@@ -76,33 +78,24 @@
 %
 */
 MagickExport Image *ChopImage(const Image *image,const RectangleInfo *chop_info,
-  ExceptionInfo *exception)
+                              ExceptionInfo *exception)
 {
-#define ChopImageText  "  Chop image...  "
+#define ChopImageText "[%s] Chop..."
 
   Image
     *chop_image;
 
+  unsigned long
+    row_count=0;
+
   long
-    j,
     y;
 
   RectangleInfo
     clone_info;
 
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *chop_indexes,
-    *indexes;
-
-  register long
-    i,
-    x;
-
-  register PixelPacket
-    *q;
+  MagickPassFail
+    status=MagickPass;
 
   /*
     Check chop geometry.
@@ -117,7 +110,7 @@ MagickExport Image *ChopImage(const Image *image,const RectangleInfo *chop_info,
       (chop_info->x > (long) image->columns) ||
       (chop_info->y > (long) image->rows))
     ThrowImageException3(OptionError,GeometryDoesNotContainImage,
-      UnableToChopImage);
+                         UnableToChopImage);
   clone_info=(*chop_info);
   if ((clone_info.x+(long) clone_info.width) > (long) image->columns)
     clone_info.width=(unsigned long) ((long) image->columns-clone_info.x);
@@ -137,76 +130,158 @@ MagickExport Image *ChopImage(const Image *image,const RectangleInfo *chop_info,
     Initialize chop image attributes.
   */
   chop_image=CloneImage(image,image->columns-clone_info.width,
-    image->rows-clone_info.height,False,exception);
+                        image->rows-clone_info.height,False,exception);
   if (chop_image == (Image *) NULL)
     return((Image *) NULL);
+
   /*
     Extract chop image.
   */
-  i=0;
-  j=0;
+#if defined(HAVE_OPENMP)  && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) clone_info.y; y++)
-  {
-    p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
-    q=SetImagePixels(chop_image,0,j++,chop_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    indexes=GetIndexes(image);
-    chop_indexes=GetIndexes(chop_image);
-    for (x=0; x < (long) image->columns; x++)
     {
-      if ((x < clone_info.x) || (x >= (long) (clone_info.x+clone_info.width)))
+      register const PixelPacket
+        *p;
+    
+      register const IndexPacket
+        *indexes;
+    
+      register IndexPacket
+        *chop_indexes;
+    
+      register long
+        x;
+    
+      register PixelPacket
+        *q;
+
+      MagickBool
+        thread_status;
+
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      p=AcquireImagePixels(image,0,y,image->columns,1,exception);
+      q=SetImagePixelsEx(chop_image,0,y,chop_image->columns,1,exception);
+      if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
         {
-          if ((indexes != (IndexPacket *) NULL) &&
-              (chop_indexes != (IndexPacket *) NULL))
-            *chop_indexes++=indexes[x];
-          *q=(*p);
-          q++;
+          indexes=AccessImmutableIndexes(image);
+          chop_indexes=AccessMutableIndexes(chop_image);
+          for (x=0; x < (long) image->columns; x++)
+            {
+              if ((x < clone_info.x) || (x >= (long) (clone_info.x+clone_info.width)))
+                {
+                  if ((indexes != (const IndexPacket *) NULL) &&
+                      (chop_indexes != (IndexPacket *) NULL))
+                    *chop_indexes++=indexes[x];
+                  *q=(*p);
+                  q++;
+                }
+              p++;
+            }
+          if (!SyncImagePixelsEx(chop_image,exception))
+            thread_status=MagickFail;
         }
-      p++;
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ChopImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,chop_image->rows))
+          if (!MagickMonitorFormatted(row_count,chop_image->rows,exception,
+                                      ChopImageText,image->filename))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
     }
-    if (!SyncImagePixels(chop_image))
-      break;
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(ChopImageText,y,image->rows,exception))
-        break;
-  }
   /*
     Extract chop image.
   */
-  i+=clone_info.height;
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) (image->rows-(clone_info.y+clone_info.height)); y++)
-  {
-    p=AcquireImagePixels(image,0,i++,image->columns,1,exception);
-    q=SetImagePixels(chop_image,0,j++,chop_image->columns,1);
-    if ((p == (PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    indexes=GetIndexes(image);
-    chop_indexes=GetIndexes(chop_image);
-    for (x=0; x < (long) image->columns; x++)
     {
-      if ((x < clone_info.x) || (x >= (long) (clone_info.x+clone_info.width)))
+      register const PixelPacket
+        *p;
+    
+      register const IndexPacket
+        *indexes;
+    
+      register IndexPacket
+        *chop_indexes;
+    
+      register long
+        x;
+    
+      register PixelPacket
+        *q;
+
+      MagickBool
+        thread_status;
+
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      p=AcquireImagePixels(image,0,clone_info.y+clone_info.height+y,image->columns,1,exception);
+      q=SetImagePixelsEx(chop_image,0,clone_info.y+y,chop_image->columns,1,exception);
+      if ((p == (PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
         {
-          if ((indexes != (IndexPacket *) NULL) &&
-              (chop_indexes != (IndexPacket *) NULL))
-            *chop_indexes++=indexes[x];
-          *q=(*p);
-          q++;
+          indexes=AccessImmutableIndexes(image);
+          chop_indexes=AccessMutableIndexes(chop_image);
+          for (x=0; x < (long) image->columns; x++)
+            {
+              if ((x < clone_info.x) || (x >= (long) (clone_info.x+clone_info.width)))
+                {
+                  if ((indexes != (const IndexPacket *) NULL) &&
+                      (chop_indexes != (IndexPacket *) NULL))
+                    *chop_indexes++=indexes[x];
+                  *q=(*p);
+                  q++;
+                }
+              p++;
+            }
+          if (!SyncImagePixelsEx(chop_image,exception))
+            thread_status=MagickFail;
         }
-      p++;
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ChopImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,chop_image->rows))
+          if (!MagickMonitorFormatted(row_count,chop_image->rows,exception,
+                                      ChopImageText,image->filename))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
     }
-    if (!SyncImagePixels(chop_image))
-      break;
-    if (QuantumTick(i,image->rows))
-      if (!MagickMonitor(ChopImageText,i,image->rows,exception))
-        break;
-  }
+  if (row_count < chop_image->rows)
+    {
+      DestroyImage(chop_image);
+      return((Image *) NULL);
+    }
   chop_image->is_grayscale=image->is_grayscale;
   return(chop_image);
 }
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
 %                                                                             %
 %                                                                             %
 %     C o a l e s c e I m a g e s                                             %
@@ -272,14 +347,14 @@ MagickExport Image *CoalesceImages(const Image *image,ExceptionInfo *exception)
       {
         coalesce_image->next=CloneImage(coalesce_image,0,0,True,exception);
         if (coalesce_image->next != (Image *) NULL)
-          previous_image=coalesce_image;
+          previous_image=coalesce_image->next;
         break;
       }
       case BackgroundDispose:
       {
         coalesce_image->next=CloneImage(coalesce_image,0,0,True,exception);
         if (coalesce_image->next != (Image *) NULL)
-          SetImage(coalesce_image->next,OpaqueOpacity);
+          (void) SetImage(coalesce_image->next,OpaqueOpacity);
         break;
       }
       case PreviousDispose:
@@ -318,7 +393,9 @@ MagickExport Image *CoalesceImages(const Image *image,ExceptionInfo *exception)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %  Use CropImage() to extract a region of the image starting at the offset
-%  defined by geometry.
+%  defined by geometry.  As a special feature, if the geometry "0x0" is
+%  is passed, GetImageBoundingBox() is used to locate the edges of the
+%  image and the image is cropped ("trimmed") to that boundary.
 %
 %  The format of the CropImage method is:
 %
@@ -337,12 +414,13 @@ MagickExport Image *CoalesceImages(const Image *image,ExceptionInfo *exception)
 %
 */
 MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
-  ExceptionInfo *exception)
+                              ExceptionInfo *exception)
 {
-#define CropImageText  "  Crop image...  "
-
   Image
     *crop_image;
+
+  unsigned long
+    row_count=0;
 
   long
     y;
@@ -350,15 +428,8 @@ MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
   RectangleInfo
     page;
 
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *crop_indexes,
-    *indexes;
-
-  register PixelPacket
-    *q;
+  MagickPassFail
+    status=MagickPass;
 
   /*
     Check crop geometry.
@@ -375,7 +446,7 @@ MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
           (geometry->x >= (long) image->columns) ||
           (geometry->y >= (long) image->rows))
         ThrowImageException(OptionError,GeometryDoesNotContainImage,
-          MagickMsg(ResourceLimitError,UnableToCropImage));
+                            MagickMsg(ResourceLimitError,UnableToCropImage));
     }
   page=(*geometry);
   if ((page.width != 0) || (page.height != 0))
@@ -412,11 +483,11 @@ MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
       if ((((long) page.width+page.x) > (long) image->columns) ||
           (((long) page.height+page.y) > (long) image->rows))
         ThrowImageException(OptionError,GeometryDoesNotContainImage,
-          MagickMsg(ResourceLimitError,UnableToCropImage));
+                            MagickMsg(ResourceLimitError,UnableToCropImage));
     }
   if ((page.width == 0) || (page.height == 0))
     ThrowImageException(OptionError,GeometryDimensionsAreZero,
-      MagickMsg(ResourceLimitError,UnableToCropImage));
+                        MagickMsg(ResourceLimitError,UnableToCropImage));
   if ((page.width == image->columns) && (page.height == image->rows) &&
       (page.x == 0) && (page.y == 0))
     return(CloneImage(image,0,0,True,exception));
@@ -431,27 +502,66 @@ MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
   */
   crop_image->page=page;
   if ((geometry->width == 0) || (geometry->height == 0))
-    memset(&crop_image->page,0,sizeof(RectangleInfo));
+    (void) memset(&crop_image->page,0,sizeof(RectangleInfo));
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) crop_image->rows; y++)
-  {
-    p=AcquireImagePixels(image,page.x,page.y+y,crop_image->columns,1,exception);
-    q=SetImagePixels(crop_image,0,y,crop_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    (void) memcpy(q,p,crop_image->columns*sizeof(PixelPacket));
-    indexes=GetIndexes(image);
-    crop_indexes=GetIndexes(crop_image);
-    if ((indexes != (IndexPacket *) NULL) &&
-        (crop_indexes != (IndexPacket *) NULL))
-      (void) memcpy(crop_indexes,indexes,crop_image->columns*
-        sizeof(IndexPacket));
-    if (!SyncImagePixels(crop_image))
-      break;
-    if (QuantumTick(y,crop_image->rows))
-      if (!MagickMonitor(CropImageText,y,crop_image->rows-1,exception))
-        break;
-  }
-  if (y < (long) crop_image->rows)
+    {
+      const PixelPacket
+        *p;
+
+      const IndexPacket
+        *indexes;
+
+      IndexPacket
+        *crop_indexes;
+
+      PixelPacket
+        *q;
+
+      MagickBool
+        thread_status;
+
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      p=AcquireImagePixels(image,page.x,page.y+y,crop_image->columns,1,exception);
+      q=SetImagePixelsEx(crop_image,0,y,crop_image->columns,1,exception);
+      if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+        {
+          (void) memcpy(q,p,crop_image->columns*sizeof(PixelPacket));
+          indexes=AccessImmutableIndexes(image);
+          crop_indexes=AccessMutableIndexes(crop_image);
+          if ((indexes != (const IndexPacket *) NULL) &&
+              (crop_indexes != (IndexPacket *) NULL))
+            (void) memcpy(crop_indexes,indexes,crop_image->columns*
+                          sizeof(IndexPacket));
+          if (!SyncImagePixelsEx(crop_image,exception))
+            thread_status=MagickFail;
+        }
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_CropImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,crop_image->rows))
+          if (!MagickMonitorFormatted(row_count,crop_image->rows,exception,
+                                      "[%s] Crop: %lux%lu+%ld+%ld...",
+                                      crop_image->filename,
+                                      crop_image->columns,crop_image->rows,
+                                      page.x,page.y))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
+    }
+  if (row_count < crop_image->rows)
     {
       DestroyImage(crop_image);
       return((Image *) NULL);
@@ -462,6 +572,7 @@ MagickExport Image *CropImage(const Image *image,const RectangleInfo *geometry,
 
 /*
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
 %                                                                             %
 %                                                                             %
 %     D e c o n s t r u c t I m a g e s                                       %
@@ -656,6 +767,85 @@ MagickExport Image *DeconstructImages(const Image *image,
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %                                                                             %
 %                                                                             %
+%                                                                             %
+%   E x t e n t I m a g e                                                     %
+%                                                                             %
+%                                                                             %
+%                                                                             %
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%
+%  Use ExtentImage() to change the image dimensions as specified by geometry
+%  width and hight.  The existing image content is composited at the position
+%  specified by geometry x and y using the image compose method.  Existing
+%  image content which falls outside the bounds of the new image dimensions
+%  is discarded.
+%
+%  The format of the ExtentImage method is:
+%
+%      Image *ExtentImage(const Image *image,const RectangleInfo *geometry,
+%        ExceptionInfo *exception)
+%
+%  A description of each parameter follows:
+%
+%    o image: The image.
+%
+%    o geometry: Define the new image dimension with width and height, and
+%        the top left coordinate to place the existing image content with
+%        x and y.
+%
+%    o exception: Return any errors or warnings in this structure.
+%
+%
+*/
+MagickExport Image *ExtentImage(const Image *image,const RectangleInfo *geometry,
+				ExceptionInfo *exception)
+{
+  Image
+    *extent_image;
+
+  assert(image != (const Image *) NULL);
+  assert(image->signature == MagickSignature);
+  assert(geometry != (const RectangleInfo *) NULL);
+  assert(exception != (ExceptionInfo *) NULL);
+  assert(exception->signature == MagickSignature);
+
+  /*
+    Allocate canvas image
+  */
+  if ((extent_image=CloneImage(image,geometry->width,geometry->height,
+			       MagickTrue,exception)) == (Image *) NULL)
+    return((Image *) NULL);
+
+  /*
+    Set canvas image color to background color
+  */
+  if ((SetImage(extent_image,image->background_color.opacity)) == MagickFail)
+    {
+      CopyException(exception,&extent_image->exception);
+      DestroyImage(extent_image);
+      return((Image *) NULL);
+    }
+
+  /*
+    Composite existing image at position using requested composition
+    operator.
+  */
+  if ((CompositeImage(extent_image,image->compose,image,geometry->x,
+		      geometry->y)) == MagickFail)
+    {
+      CopyException(exception,&extent_image->exception);
+      DestroyImage(extent_image);
+      return((Image *) NULL);
+    }
+
+  return(extent_image);
+}
+
+/*
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%                                                                             %
+%                                                                             %
+%                                                                             %
 %     F l a t t e n I m a g e                                                 %
 %                                                                             %
 %                                                                             %
@@ -691,21 +881,30 @@ MagickExport Image *FlattenImages(const Image *image,ExceptionInfo *exception)
   assert(image->signature == MagickSignature);
   assert(exception != (ExceptionInfo *) NULL);
   assert(exception->signature == MagickSignature);
-  if (image->next == (Image *) NULL)
-    ThrowImageException3(ImageError,ImageSequenceIsRequired,
-      UnableToFlattenImage);
+
   /*
-    Clone first image in sequence.
+    Clone first image in sequence to serve as canvas image
   */
   flatten_image=CloneImage(image,0,0,True,exception);
-  if (flatten_image == (Image *) NULL)
-    return((Image *) NULL);
+
   /*
-    Flatten image.
+    Apply background color under image if it has a matte channel.
   */
-  for (next=image->next; next != (Image *) NULL; next=next->next)
-    (void) CompositeImage(flatten_image,next->compose,next,next->page.x,
-      next->page.y);
+  if ((flatten_image != (Image *) NULL) && (flatten_image->matte))
+    (void) MagickCompositeImageUnderColor(flatten_image,
+					  &flatten_image->background_color,
+					  exception);
+
+  if ((flatten_image != (Image *) NULL) &&
+      (image->next != (Image *) NULL))
+    {
+      /*
+	Flatten remaining images onto canvas
+      */
+      for (next=image->next; next != (Image *) NULL; next=next->next)
+	(void) CompositeImage(flatten_image,next->compose,next,next->page.x,
+			      next->page.y);
+    }
   return(flatten_image);
 }
 
@@ -737,26 +936,19 @@ MagickExport Image *FlattenImages(const Image *image,ExceptionInfo *exception)
 */
 MagickExport Image *FlipImage(const Image *image,ExceptionInfo *exception)
 {
-#define FlipImageText  "  Flip image...  "
+#define FlipImageText "[%s] Flip..."
 
   Image
     *flip_image;
 
+  unsigned long
+    row_count=0;
+
   long
     y;
 
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *flip_indexes,
-    *indexes;
-
-  register PixelPacket
-    *q;
-
-  unsigned int
-    status;
+  MagickPassFail
+    status=MagickPass;
 
   /*
     Initialize flip image attributes.
@@ -771,26 +963,66 @@ MagickExport Image *FlipImage(const Image *image,ExceptionInfo *exception)
   /*
     Flip each row.
   */
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) flip_image->rows; y++)
-  {
-    p=AcquireImagePixels(image,0,y,image->columns,1,exception);
-    q=GetImagePixels(flip_image,0,(long) (flip_image->rows-y-1),
-      flip_image->columns,1);
-    if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    (void) memcpy(q,p,flip_image->columns*sizeof(PixelPacket));
-    indexes=GetIndexes(image);
-    flip_indexes=GetIndexes(flip_image);
-    if ((indexes != (IndexPacket *) NULL) &&
-        (flip_indexes != (IndexPacket *) NULL))
-      (void) memcpy(flip_indexes,indexes,image->columns*sizeof(IndexPacket));
-    status=SyncImagePixels(flip_image);
-    if (status == False)
-      break;
-    if (QuantumTick(y,flip_image->rows))
-      if (!MagickMonitor(FlipImageText,y,flip_image->rows,exception))
-        break;
-  }
+    {
+      const PixelPacket
+        *p;
+
+      const IndexPacket
+        *indexes;
+
+      IndexPacket
+        *flip_indexes;
+
+      PixelPacket
+        *q;
+
+      MagickBool
+        thread_status;
+
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      p=AcquireImagePixels(image,0,y,image->columns,1,exception);
+      q=SetImagePixelsEx(flip_image,0,(long) (flip_image->rows-y-1),
+                         flip_image->columns,1,exception);
+      if ((p == (const PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+        {
+          (void) memcpy(q,p,flip_image->columns*sizeof(PixelPacket));
+          indexes=AccessImmutableIndexes(image);
+          flip_indexes=AccessMutableIndexes(flip_image);
+          if ((indexes != (IndexPacket *) NULL) &&
+              (flip_indexes != (IndexPacket *) NULL))
+            (void) memcpy(flip_indexes,indexes,image->columns*sizeof(IndexPacket));
+          if (!SyncImagePixelsEx(flip_image,exception))
+            thread_status=MagickFail;
+        }
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_FlipImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,flip_image->rows))
+          if (!MagickMonitorFormatted(row_count,flip_image->rows,exception,
+                                      FlipImageText,image->filename))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
+    }
+  if (row_count < flip_image->rows)
+    {
+      DestroyImage(flip_image);
+      return((Image *) NULL);
+    }
   flip_image->is_grayscale=image->is_grayscale;
   return(flip_image);
 }
@@ -823,29 +1055,19 @@ MagickExport Image *FlipImage(const Image *image,ExceptionInfo *exception)
 */
 MagickExport Image *FlopImage(const Image *image,ExceptionInfo *exception)
 {
-#define FlopImageText  "  Flop image...  "
+#define FlopImageText "[%s] Flop..."
 
   Image
     *flop_image;
 
+  unsigned long
+    row_count=0;
+
   long
     y;
 
-  register IndexPacket
-    *flop_indexes,
-    *indexes;
-
-  register const PixelPacket
-    *p;
-
-  register long
-    x;
-
-  register PixelPacket
-    *q;
-
-  unsigned int
-    status;
+  MagickPassFail
+    status=MagickPass;
 
   /*
     Initialize flop image attributes.
@@ -860,31 +1082,74 @@ MagickExport Image *FlopImage(const Image *image,ExceptionInfo *exception)
   /*
     Flop each row.
   */
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(dynamic,4) shared(row_count, status)
+#endif
   for (y=0; y < (long) flop_image->rows; y++)
-  {
-    p=AcquireImagePixels(image,0,y,image->columns,1,exception);
-    q=SetImagePixels(flop_image,0,y,flop_image->columns,1);
-    if ((p == (PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
-      break;
-    indexes=GetIndexes(image);
-    flop_indexes=GetIndexes(flop_image);
-    q+=flop_image->columns;
-    for (x=0; x < (long) flop_image->columns; x++)
     {
-      if ((indexes != (IndexPacket *) NULL) &&
-          (flop_indexes != (IndexPacket *) NULL))
-        flop_indexes[flop_image->columns-x-1]=indexes[x];
-      q--;
-      *q=(*p);
-      p++;
+      register const IndexPacket
+        *indexes;
+
+      register IndexPacket
+        *flop_indexes;
+
+      register const PixelPacket
+        *p;
+
+      register long
+        x;
+
+      register PixelPacket
+        *q;
+
+      MagickBool
+        thread_status;
+
+      thread_status=status;
+      if (thread_status == MagickFail)
+        continue;
+
+      p=AcquireImagePixels(image,0,y,image->columns,1,exception);
+      q=SetImagePixelsEx(flop_image,0,y,flop_image->columns,1,exception);
+      if ((p == (PixelPacket *) NULL) || (q == (PixelPacket *) NULL))
+        thread_status=MagickFail;
+
+      if (thread_status != MagickFail)
+        {
+          indexes=AccessImmutableIndexes(image);
+          flop_indexes=AccessMutableIndexes(flop_image);
+          q+=flop_image->columns;
+          for (x=0; x < (long) flop_image->columns; x++)
+            {
+              if ((indexes != (const IndexPacket *) NULL) &&
+                  (flop_indexes != (IndexPacket *) NULL))
+                flop_indexes[flop_image->columns-x-1]=indexes[x];
+              q--;
+              *q=(*p);
+              p++;
+            }
+          if (!SyncImagePixelsEx(flop_image,exception))
+            thread_status=MagickFail;
+        }
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_FlopImage)
+#endif
+      {
+        row_count++;
+        if (QuantumTick(row_count,flop_image->rows))
+          if (!MagickMonitorFormatted(row_count,flop_image->rows,exception,
+                                      FlopImageText,image->filename))
+            thread_status=MagickFail;
+          
+        if (thread_status == MagickFail)
+          status=MagickFail;
+      }
     }
-    status=SyncImagePixels(flop_image);
-    if (status == False)
-      break;
-    if (QuantumTick(y,flop_image->rows))
-      if (!MagickMonitor(FlopImageText,y,flop_image->rows,exception))
-        break;
-  }
+  if (row_count < flop_image->rows)
+    {
+      DestroyImage(flop_image);
+      return((Image *) NULL);
+    }
   flop_image->is_grayscale=image->is_grayscale;
   return(flop_image);
 }
@@ -918,7 +1183,7 @@ MagickExport Image *FlopImage(const Image *image,ExceptionInfo *exception)
 */
 MagickExport Image *MosaicImages(const Image *image,ExceptionInfo *exception)
 {
-#define MosaicImageText  "  Create an image mosaic...  "
+#define MosaicImageText "[%s] Create mosaic..."
 
   Image
     *mosaic_image;
@@ -968,7 +1233,7 @@ MagickExport Image *MosaicImages(const Image *image,ExceptionInfo *exception)
     return((Image *) NULL);
   mosaic_image->columns=page.width;
   mosaic_image->rows=page.height;
-  SetImage(mosaic_image,OpaqueOpacity);
+  (void) SetImage(mosaic_image,OpaqueOpacity);
   /*
     Initialize colormap.
   */
@@ -977,8 +1242,8 @@ MagickExport Image *MosaicImages(const Image *image,ExceptionInfo *exception)
   {
     (void) CompositeImage(mosaic_image,CopyCompositeOp,next,next->page.x,
       next->page.y);
-    status=MagickMonitor(MosaicImageText,scene++,GetImageListLength(image),
-      exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  exception,MosaicImageText,image->filename);
     if (status == False)
       break;
   }
@@ -1016,28 +1281,10 @@ MagickExport Image *MosaicImages(const Image *image,ExceptionInfo *exception)
 %
 */
 MagickExport Image *RollImage(const Image *image,const long x_offset,
-  const long y_offset,ExceptionInfo *exception)
+                              const long y_offset,ExceptionInfo *exception)
 {
-#define RollImageText  "  Roll image...  "
-
   Image
     *roll_image;
-
-  long
-    y;
-
-  register const PixelPacket
-    *p;
-
-  register IndexPacket
-    *indexes,
-    *roll_indexes;
-
-  register long
-    x;
-
-  register PixelPacket
-    *q;
 
   RectangleInfo
     offset;
@@ -1065,34 +1312,27 @@ MagickExport Image *RollImage(const Image *image,const long x_offset,
     offset.y+=image->rows;
   while (offset.y >= (long) image->rows)
     offset.y-=image->rows;
-  for (y=0; y < (long) image->rows; y++)
-  {
-    /*
-      Transfer scanline.
-    */
-    p=AcquireImagePixels(image,0,y,image->columns,1,exception);
-    if (p == (const PixelPacket *) NULL)
-      break;
-    indexes=GetIndexes(image);
-    for (x=0; x < (long) image->columns; x++)
-    {
-      q=SetImagePixels(roll_image,(long) (offset.x+x) % image->columns,
-        (long) (offset.y+y) % image->rows,1,1);
-      if (q == (PixelPacket *) NULL)
-        break;
-      roll_indexes=GetIndexes(roll_image);
-      if ((indexes != (IndexPacket *) NULL) &&
-          (roll_indexes != (IndexPacket *) NULL))
-        *roll_indexes=indexes[x];
-      *q=(*p);
-      p++;
-      if (!SyncImagePixels(roll_image))
-        break;
-    }
-    if (QuantumTick(y,image->rows))
-      if (!MagickMonitor(RollImageText,y,image->rows,exception))
-        break;
-  }
+
+  /* Top left quadrant */
+  (void) CompositeImageRegion(CopyCompositeOp,0,offset.x,offset.y,image,
+                              image->columns-offset.x,image->rows-offset.y,
+                              roll_image,0,0,exception);
+
+  /* Top right quadrant */
+  (void) CompositeImageRegion(CopyCompositeOp,0,image->columns-offset.x,offset.y,image,
+                              0,image->rows-offset.y,
+                              roll_image,offset.x,0,exception);
+
+  /* Bottom left quadrant */
+  (void) CompositeImageRegion(CopyCompositeOp,0,offset.x,image->rows-offset.y,image,
+                              image->columns-offset.x,0,
+                              roll_image,0,offset.y,exception);
+
+  /* Bottom right quadrant */
+  (void) CompositeImageRegion(CopyCompositeOp,0,image->columns-offset.x,image->rows-offset.y,image,
+                              0,0,
+                              roll_image,offset.x,offset.y,exception);
+
   roll_image->is_grayscale=image->is_grayscale;
   return(roll_image);
 }
@@ -1126,7 +1366,7 @@ MagickExport Image *RollImage(const Image *image,const long x_offset,
 %    o image: The image.
 %
 %    o shave_info: Specifies a pointer to a RectangleInfo which defines the
-%      region of the image to crop.
+%      region of the image to shave.
 %
 %    o exception: Return any errors or warnings in this structure.
 %
@@ -1184,17 +1424,18 @@ MagickExport Image *ShaveImage(const Image *image,
 %
 */
 MagickExport void TransformImage(Image **image,const char *crop_geometry,
-  const char *image_geometry)
+				 const char *image_geometry)
 {
   Image
+    *previous,
     *resize_image,
     *transform_image;
 
-  int
-    flags;
-
   RectangleInfo
     geometry;
+
+  int
+    flags;
 
   assert(image != (Image **) NULL);
   assert((*image)->signature == MagickSignature);
@@ -1204,9 +1445,6 @@ MagickExport void TransformImage(Image **image,const char *crop_geometry,
       Image
         *crop_image;
 
-      RectangleInfo
-        geometry;
-
       /*
         Crop image to a user specified size.
       */
@@ -1215,7 +1453,9 @@ MagickExport void TransformImage(Image **image,const char *crop_geometry,
       if ((geometry.width == 0) || (geometry.height == 0) ||
           ((flags & XValue) != 0) || ((flags & YValue) != 0) ||
           (flags & PercentValue))
-        crop_image=CropImage(transform_image,&geometry,&(*image)->exception);
+	{
+	  crop_image=CropImage(transform_image,&geometry,&(*image)->exception);
+	}
       else
         if ((transform_image->columns > geometry.width) ||
             (transform_image->rows > geometry.height))
@@ -1238,56 +1478,65 @@ MagickExport void TransformImage(Image **image,const char *crop_geometry,
             height=geometry.height;
             next=(Image *) NULL;
             for (y=0; y < (long) transform_image->rows; y+=height)
-            {
-              for (x=0; x < (long) transform_image->columns; x+=width)
-              {
-                geometry.width=width;
-                geometry.height=height;
-                geometry.x=x;
-                geometry.y=y;
-                next=CropImage(transform_image,&geometry,&(*image)->exception);
-                if (next == (Image *) NULL)
-                  break;
-                if (crop_image == (Image *) NULL)
-                  crop_image=next;
-                else
-                  {
-                    next->previous=crop_image;
-                    crop_image->next=next;
-                    crop_image=crop_image->next;
-                  }
-              }
-              if (next == (Image *) NULL)
-                break;
-            }
+	      {
+		for (x=0; x < (long) transform_image->columns; x+=width)
+		  {
+		    geometry.width=width;
+		    geometry.height=height;
+		    geometry.x=x;
+		    geometry.y=y;
+		    next=CropImage(transform_image,&geometry,&(*image)->exception);
+		    if (next == (Image *) NULL)
+		      break;
+		    if (crop_image == (Image *) NULL)
+		      crop_image=next;
+		    else
+		      {
+			next->previous=crop_image;
+			crop_image->next=next;
+			crop_image=crop_image->next;
+		      }
+		  }
+		if (next == (Image *) NULL)
+		  break;
+	      }
           }
       if (crop_image != (Image *) NULL)
         {
+	  previous=transform_image->previous;
+	  crop_image->next=transform_image->next;
           DestroyImage(transform_image);
+	  transform_image=(Image *) NULL;
           while (crop_image->previous != (Image *) NULL)
             crop_image=crop_image->previous;
+	  crop_image->previous=previous;
           transform_image=crop_image;
         }
       *image=transform_image;
     }
   if (image_geometry == (const char *) NULL)
     return;
+
   /*
     Scale image to a user specified size.
   */
   SetGeometry(transform_image,&geometry);
   flags=GetMagickGeometry(image_geometry,&geometry.x,&geometry.y,
-    &geometry.width,&geometry.height);
+			  &geometry.width,&geometry.height);
   if ((transform_image->columns == geometry.width) &&
       (transform_image->rows == geometry.height))
     return;
+  
   /*
     Resize image.
   */
   resize_image=ZoomImage(transform_image,geometry.width,geometry.height,
-    &(*image)->exception);
+			 &(*image)->exception);
   if (resize_image == (Image *) NULL)
     return;
+
+  previous=transform_image->previous;
+  resize_image->next=transform_image->next;
   DestroyImage(transform_image);
   transform_image=resize_image;
   *image=transform_image;

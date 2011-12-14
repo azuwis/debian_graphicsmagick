@@ -7,7 +7,7 @@
   Copyright.txt. You should have received a copy of Copyright.txt with this
   package; otherwise see http://www.graphicsmagick.org/www/Copyright.html.
  
-  ImageMagick Progress Monitor Methods.
+  GraphicsMagick Progress Monitor Methods.
 */
 #ifndef _MAGICK_MONITOR_H
 #define _MAGICK_MONITOR_H
@@ -16,26 +16,40 @@
 extern "C" {
 #endif
 
-/*
-  Monitor typedef declarations.
-*/
-typedef unsigned int
+  /*
+    Monitor typedef declarations.
+  */
+  typedef MagickPassFail
   (*MonitorHandler)(const char *text,const magick_int64_t quantum,
-    const magick_uint64_t span,ExceptionInfo *exception);
-
-/*
-  Monitor declarations.
-*/
-extern MagickExport MonitorHandler
+                    const magick_uint64_t span,ExceptionInfo *exception);
+  
+  /*
+    Monitor declarations.
+  */
+  extern MagickExport MonitorHandler
   SetMonitorHandler(MonitorHandler handler);
 
-extern MagickExport unsigned int
+  extern MagickExport MagickPassFail
   MagickMonitor(const char *text,
-  const magick_int64_t quantum,const magick_uint64_t span,
-  ExceptionInfo *exception);
+                const magick_int64_t quantum,const magick_uint64_t span,
+                ExceptionInfo *exception);
+
+  extern MagickExport MagickPassFail
+  MagickMonitorFormatted(const magick_int64_t quantum,
+                         const magick_uint64_t span,
+                         ExceptionInfo *exception,
+                         const char *format,...) __attribute__((format (printf,4,5)));
 
 #if defined(__cplusplus) || defined(c_plusplus)
 }
 #endif
 
 #endif
+
+/*
+ * Local Variables:
+ * mode: c
+ * c-basic-offset: 2
+ * fill-column: 78
+ * End:
+ */

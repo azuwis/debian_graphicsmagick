@@ -119,24 +119,24 @@ ModuleExport void RegisterMPEGImage(void)
   entry->encoder=(EncoderHandler) WriteMPEGImage;
   entry->magick=(MagickHandler) IsMPEG;
   entry->blob_support=False;
-  entry->description=AcquireString("MPEG Video Stream");
-  entry->module=AcquireString("MPEG");
+  entry->description="MPEG Video Stream";
+  entry->module="MPEG";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("MPG");
   entry->encoder=(EncoderHandler) WriteMPEGImage;
   entry->magick=(MagickHandler) IsMPEG;
   entry->blob_support=False;
-  entry->description=AcquireString("MPEG Video Stream");
-  entry->module=AcquireString("MPEG");
+  entry->description="MPEG Video Stream";
+  entry->module="MPEG";
   (void) RegisterMagickInfo(entry);
 
   entry=SetMagickInfo("M2V");
   entry->encoder=(EncoderHandler) WriteMPEGImage;
   entry->magick=(MagickHandler) IsMPEG;
   entry->blob_support=False;
-  entry->description=AcquireString("MPEG Video Stream");
-  entry->module=AcquireString("MPEG");
+  entry->description="MPEG Video Stream";
+  entry->module="MPEG";
   (void) RegisterMagickInfo(entry);
 }
 
@@ -471,15 +471,15 @@ static unsigned int WriteMPEGImage(const ImageInfo *image_info,Image *image)
       DestroyImage(coalesce_image);
       ThrowWriterTemporaryFileException(basename);
     }
-  FormatString(coalesce_image->filename,basename);
+  FormatString(coalesce_image->filename,"%.1024s",basename);
   clone_info=CloneImageInfo(image_info);
-  (void) strncpy(clone_info->unique,basename,MaxTextExtent-1);
+  (void) strlcpy(clone_info->unique,basename,MaxTextExtent);
   status=WriteMPEGParameterFiles(clone_info,coalesce_image);
   if (status == False)
     {
       if (coalesce_image != image)
         DestroyImage(coalesce_image);
-      LiberateTemporaryFile(basename);
+      (void) LiberateTemporaryFile(basename);
       if (image_info->quality != DefaultCompressionQuality)
         {
           FormatString(filename,"%.1024s.iqm",basename);
@@ -553,7 +553,7 @@ static unsigned int WriteMPEGImage(const ImageInfo *image_info,Image *image)
   /*
     Convert YUV to MPEG.
   */
-  (void) strncpy(coalesce_image->filename,clone_info->unique,MaxTextExtent-1);
+  (void) strlcpy(coalesce_image->filename,clone_info->unique,MaxTextExtent);
   status=InvokeDelegate(clone_info,coalesce_image,(char *) NULL,"mpeg-encode",
     &image->exception);
   DestroyImageInfo(clone_info);
@@ -568,7 +568,7 @@ static unsigned int WriteMPEGImage(const ImageInfo *image_info,Image *image)
       FormatString(p->filename,"%.1024s.%lu.yuv",basename,count++);
       (void) remove(p->filename);
     }
-    (void) strncpy(p->filename,image_info->filename,MaxTextExtent-1);
+    (void) strlcpy(p->filename,image_info->filename,MaxTextExtent);
   }
   FormatString(filename,"%.1024s.iqm",basename);
   (void) remove(filename);
@@ -576,7 +576,7 @@ static unsigned int WriteMPEGImage(const ImageInfo *image_info,Image *image)
   (void) remove(filename);
   FormatString(filename,"%.1024s.log",basename);
   (void) remove(filename);
-  LiberateTemporaryFile(basename);
+  (void) LiberateTemporaryFile(basename);
   if (coalesce_image != image)
     DestroyImage(coalesce_image);
   if (logging)

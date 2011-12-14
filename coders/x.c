@@ -73,13 +73,14 @@ static unsigned int
 %
 %
 */
-static Image *ReadXImage(const ImageInfo *image_info,ExceptionInfo *exception)
+static Image *ReadXImage(const ImageInfo *image_info,
+                         ExceptionInfo *ARGUNUSED(exception))
 {
-  XImportInfo
+  MagickXImportInfo
     ximage_info;
 
-  XGetImportInfo(&ximage_info);
-  return(XImportImage(image_info,&ximage_info));
+  MagickXGetImportInfo(&ximage_info);
+  return(MagickXImportImage(image_info,&ximage_info));
 }
 #endif /* defined(HasX11) */
 
@@ -117,8 +118,9 @@ ModuleExport void RegisterXImage(void)
   entry->encoder=(EncoderHandler) WriteXImage;
 #endif /* defined(HasX11) */
   entry->adjoin=False;
-  entry->description=AcquireString("X Window System");
-  entry->module=AcquireString("X");
+  entry->description="X Window System";
+  entry->module="X";
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 

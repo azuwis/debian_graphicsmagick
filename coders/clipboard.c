@@ -33,7 +33,7 @@
 #include "magick/studio.h"
 #include "magick/nt_feature.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/pixel_cache.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
 #if defined(HasWINGDI32)
@@ -293,8 +293,9 @@ ModuleExport void RegisterCLIPBOARDImage(void)
   entry->decoder=(DecoderHandler) ReadCLIPBOARDImage;
   entry->encoder=(EncoderHandler) WriteCLIPBOARDImage;
   entry->adjoin = False;
-  entry->description=AcquireString("the system clipboard");
-  entry->module=AcquireString("CLIPBOARD");
+  entry->description="Windows System Clipboard";
+  entry->module="CLIPBOARD";
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 #endif
 }
@@ -304,7 +305,7 @@ ModuleExport void RegisterCLIPBOARDImage(void)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   U n r e g i s t e r C L I P B O A R D I m a g e                                       %
+%   U n r e g i s t e r C L I P B O A R D I m a g e                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %

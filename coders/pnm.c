@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003 GraphicsMagick Group
+% Copyright (C) 2003-2010 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 % Copyright 1991-1999 E. I. du Pont de Nemours and Company
 %
@@ -36,12 +36,17 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/attribute.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
 #include "magick/color.h"
+#include "magick/colormap.h"
+#include "magick/constitute.h"
+#include "magick/log.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/omp_data_view.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -167,7 +172,7 @@ static unsigned int PNMInteger(Image *image,const unsigned int base)
               {
                 length<<=1;
                 length+=MaxTextExtent;
-                MagickReallocMemory(comment,length+strlen(P7Comment)+1);
+                MagickReallocMemory(char *,comment,length+strlen(P7Comment)+1);
                 if (comment == (char *) NULL)
                   break;
                 p=comment+strlen(comment);
@@ -233,38 +238,28 @@ static Image *ReadPNMImage(const ImageInfo *image_info,ExceptionInfo *exception)
   LongPixelPacket
     pixel;
 
-  MonitorHandler
-    handler;
-
   register IndexPacket
     *indexes;
 
-  register long
-    x;
-
-  register PixelPacket
-    *q;
-
-  register long
+  register unsigned long
     i;
-
-  register unsigned char
-    *p;
 
   size_t
     count,
     number_pixels;
 
-  unsigned char
-    *pixels;
-
   unsigned int
     index,
+    raw_sample_bits;
+
+  MagickPassFail
     status;
 
-  unsigned long
+  unsigned int
     max_value,
-    packets,
+    packets;
+
+  Quantum
     *scale;
 
   /*
@@ -283,388 +278,656 @@ static Image *ReadPNMImage(const ImageInfo *image_info,ExceptionInfo *exception)
   */
   count=ReadBlob(image,1,(char *) &format);
   do
-  {
-    /*
-      Initialize image structure.
-    */
-    if ((count == 0) || (format != 'P'))
-      ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
-    format=ReadBlobByte(image);
-    if (format == '7')
-      (void) PNMInteger(image,10);
-    image->columns=PNMInteger(image,10);
-    image->rows=PNMInteger(image,10);
-    if ((format == '1') || (format == '4'))
-      max_value=1;  /* bitmap */
-    else
-      max_value=PNMInteger(image,10);
-    image->depth=max_value < 256 ? 8 : QuantumDepth;
-    if ((format != '3') && (format != '6'))
-      {
-        image->storage_class=PseudoClass;
-        image->colors=
-          max_value >= MaxColormapSize ? MaxColormapSize : max_value+1;
-      }
-    number_pixels=image->columns*image->rows;
-    if (number_pixels == 0)
-      ThrowReaderException(CorruptImageError,NegativeOrZeroImageSize,image);
-    scale=(unsigned long *) NULL;
-    if (image->storage_class == PseudoClass)
-      {
-        /*
-          Create colormap.
-        */
-        if (!AllocateImageColormap(image,image->colors))
-          ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
-            image);
-        if ((format == '7') && (image->colors == 256))
+    {
+      /*
+        Initialize image structure.
+      */
+      if ((count == 0) || (format != 'P'))
+        ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+      format=ReadBlobByte(image);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),"PNM Format Id: P%c",
+                            format);
+      if (format == '7')
+        (void) PNMInteger(image,10);
+      image->columns=PNMInteger(image,10);
+      image->rows=PNMInteger(image,10);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Dimensions: %lux%lu",
+                            image->columns,image->rows);
+      if ((format == '1') || (format == '4'))
+        max_value=1;  /* bitmap */
+      else
+        max_value=PNMInteger(image,10);
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Max Value: %u",
+                            max_value);
+      if (max_value <= 1)
+        image->depth=1;
+      else if (max_value <= 255U)
+        image->depth=8;
+      else if (max_value <= 65535U)
+        image->depth=16;
+      else if (max_value <= 4294967295U)
+        image->depth=32;
+      raw_sample_bits=image->depth;
+    
+      image->depth=Min(image->depth,QuantumDepth);
+
+      (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Image Depth: %u",
+                            image->depth); 
+      if ((format != '3') && (format != '6'))
+        {
+          image->storage_class=PseudoClass;
+          image->colors=
+            max_value >= MaxColormapSize ? MaxColormapSize : max_value+1;
+          (void) LogMagickEvent(CoderEvent,GetMagickModule(),"Colors: %u",
+                                image->colors);
+        }
+      number_pixels=image->columns*image->rows;
+      if (number_pixels == 0)
+        ThrowReaderException(CorruptImageError,NegativeOrZeroImageSize,image);
+      scale=(Quantum *) NULL;
+      if (image->storage_class == PseudoClass)
+        {
+          /*
+            Create colormap.
+          */
+          if (!AllocateImageColormap(image,image->colors))
+            ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
+                                 image);
+          if ((format == '7') && (image->colors == 256))
+            {
+              /*
+                Initialize 332 colormap.
+              */
+              i=0;
+              for (pixel.red=0; pixel.red < 8; pixel.red++)
+                for (pixel.green=0; pixel.green < 8; pixel.green++)
+                  for (pixel.blue=0; pixel.blue < 4; pixel.blue++)
+                    {
+                      image->colormap[i].red=(Quantum)
+                        (((double) MaxRGB*pixel.red)/0x07+0.5);
+                      image->colormap[i].green=(Quantum)
+                        (((double) MaxRGB*pixel.green)/0x07+0.5);
+                      image->colormap[i].blue=(Quantum)
+                        (((double) MaxRGB*pixel.blue)/0x03+0.5);
+                      i++;
+                    }
+            }
+        }
+      if ((image->storage_class != PseudoClass) || (max_value > MaxRGB))
+        {
+          /*
+            Compute pixel scaling table.
+          */
+          scale=MagickAllocateMemory(Quantum *,
+                                     (max_value+1)*sizeof(Quantum));
+          if (scale == (Quantum *) NULL)
+            ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
+                                 image);
+          for (i=0; i <= max_value; i++)
+            scale[i]=ScaleAnyToQuantum((unsigned long) i, max_value);
+        }
+      if (image_info->ping && (image_info->subrange != 0))
+        if (image->scene >= (image_info->subimage+image_info->subrange-1))
+          break;
+      /*
+        Convert PNM pixels to runlength-encoded MIFF packets.
+      */
+      switch (format)
+        {
+        case '1':
           {
             /*
-              Initialize 332 colormap.
+              Convert PBM image to pixel packets.
             */
-            i=0;
-            for (pixel.red=0; pixel.red < 8; pixel.red++)
-              for (pixel.green=0; pixel.green < 8; pixel.green++)
-                for (pixel.blue=0; pixel.blue < 4; pixel.blue++)
-                {
-                  image->colormap[i].red=(Quantum)
-                    (((double) MaxRGB*pixel.red)/0x07+0.5);
-                  image->colormap[i].green=(Quantum)
-                    (((double) MaxRGB*pixel.green)/0x07+0.5);
-                  image->colormap[i].blue=(Quantum)
-                    (((double) MaxRGB*pixel.blue)/0x03+0.5);
-                  i++;
-                }
-          }
-      }
-    if ((image->storage_class != PseudoClass) || (max_value > MaxRGB))
-      {
-        /*
-          Compute pixel scaling table.
-        */
-        scale=MagickAllocateMemory(unsigned long *,
-          (max_value+1)*sizeof(unsigned long));
-        if (scale == (unsigned long *) NULL)
-          ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
-            image);
-        for (i=0; i <= (long) max_value; i++)
-          scale[i]=(unsigned long) (((double) MaxRGB*i)/max_value+0.5);
-      }
-    if (image_info->ping && (image_info->subrange != 0))
-      if (image->scene >= (image_info->subimage+image_info->subrange-1))
-        break;
-    /*
-      Convert PNM pixels to runlength-encoded MIFF packets.
-    */
-    switch (format)
-    {
-      case '1':
-      {
-        /*
-          Convert PBM image to pixel packets.
-        */
-        for (y=0; y < (long) image->rows; y++)
-        {
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
-            break;
-          indexes=GetIndexes(image);
-          for (x=0; x < (long) image->columns; x++)
-          {
-            index=!PNMInteger(image,2);
-            VerifyColormapIndex(image,index);
-            indexes[x]=index;
-            *q++=image->colormap[index];
-          }
-          if (!SyncImagePixels(image))
-            break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        break;
-      }
-      case '2':
-      {
-        unsigned long
-          intensity;
+            register unsigned long
+              x;
+            
+            register PixelPacket
+              *q;
 
-        /*
-          Convert PGM image to pixel packets.
-        */
-        for (y=0; y < (long) image->rows; y++)
-        {
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
-            break;
-          indexes=GetIndexes(image);
-          for (x=0; x < (long) image->columns; x++)
-          {
-            intensity=PNMInteger(image,10);
-            ValidateScalingIndex(image, intensity, max_value);
-            if (scale != (unsigned long *) NULL)
-              intensity=scale[intensity];
-            index=intensity;
-            VerifyColormapIndex(image,index);
-            indexes[x]=index;
-            *q++=image->colormap[index];
-          }
-          if (!SyncImagePixels(image))
-            break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        break;
-      }
-      case '3':
-      {
-        /*
-          Convert PNM image to pixel packets.
-        */
-        for (y=0; y < (long) image->rows; y++)
-        {
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
-            break;
-          for (x=0; x < (long) image->columns; x++)
-          {
-            pixel.red=PNMInteger(image,10);
-            pixel.green=PNMInteger(image,10);
-            pixel.blue=PNMInteger(image,10);
-            ValidateScalingPixel(image, pixel, max_value);
-            if (scale != (unsigned long *) NULL)
+            for (y=0; y < (long) image->rows; y++)
               {
-                pixel.red=scale[pixel.red];
-                pixel.green=scale[pixel.green];
-                pixel.blue=scale[pixel.blue];
+                q=SetImagePixels(image,0,y,image->columns,1);
+                if (q == (PixelPacket *) NULL)
+                  break;
+                indexes=AccessMutableIndexes(image);
+                for (x=0; x < image->columns; x++)
+                  {
+                    index=!PNMInteger(image,2);
+                    if (EOFBlob(image))
+                      break;
+                    VerifyColormapIndex(image,index);
+                    indexes[x]=index;
+                    *q++=image->colormap[index];
+                  }
+                if (!SyncImagePixels(image))
+                  break;
+                if (image->previous == (Image *) NULL)
+                  if (QuantumTick(y,image->rows))
+                    if (!MagickMonitorFormatted(y,image->rows,exception,
+                                                LoadImageText,image->filename,
+						image->columns,image->rows))
+                      break;
+                if (EOFBlob(image))
+                  break;
               }
-            q->red=(Quantum) pixel.red;
-            q->green=(Quantum) pixel.green;
-            q->blue=(Quantum) pixel.blue;
-            q++;
-          }
-          if (!SyncImagePixels(image))
+            image->is_grayscale=MagickTrue;
+            image->is_monochrome=MagickTrue;
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
             break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        break;
-      }
-      case '4':
-      {
-        unsigned char
-          bit,
-          byte;
+          }
+        case '2':
+          {
+            /*
+              Convert PGM image to pixel packets.
+            */
+            register unsigned long
+              x;
+            
+            register PixelPacket
+              *q;
 
-        /*
-          Convert PBM raw image to pixel packets.
-        */
-        for (y=0; y < (long) image->rows; y++)
-        {
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
+            unsigned long
+              intensity;
+
+            MagickBool
+              is_grayscale,
+              is_monochrome;
+
+            is_grayscale=MagickTrue;
+            is_monochrome=MagickTrue;
+            for (y=0; y < (long) image->rows; y++)
+              {
+                q=SetImagePixels(image,0,y,image->columns,1);
+                if (q == (PixelPacket *) NULL)
+                  break;
+                indexes=AccessMutableIndexes(image);
+                for (x=0; x < image->columns; x++)
+                  {
+                    intensity=PNMInteger(image,10);
+                    ValidateScalingIndex(image, intensity, max_value);
+                    if (EOFBlob(image))
+                      break;
+                    if (scale != (Quantum *) NULL)
+                      intensity=scale[intensity];
+                    index=intensity;
+                    VerifyColormapIndex(image,index);
+                    indexes[x]=index;
+                    *q=image->colormap[index];
+                    is_monochrome &= IsMonochrome(*q);
+                    q++;
+                  }
+                if (EOFBlob(image))
+                  break;
+                if (!SyncImagePixels(image))
+                  break;
+                if (image->previous == (Image *) NULL)
+                  if (QuantumTick(y,image->rows))
+                    if (!MagickMonitorFormatted(y,image->rows,exception,
+                                                LoadImageText,image->filename,
+						image->columns,image->rows))
+                      break;
+              }
+            image->is_monochrome=is_monochrome;
+            image->is_grayscale=is_grayscale;
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
             break;
-          indexes=GetIndexes(image);
-          bit=0;
-          byte=0;
-          for (x=0; x < (long) image->columns; x++)
-          {
-            if (bit == 0)
-              byte=ReadBlobByte(image);
-            index=(byte & 0x80) ? 0x00 : 0x01;
-            indexes[x]=index;
-            *q++=image->colormap[index];
-            bit++;
-            if (bit == 8)
-              bit=0;
-            byte<<=1;
           }
-          if (!SyncImagePixels(image))
-            break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        if (EOFBlob(image))
-          ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
-            image->filename);
-        break;
-      }
-      case '5':
-      case '7':
-      {
-        /*
-          Convert PGM raw image to pixel packets.
-        */
-        packets=image->depth <= 8 ? 1 : 2;
-        pixels=MagickAllocateMemory(unsigned char *,packets*image->columns);
-        if (pixels == (unsigned char *) NULL)
-          ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
-            image);
-        for (y=0; y < (long) image->rows; y++)
-        {
-          count=ReadBlob(image,packets*image->columns,pixels);
-          if (count == 0)
-            ThrowReaderException(CorruptImageError,UnableToReadImageData,
-              image);
-          p=pixels;
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
-            break;
-          indexes=GetIndexes(image);
-          if (image->depth <= 8)
-            for (x=0; x < (long) image->columns; x++)
-            {
-              index=(*p++);
-              if (index >= image->colors)
-                {
-                  ThrowException(&image->exception,CorruptImageError,
-                    InvalidColormapIndex,image->filename);
-                  index=0;
-                }
-              indexes[x]=index;
-              *q++=image->colormap[index];
-            }
-          else
-            for (x=0; x < (long) image->columns; x++)
-            {
-              index=(*p << 8) | *(p+1);
-              p+=2;
-              VerifyColormapIndex(image,index);
-              indexes[x]=index;
-              *q++=image->colormap[index];
-            }
-          if (!SyncImagePixels(image))
-            break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        MagickFreeMemory(pixels);
-        if (EOFBlob(image))
-          ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
-            image->filename);
-        break;
-      }
-      case '6':
-      {
-        /*
-          Convert PPM raw raster image to pixel packets.
-        */
-        packets=image->depth <= 8 ? 3 : 6;
-        pixels=MagickAllocateMemory(unsigned char *,packets*image->columns);
-        if (pixels == (unsigned char *) NULL)
-          ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,
-            image);
-        for (y=0; y < (long) image->rows; y++)
-        {
-          count=ReadBlob(image,packets*image->columns,pixels);
-          if (count == 0)
-            ThrowReaderException(CorruptImageError,UnableToReadImageData,
-              image);
-          p=pixels;
-          q=SetImagePixels(image,0,y,image->columns,1);
-          if (q == (PixelPacket *) NULL)
-            break;
-          if (image->depth <= 8)
-            for (x=0; x < (long) image->columns; x++)
-            {
-              pixel.red=(*p++);
-              pixel.green=(*p++);
-              pixel.blue=(*p++);
-              ValidateScalingPixel(image, pixel, max_value);
-              if (scale != (unsigned long *) NULL)
-                {
-                  pixel.red=scale[pixel.red];
-                  pixel.green=scale[pixel.green];
-                  pixel.blue=scale[pixel.blue];
-                }
-              q->red=(Quantum) pixel.red;
-              q->green=(Quantum) pixel.green;
-              q->blue=(Quantum) pixel.blue;
-              q++;
-            }
-          else
-            for (x=0; x < (long) image->columns; x++)
-            {
-              pixel.red=(*p << 8) | *(p+1);
-              p+=2;
-              pixel.green=(*p << 8) | *(p+1);
-              p+=2;
-              pixel.blue=(*p << 8) | *(p+1);
-              p+=2;
-              ValidateScalingPixel(image, pixel, max_value);
-              if (scale != (unsigned long *) NULL)
-                {
-                  pixel.red=scale[pixel.red];
-                  pixel.green=scale[pixel.green];
-                  pixel.blue=scale[pixel.blue];
-                }
-              q->red=(Quantum) pixel.red;
-              q->green=(Quantum) pixel.green;
-              q->blue=(Quantum) pixel.blue;
-              q++;
-            }
-          if (!SyncImagePixels(image))
-            break;
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(LoadImageText,y,image->rows,exception))
-                break;
-        }
-        MagickFreeMemory(pixels);
-        handler=SetMonitorHandler((MonitorHandler) NULL);
-        (void) SetMonitorHandler(handler);
-        if (EOFBlob(image))
-          ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
-            image->filename);
-        break;
-      }
-      default:
-        ThrowReaderException(CorruptImageError,ImproperImageHeader,image)
-    }
-    if (scale != (unsigned long *) NULL)
-      MagickFreeMemory(scale);
-    /*
-      Proceed to next image.
-    */
-    if (image_info->subrange != 0)
-      if (image->scene >= (image_info->subimage+image_info->subrange-1))
-        break;
-    if ((format == '1') || (format == '2') || (format == '3'))
-      do
-      {
-        /*
-          Skip to end of line.
-        */
-        count=ReadBlob(image,1,&format);
-        if (count == 0)
-          break;
-      } while (format != '\n');
-    count=ReadBlob(image,1,(char *) &format);
-    if ((count != 0) && (format == 'P'))
-      {
-        /*
-          Allocate next image structure.
-        */
-        AllocateNextImage(image_info,image);
-        if (image->next == (Image *) NULL)
+        case '3':
           {
-            DestroyImageList(image);
-            return((Image *) NULL);
+            /*
+              Convert PNM image to pixel packets.
+            */
+            register unsigned long
+              x;
+            
+            register PixelPacket
+              *q;
+
+            MagickBool
+              is_grayscale,
+              is_monochrome;
+
+            is_grayscale=MagickTrue;
+            is_monochrome=MagickTrue;
+            for (y=0; y < (long) image->rows; y++)
+              {
+                q=SetImagePixels(image,0,y,image->columns,1);
+                if (q == (PixelPacket *) NULL)
+                  break;
+                for (x=0; x < image->columns; x++)
+                  {
+                    pixel.red=PNMInteger(image,10);
+                    pixel.green=PNMInteger(image,10);
+                    pixel.blue=PNMInteger(image,10);
+                    if (EOFBlob(image))
+                      break;
+                    ValidateScalingPixel(image, pixel, max_value);
+                    if (scale != (Quantum *) NULL)
+                      {
+                        pixel.red=scale[pixel.red];
+                        pixel.green=scale[pixel.green];
+                        pixel.blue=scale[pixel.blue];
+                      }
+                    q->red=(Quantum) pixel.red;
+                    q->green=(Quantum) pixel.green;
+                    q->blue=(Quantum) pixel.blue;
+                    is_monochrome &= IsMonochrome(*q);
+                    is_grayscale &= IsGray(*q);
+                    q++;
+                  }
+                if (EOFBlob(image))
+                  break;
+                if (!SyncImagePixels(image))
+                  break;
+                if (image->previous == (Image *) NULL)
+                  if (QuantumTick(y,image->rows))
+                    if (!MagickMonitorFormatted(y,image->rows,exception,
+                                                LoadImageText,image->filename,
+						image->columns,image->rows))
+                      break;
+              }
+            image->is_monochrome=is_monochrome;
+            image->is_grayscale=is_grayscale;
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
+            break;
           }
-        image=SyncNextImageInList(image);
-        if (!MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),exception))
+        case '4':
+          {
+            ImportPixelAreaOptions
+              import_options;
+
+            size_t
+              bytes_per_row;
+
+            unsigned long
+              row_count=0;
+
+            ThreadViewDataSet
+              *scanline_set;
+
+            /*
+              Convert PBM raw image to pixel packets.
+            */
+            bytes_per_row=((image->columns+7) >> 3);
+            scanline_set=AllocateThreadViewDataArray(image,exception,bytes_per_row,1);
+            if (scanline_set == (ThreadViewDataSet *) NULL)
+              ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+            ImportPixelAreaOptionsInit(&import_options);
+            import_options.grayscale_miniswhite=MagickTrue;
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(static,1) shared(row_count,status)
+#endif
+            for (y=0; y < (long) image->rows; y++)
+              {
+                void
+                  *pixels;
+
+                MagickBool
+                  thread_status;
+
+                unsigned long
+                  thread_row_count;
+
+		ImportPixelAreaInfo
+		  import_info;
+          
+                thread_status=status;
+                if (thread_status == MagickFail)
+                  continue;
+
+                pixels=AccessThreadViewData(scanline_set);
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                {
+                  if (ReadBlobZC(image,bytes_per_row,&pixels) != bytes_per_row)
+                    thread_status=MagickFail;
+
+                  thread_row_count=row_count;
+                  row_count++;
+
+                  if (image->previous == (Image *) NULL)
+                    if (QuantumTick(thread_row_count,image->rows))
+                      if (!MagickMonitorFormatted(thread_row_count,image->rows,
+                                                  exception,LoadImageText,
+                                                  image->filename,
+						  image->columns,image->rows))
+                        thread_status=MagickFail;
+                }
+                if (thread_status != MagickFail)
+                  if (SetImagePixels(image,0,thread_row_count,image->columns,1) ==
+                      (PixelPacket *) NULL)
+                    thread_status=MagickFail;
+          
+                if (thread_status != MagickFail)
+                  if (!ImportImagePixelArea(image,GrayQuantum,1,pixels,
+                                            &import_options,&import_info))
+                    thread_status=MagickFail;
+
+                if (thread_status != MagickFail)
+                  if (!SyncImagePixels(image))
+                    thread_status=MagickFail;
+
+                if (thread_status == MagickFail)
+                  {
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                    status=MagickFail;
+                  }
+              }
+            image->is_grayscale=MagickTrue;
+            image->is_monochrome=MagickTrue;
+            DestroyThreadViewDataSet(scanline_set);
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
+            break;
+          }
+        case '5':
+        case '7':
+          {
+            /*
+              Convert PGM raw image to pixel packets.
+            */
+            size_t
+              bytes_per_row;
+
+            MagickBool
+              is_monochrome=MagickTrue;
+
+            unsigned long
+              row_count=0;
+
+            ThreadViewDataSet
+              *scanline_set;
+
+            packets=(raw_sample_bits+7)/8;
+            bytes_per_row=packets*image->columns;
+
+            scanline_set=AllocateThreadViewDataArray(image,exception,bytes_per_row,1);
+            if (scanline_set == (ThreadViewDataSet *) NULL)
+              ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(static,1) shared(is_monochrome,row_count,status)
+#endif
+            for (y=0; y < (long) image->rows; y++)
+              {
+                register unsigned long
+                  x;
+
+                register PixelPacket
+                  *q;
+
+                void
+                  *pixels;
+
+                MagickBool
+                  thread_status;
+
+                MagickBool
+                  thread_is_monochrome;
+
+                unsigned long
+                  thread_row_count;
+          
+                thread_status=status;
+                if (thread_status == MagickFail)
+                  continue;
+
+                pixels=AccessThreadViewData(scanline_set);
+
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                {
+		  thread_is_monochrome=is_monochrome;
+
+                  if (ReadBlobZC(image,bytes_per_row,&pixels) != bytes_per_row)
+                    thread_status=MagickFail;
+
+                  thread_row_count=row_count;
+                  row_count++;
+
+                  if (image->previous == (Image *) NULL)
+                    if (QuantumTick(thread_row_count,image->rows))
+                      if (!MagickMonitorFormatted(thread_row_count,image->rows,
+                                                  exception,LoadImageText,
+                                                  image->filename,
+						  image->columns,image->rows))
+                        thread_status=MagickFail;
+                }
+
+                if (thread_status != MagickFail)
+                  if ((q=SetImagePixels(image,0,thread_row_count,
+                                        image->columns,1)) == (PixelPacket *) NULL)
+                    thread_status=MagickFail;
+
+                if (thread_status != MagickFail)
+                  if (!ImportImagePixelArea(image,GrayQuantum,raw_sample_bits,
+                                            pixels,0,0))
+                    thread_status=MagickFail;
+                /*
+                  Check all pixels for gray/monochrome status since this
+                  format is often used for input from Ghostscript, which may
+                  output bilevel in a gray format.  It is easier to check
+                  now while the pixels are still "hot" in memory.
+                */
+                if (thread_status != MagickFail)
+                  if (thread_is_monochrome)
+                    for (x=image->columns; x; x--)
+                      {
+                        thread_is_monochrome = (thread_is_monochrome &&
+                                                IsMonochrome(*q));
+                        if (!thread_is_monochrome)
+                          break;
+                        q++;
+                      }
+
+                if (thread_status != MagickFail)
+                  if (!SyncImagePixels(image))
+                    thread_status=MagickFail;
+
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                {
+                  if (thread_status == MagickFail)
+                    status=MagickFail;
+
+                  if (!thread_is_monochrome)
+                    is_monochrome=thread_is_monochrome;
+                }
+
+              }
+            DestroyThreadViewDataSet(scanline_set);
+            image->is_grayscale=MagickTrue;
+            image->is_monochrome=is_monochrome;
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
+
+            break;
+          }
+        case '6':
+          {
+            /*
+              Convert PPM raw raster image to pixel packets.
+            */
+            size_t
+              bytes_per_row;
+        
+            MagickBool
+              is_grayscale,
+              is_monochrome;
+        
+            unsigned long
+              row_count=0;
+        
+            ThreadViewDataSet
+              *scanline_set;
+        
+            is_grayscale=MagickTrue;
+            is_monochrome=MagickTrue;
+            packets=((raw_sample_bits+7)/8)*3;
+            bytes_per_row=packets*image->columns;
+        
+            scanline_set=AllocateThreadViewDataArray(image,exception,bytes_per_row,1);
+            if (scanline_set == (ThreadViewDataSet *) NULL)
+              ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
+#if 1
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp parallel for schedule(static,1) shared(is_grayscale,is_monochrome,row_count,status)
+#endif
+#endif
+            for (y=0; y < (long) image->rows; y++)
+              {
+                register unsigned long
+                  x;
+
+                register PixelPacket
+                  *q;
+
+                void
+                  *pixels;
+
+                MagickBool
+                  thread_status;
+            
+                MagickBool
+                  thread_is_grayscale,
+                  thread_is_monochrome;
+            
+                unsigned long
+                  thread_row_count;
+            
+                thread_status=status;
+                if (thread_status == MagickFail)
+                  continue;
+            
+                pixels=AccessThreadViewData(scanline_set);
+            
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                {
+		  thread_is_grayscale=is_grayscale;
+		  thread_is_monochrome=is_monochrome;
+
+                  if (ReadBlobZC(image,bytes_per_row,&pixels) != bytes_per_row)
+                    thread_status=MagickFail;
+              
+                  thread_row_count=row_count;
+                  row_count++;
+              
+                  if (image->previous == (Image *) NULL)
+                    if (QuantumTick(thread_row_count,image->rows))
+                      if (!MagickMonitorFormatted(thread_row_count,image->rows,
+                                                  exception,LoadImageText,
+                                                  image->filename,
+						  image->columns,image->rows))
+                        thread_status=MagickFail;
+                }
+
+                if (thread_status != MagickFail)
+                  if ((q=SetImagePixels(image,0,thread_row_count,image->columns,1)) ==
+                      (PixelPacket *) NULL)
+                    thread_status=MagickFail;
+
+                if (thread_status != MagickFail)
+                  if (!ImportImagePixelArea(image,RGBQuantum,raw_sample_bits,pixels,0,0))
+                    thread_status=MagickFail;
+                /*
+                  Check all pixels for gray/monochrome status since this
+                  format is often used for input from Ghostscript, which may
+                  output bilevel or gray in an RGB format.  It is easier to
+                  check now while the pixels are still "hot" in memory.
+                */
+                if (thread_status != MagickFail)
+                  if (thread_is_grayscale || thread_is_monochrome)
+                    for (x=image->columns; x; x--)
+                      {
+                        thread_is_grayscale = thread_is_grayscale && IsGray(*q);
+                        thread_is_monochrome = thread_is_monochrome && IsMonochrome(*q);
+                        if (!thread_is_grayscale && !thread_is_monochrome)
+                          break;
+                        q++;
+                      }
+
+                if (thread_status != MagickFail)
+                  if (!SyncImagePixels(image))
+                    thread_status=MagickFail;
+
+#if defined(HAVE_OPENMP) && !defined(DisableSlowOpenMP)
+#  pragma omp critical (GM_ReadPNMImage)
+#endif
+                {
+                  if (thread_status == MagickFail)
+                    status=MagickFail;
+
+                  if (!thread_is_grayscale)
+                    is_grayscale=thread_is_grayscale;
+
+                  if (!thread_is_monochrome)
+                    is_monochrome=thread_is_monochrome;
+                }
+              }
+            DestroyThreadViewDataSet(scanline_set);
+            image->is_monochrome=is_monochrome;
+            image->is_grayscale=is_grayscale;
+            if (EOFBlob(image))
+              ThrowException(exception,CorruptImageError,UnexpectedEndOfFile,
+                             image->filename);
+            break;
+          }
+        default:
+          ThrowReaderException(CorruptImageError,ImproperImageHeader,image);
+        }
+      if (scale != (Quantum *) NULL)
+        MagickFreeMemory(scale);
+      /*
+        Proceed to next image.
+      */
+      if (image_info->subrange != 0)
+        if (image->scene >= (image_info->subimage+image_info->subrange-1))
           break;
-      }
-  } while ((count != 0) && (format == 'P'));
+      if ((format == '1') || (format == '2') || (format == '3'))
+        do
+          {
+            /*
+              Skip to end of line.
+            */
+            count=ReadBlob(image,1,&format);
+            if (count == 0)
+              break;
+          } while (format != '\n');
+      count=ReadBlob(image,1,(char *) &format);
+      if ((count != 0) && (format == 'P'))
+        {
+          /*
+            Allocate next image structure.
+          */
+          AllocateNextImage(image_info,image);
+          if (image->next == (Image *) NULL)
+            {
+              DestroyImageList(image);
+              return((Image *) NULL);
+            }
+          image=SyncNextImageInList(image);
+          if (!MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                      exception,LoadImagesText,
+                                      image->filename))
+            break;
+        }
+    } while ((count != 0) && (format == 'P'));
   while (image->previous != (Image *) NULL)
     image=image->previous;
   CloseBlob(image);
@@ -702,33 +965,41 @@ ModuleExport void RegisterPNMImage(void)
   entry=SetMagickInfo("P7");
   entry->decoder=(DecoderHandler) ReadPNMImage;
   entry->encoder=(EncoderHandler) WritePNMImage;
-  entry->description=AcquireString("Xv thumbnail format");
-  entry->module=AcquireString("PNM");
+  entry->description="Xv thumbnail format";
+  entry->module="PNM";
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PBM");
   entry->decoder=(DecoderHandler) ReadPNMImage;
   entry->encoder=(EncoderHandler) WritePNMImage;
-  entry->description=AcquireString("Portable bitmap format (black and white)");
-  entry->module=AcquireString("PNM");
+  entry->description="Portable bitmap format (black/white)";
+  entry->module="PNM";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PGM");
   entry->decoder=(DecoderHandler) ReadPNMImage;
   entry->encoder=(EncoderHandler) WritePNMImage;
-  entry->description=AcquireString("Portable graymap format (gray scale)");
-  entry->module=AcquireString("PNM");
+  entry->description="Portable graymap format (gray scale)";
+  entry->module="PNM";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PNM");
   entry->decoder=(DecoderHandler) ReadPNMImage;
   entry->encoder=(EncoderHandler) WritePNMImage;
   entry->magick=(MagickHandler) IsPNM;
-  entry->description=AcquireString("Portable anymap");
-  entry->module=AcquireString("PNM");
+  entry->description="Portable anymap";
+  entry->module="PNM";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
+
   entry=SetMagickInfo("PPM");
   entry->decoder=(DecoderHandler) ReadPNMImage;
   entry->encoder=(EncoderHandler) WritePNMImage;
-  entry->description=AcquireString("Portable pixmap format (color)");
-  entry->module=AcquireString("PNM");
+  entry->description="Portable pixmap format (color)";
+  entry->module="PNM";
+  entry->coder_class=PrimaryCoderClass;
   (void) RegisterMagickInfo(entry);
 }
 
@@ -804,17 +1075,20 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
   int
     format;
 
-  long
+  unsigned int
+    depth;
+
+  unsigned long
     j,
     y;
 
   register const PixelPacket
     *p;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
-  register long
+  register unsigned long
     i,
     x;
 
@@ -835,29 +1109,74 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
   scene=0;
   do
   {
+    ImageCharacteristics
+      characteristics;
+
+    /*
+      Make sure that image is in an RGB type space.
+    */
+    (void) TransformColorspace(image,RGBColorspace);
+
+    /*
+      Analyze image to be written.
+    */
+    if (!GetImageCharacteristics(image,&characteristics,
+                                 (OptimizeType == image_info->type),
+                                 &image->exception))
+      {
+        CloseBlob(image);
+        return MagickFail;
+      }
+
+    depth=(image->depth <= 8 ? 8 : 16);
+
     /*
       Write PNM file header.
     */
-    TransformColorspace(image,RGBColorspace);
     format=6;
     if (LocaleCompare(image_info->magick,"PGM") == 0)
-      format=5;
-    else
-      if (LocaleCompare(image_info->magick,"PBM") == 0)
+      {
+        format=5;
+      }
+    else if (LocaleCompare(image_info->magick,"PBM") == 0)
+      {
         format=4;
-      else
-        if ((LocaleCompare(image_info->magick,"PNM") == 0) &&
+      }
+    else if (LocaleCompare(image_info->magick,"PNM") == 0)
+      {
+        if ((characteristics.monochrome) &&
+            (image_info->type != GrayscaleType) &&
+            (image_info->type != GrayscaleMatteType) &&
             (image_info->type != TrueColorType) &&
-            IsGrayImage(image,&image->exception))
+            (image_info->type != TrueColorMatteType))
           {
-            format=5;
-            if (IsMonochromeImage(image,&image->exception))
-              format=4;
+            /* PBM */
+            format=4;
           }
-    if (image_info->compression == NoCompression)
-      format-=3;
+        else if ((characteristics.grayscale) &&
+                 (image_info->type != TrueColorType) &&
+                 (image_info->type != TrueColorMatteType))
+        {
+          /* PGM */
+          format=5;
+        }
+        else
+          {
+            /* PPM */
+            format=6;
+          }
+      }
+    /*
+      If quality is set to zero, then select an ASCII subformat.
+    */
+    if (image_info->quality == 0)
+      {
+        format-=3;
+      }
     if (LocaleCompare(image_info->magick,"P7") != 0)
-      FormatString(buffer,"P%d\n",format);
+      {
+        FormatString(buffer,"P%d\n",format);
+      }
     else
       {
         format=7;
@@ -868,16 +1187,16 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
     if (attribute != (const ImageAttribute *) NULL)
       {
         register char
-          *p;
+          *av;
 
         /*
           Write comments to file.
         */
         (void) WriteBlobByte(image,'#');
-        for (p=attribute->value; *p != '\0'; p++)
+        for (av=attribute->value; *av != '\0'; av++)
         {
-          (void) WriteBlobByte(image,*p);
-          if ((*p == '\n') && (*(p+1) != '\0'))
+          (void) WriteBlobByte(image,*av);
+          if ((*av == '\n') && (*(av+1) != '\0'))
             (void) WriteBlobByte(image,'#');
         }
         (void) WriteBlobByte(image,'\n');
@@ -890,6 +1209,8 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
     /*
       Convert runlength encoded to PNM raster pixels.
     */
+    (void) LogMagickEvent(CoderEvent,GetMagickModule(),"PNM Format Id: P%d",
+                          format);
     switch (format)
     {
       case 1:
@@ -900,19 +1221,19 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         /*
           Convert image to a PBM image.
         */
-        SetImageType(image,BilevelType);
+        (void) SetImageType(image,BilevelType);
         polarity=PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2);
         if (image->colors == 2)
           polarity=PixelIntensityToQuantum(&image->colormap[0]) <
             PixelIntensityToQuantum(&image->colormap[1]);
         i=0;
-        for (y=0; y < (long) image->rows; y++)
+        for (y=0; y < image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
-          for (x=0; x < (long) image->columns; x++)
+          indexes=AccessImmutableIndexes(image);
+          for (x=0; x < image->columns; x++)
           {
             FormatString(buffer,"%u ",indexes[x] == polarity ? 0x00 : 0x01);
             (void) WriteBlobString(image,buffer);
@@ -925,7 +1246,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
           }
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         if (i != 0)
@@ -937,20 +1260,20 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         /*
           Convert image to a PGM image.
         */
-        if (image->depth <= 8)
+        if (depth <= 8)
           (void) WriteBlobString(image,"255\n");
         else
           (void) WriteBlobString(image,"65535\n");
         i=0;
-        for (y=0; y < (long) image->rows; y++)
+        for (y=0; y < image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          for (x=0; x < (long) image->columns; x++)
+          for (x=0; x < image->columns; x++)
           {
             index=PixelIntensityToQuantum(p);
-            if (image->depth <= 8)
+            if (depth <= 8)
               FormatString(buffer," %u",ScaleQuantumToChar(index));
             else
               FormatString(buffer," %u",ScaleQuantumToShort(index));
@@ -965,7 +1288,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
           }
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         if (i != 0)
@@ -977,19 +1302,19 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         /*
           Convert image to a PNM image.
         */
-        if (image->depth <= 8)
+        if (depth <= 8)
           (void) WriteBlobString(image,"255\n");
         else
           (void) WriteBlobString(image,"65535\n");
         i=0;
-        for (y=0; y < (long) image->rows; y++)
+        for (y=0; y < image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          for (x=0; x < (long) image->columns; x++)
+          for (x=0; x < image->columns; x++)
           {
-            if (image->depth <= 8)
+            if (depth <= 8)
               FormatString(buffer,"%u %u %u ",ScaleQuantumToChar(p->red),
                 ScaleQuantumToChar(p->green),ScaleQuantumToChar(p->blue));
             else
@@ -1006,7 +1331,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
           }
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         if (i != 0)
@@ -1015,48 +1342,48 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
       }
       case 4:
       {
-        register unsigned char
-          bit,
-          byte,
-          polarity;
-
         /*
           Convert image to a PBM image.
         */
-        SetImageType(image,BilevelType);
-        polarity=PixelIntensityToQuantum(&image->colormap[0]) < (MaxRGB/2);
-        if (image->colors == 2)
-          polarity=PixelIntensityToQuantum(&image->colormap[0]) <
-            PixelIntensityToQuantum(&image->colormap[1]);
-        for (y=0; y < (long) image->rows; y++)
-        {
-          p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
-          if (p == (const PixelPacket *) NULL)
-            break;
-          indexes=GetIndexes(image);
-          bit=0;
-          byte=0;
-          for (x=0; x < (long) image->columns; x++)
+        size_t
+          octets;
+
+        unsigned char
+          *pixels;
+        
+        ExportPixelAreaOptions
+          export_options;
+        
+        /*
+          Allocate memory for pixels.
+        */
+        octets=((image->columns/8)+(image->columns%8 ? 1 : 0));
+        pixels=MagickAllocateMemory(unsigned char *,octets);
+        if (pixels == (unsigned char *) NULL)
+          ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,
+                               image);
+        
+        ExportPixelAreaOptionsInit(&export_options);
+        export_options.grayscale_miniswhite=MagickTrue;
+        
+        for (y=0; y < image->rows; y++)
           {
-            byte<<=1;
-            if (indexes[x] != polarity)
-              byte|=0x01;
-            bit++;
-            if (bit == 8)
-              {
-                (void) WriteBlobByte(image,byte);
-                bit=0;
-                byte=0;
-              }
-            p++;
+            p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+            if (p == (const PixelPacket *) NULL)
+              break;
+            if (!ExportImagePixelArea(image,GrayQuantum,1,pixels,
+                                      &export_options,0))
+              break;
+            if (WriteBlob(image,octets,(char *) pixels) != octets)
+              break;
+            if (image->previous == (Image *) NULL)
+              if (QuantumTick(y,image->rows))
+                if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                            SaveImageText,image->filename,
+					    image->columns,image->rows))
+                  break;
           }
-          if (bit != 0)
-            (void) WriteBlobByte(image,byte << (8-bit));
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
-                break;
-        }
+        MagickFreeMemory(pixels);
         break;
       }
       case 5:
@@ -1064,43 +1391,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         /*
           Convert image to a PGM image.
         */
-        if (image->depth <= 8)
-          (void) WriteBlobString(image,"255\n");
-        else
-          (void) WriteBlobString(image,"65535\n");
-        for (y=0; y < (long) image->rows; y++)
-        {
-          p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
-          if (p == (const PixelPacket *) NULL)
-            break;
-          if (image->depth <= 8)
-            for (x=0; x < (long) image->columns; x++)
-            {
-              (void) WriteBlobByte(image,
-                ScaleQuantumToChar(PixelIntensityToQuantum(p)));
-              p++;
-            }
-          else
-            for (x=0; x < (long) image->columns; x++)
-            {
-              (void) WriteBlobMSBShort(image,
-                ScaleQuantumToShort(PixelIntensityToQuantum(p)));
-              p++;
-            }
-          if (image->previous == (Image *) NULL)
-            if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
-                break;
-        }
-        break;
-      }
-      case 6:
-      {
-        register unsigned char
-          *q;
 
         size_t
-          packets;
+          octets;
 
         unsigned char
           *pixels;
@@ -1108,47 +1401,75 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         /*
           Allocate memory for pixels.
         */
-        packets=image->depth <= 8 ? 3 : 6;
-        pixels=MagickAllocateMemory(unsigned char *,packets*image->columns);
+        octets=(depth <= 8 ? 1 : 2)*image->columns;
+        pixels=MagickAllocateMemory(unsigned char *,octets);
+        if (pixels == (unsigned char *) NULL)
+          ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,
+            image);
+
+        if (depth <= 8)
+          (void) WriteBlobString(image,"255\n");
+        else
+          (void) WriteBlobString(image,"65535\n");
+        for (y=0; y < image->rows; y++)
+        {
+          p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
+          if (p == (const PixelPacket *) NULL)
+            break;
+          if (!ExportImagePixelArea(image,GrayQuantum,depth,pixels,0,0))
+            break;
+          if (WriteBlob(image,octets,(char *) pixels) != octets)
+            break;
+          if (image->previous == (Image *) NULL)
+            if (QuantumTick(y,image->rows))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
+                break;
+        }
+        MagickFreeMemory(pixels);
+        break;
+      }
+      case 6:
+      {
+        /*
+          Convert image to a PPM image.
+        */
+        size_t
+          octets;
+
+        unsigned char
+          *pixels;
+
+        /*
+          Allocate memory for pixels.
+        */
+        octets=(depth <= 8 ? 3 : 6)*image->columns;
+        pixels=MagickAllocateMemory(unsigned char *,octets);
         if (pixels == (unsigned char *) NULL)
           ThrowWriterException(ResourceLimitError,MemoryAllocationFailed,
             image);
         /*
           Convert image to a PNM image.
         */
-        if (image->depth <= 8)
+        if (depth <= 8)
           (void) WriteBlobString(image,"255\n");
         else
           (void) WriteBlobString(image,"65535\n");
-        for (y=0; y < (long) image->rows; y++)
+        for (y=0; y < image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          q=pixels;
-          if (image->depth <= 8)
-            for (x=0; x < (long) image->columns; x++)
-            {
-              *q++=ScaleQuantumToChar(p->red);
-              *q++=ScaleQuantumToChar(p->green);
-              *q++=ScaleQuantumToChar(p->blue);
-              p++;
-            }
-          else
-            for (x=0; x < (long) image->columns; x++)
-            {
-              *q++=(unsigned char) (ScaleQuantumToShort(p->red) >> 8);
-              *q++=(unsigned char) ScaleQuantumToShort(p->red);
-              *q++=(unsigned char) (ScaleQuantumToShort(p->green) >> 8);
-              *q++=(unsigned char) ScaleQuantumToShort(p->green);
-              *q++=(unsigned char) (ScaleQuantumToShort(p->blue) >> 8);
-              *q++=(unsigned char) ScaleQuantumToShort(p->blue);
-              p++;
-            }
-          (void) WriteBlob(image,q-pixels,(char *) pixels);
+          if (ExportImagePixelArea(image,RGBQuantum,depth,pixels,0,0) == MagickFail)
+            break;
+          if (WriteBlob(image,octets,(char *) pixels) != octets)
+            break;
           if (image->previous == (Image *) NULL)
             if (QuantumTick(y,image->rows))
-              if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+              if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                          SaveImageText,image->filename,
+					  image->columns,image->rows))
                 break;
         }
         MagickFreeMemory(pixels);
@@ -1236,12 +1557,12 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
         (void) WriteBlobString(image,buffer);
         i=0;
         j=0;
-        for (y=0; y < (long) image->rows; y++)
+        for (y=0; y < image->rows; y++)
         {
           p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
           if (p == (const PixelPacket *) NULL)
             break;
-          for (x=0; x < (long) image->columns; x++)
+          for (x=0; x < image->columns; x++)
           {
             if (!image_info->dither)
               pixel=(Quantum) ((ScaleQuantumToChar(p->red) & 0xe0) |
@@ -1262,7 +1583,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
           if (i == 2)
             i=0;
           if (QuantumTick(y,image->rows))
-            if (!MagickMonitor(SaveImageText,y,image->rows,&image->exception))
+            if (!MagickMonitorFormatted(y,image->rows,&image->exception,
+                                        SaveImageText,image->filename,
+					image->columns,image->rows))
               break;
         }
         /*
@@ -1281,8 +1604,9 @@ static unsigned int WritePNMImage(const ImageInfo *image_info,Image *image)
     if (image->next == (Image *) NULL)
       break;
     image=SyncNextImageInList(image);
-    status=MagickMonitor(SaveImagesText,scene++,GetImageListLength(image),
-      &image->exception);
+    status=MagickMonitorFormatted(scene++,GetImageListLength(image),
+                                  &image->exception,SaveImagesText,
+                                  image->filename);
     if (status == False)
       break;
   } while (image_info->adjoin);

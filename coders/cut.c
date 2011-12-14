@@ -34,10 +34,12 @@
   Include declarations.
 */
 #include "magick/studio.h"
-#include "magick/cache.h"
-#include "magick/color.h"
+#include "magick/analyze.h"
 #include "magick/blob.h"
+#include "magick/color.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 typedef struct
@@ -78,7 +80,7 @@ static void InsertRow(unsigned char *p,long y,Image *image)
         q=SetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < ((long) image->columns-7); x+=8)
           {
             for (bit=0; bit < 8; bit++)
@@ -111,7 +113,7 @@ static void InsertRow(unsigned char *p,long y,Image *image)
         q=SetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < ((long) image->columns-1); x+=2)
           {
             index=(IndexPacket) ((*p >> 6U) & 0x3U);
@@ -169,7 +171,7 @@ static void InsertRow(unsigned char *p,long y,Image *image)
         q=SetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
         for (x=0; x < ((long) image->columns-1); x+=2)
           {
             index=(IndexPacket) ((*p >> 4U) & 0xfU);
@@ -201,7 +203,7 @@ static void InsertRow(unsigned char *p,long y,Image *image)
       {
         q=SetImagePixels(image,0,y,image->columns,1);
         if (q == (PixelPacket *) NULL) break;
-        indexes=GetIndexes(image);
+        indexes=AccessMutableIndexes(image);
 
         for (x=0; x < (long) image->columns; x++)
           {
@@ -482,7 +484,7 @@ static Image *ReadCUTImage(const ImageInfo *image_info,ExceptionInfo *exception)
 
            
   /* ----- Load RLE compressed raster ----- */
-  BImgBuff=MagickAllocateMemory(unsigned char *,ldblk);  /*Ldblk was set in the check phase*/
+  BImgBuff=MagickAllocateMemory(unsigned char *,(size_t) (ldblk));  /*Ldblk was set in the check phase*/
   if(BImgBuff==NULL) goto NoMemory;
 
   (void) SeekBlob(image,6 /*sizeof(Header)*/,SEEK_SET);
@@ -605,8 +607,8 @@ ModuleExport void RegisterCUTImage(void)
   entry=SetMagickInfo("CUT");
   entry->decoder=(DecoderHandler) ReadCUTImage;
   entry->seekable_stream=True;
-  entry->description=AcquireString("DR Halo");
-  entry->module=AcquireString("CUT");
+  entry->description="DR Halo";
+  entry->module="CUT";
   (void) RegisterMagickInfo(entry);
 }
 

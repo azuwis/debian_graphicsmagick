@@ -37,9 +37,10 @@
 */
 #include "magick/studio.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/utility.h"
 
 /*
@@ -187,10 +188,10 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
         for (i=0; i < (long) image->colors; i++)
         {
           word=(*p++);
-          word|=(unsigned short) (*p++ << 8);
-          image->colormap[i].blue=ScaleCharToQuantum(ScaleColor5to8((word >> 10) & 0x1f));
-          image->colormap[i].green=ScaleCharToQuantum(ScaleColor5to8((word >> 5) & 0x1f));
-          image->colormap[i].red=ScaleCharToQuantum(ScaleColor5to8(word & 0x1f));
+          word|=(unsigned short) (*p++ << 8U);
+          image->colormap[i].blue=ScaleCharToQuantum(ScaleColor5to8((word >> 10U) & 0x1fU));
+          image->colormap[i].green=ScaleCharToQuantum(ScaleColor5to8((word >> 5U) & 0x1fU));
+          image->colormap[i].red=ScaleCharToQuantum(ScaleColor5to8(word & 0x1fU));
         }
         MagickFreeMemory(tim_colormap);
       }
@@ -233,7 +234,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           p=tim_pixels+y*bytes_per_line;
           for (x=0; x < ((long) image->columns-1); x+=2)
           {
@@ -250,8 +251,10 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           if (QuantumTick(y,image->rows))
             {
-              status=MagickMonitor(LoadImageText,image->rows-y-1,image->rows,
-                exception);
+              status=MagickMonitorFormatted(image->rows-y-1,image->rows,
+                                            exception,LoadImageText,
+                                            image->filename,
+					    image->columns,image->rows);
               if (status == False)
                 break;
             }
@@ -268,7 +271,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
           q=SetImagePixels(image,0,y,image->columns,1);
           if (q == (PixelPacket *) NULL)
             break;
-          indexes=GetIndexes(image);
+          indexes=AccessMutableIndexes(image);
           p=tim_pixels+y*bytes_per_line;
           for (x=0; x < (long) image->columns; x++)
             indexes[x]=(*p++);
@@ -276,8 +279,10 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           if (QuantumTick(y,image->rows))
             {
-              status=MagickMonitor(LoadImageText,image->rows-y-1,image->rows,
-                exception);
+              status=MagickMonitorFormatted(image->rows-y-1,image->rows,
+                                            exception,LoadImageText,
+                                            image->filename,
+					    image->columns,image->rows);
               if (status == False)
                 break;
             }
@@ -308,8 +313,10 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           if (QuantumTick(y,image->rows))
             {
-              status=MagickMonitor(LoadImageText,image->rows-y-1,image->rows,
-                exception);
+              status=MagickMonitorFormatted(image->rows-y-1,image->rows,
+                                            exception,LoadImageText,
+                                            image->filename,
+					    image->columns,image->rows);
               if (status == False)
                 break;
             }
@@ -338,8 +345,10 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             break;
           if (QuantumTick(y,image->rows))
             {
-              status=MagickMonitor(LoadImageText,image->rows-y-1,image->rows,
-                exception);
+              status=MagickMonitorFormatted(image->rows-y-1,image->rows,
+                                            exception,LoadImageText,
+                                            image->filename,
+					    image->columns,image->rows);
               if (status == False)
                 break;
             }
@@ -350,7 +359,7 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
         ThrowReaderException(CorruptImageError,ImproperImageHeader,image)
     }
     if (image->storage_class == PseudoClass)
-      SyncImage(image);
+      (void) SyncImage(image);
     MagickFreeMemory(tim_pixels);
     if (EOFBlob(image))
       {
@@ -374,8 +383,9 @@ static Image *ReadTIMImage(const ImageInfo *image_info,ExceptionInfo *exception)
             return((Image *) NULL);
           }
         image=SyncNextImageInList(image);
-        status=MagickMonitor(LoadImagesText,TellBlob(image),GetBlobSize(image),
-          exception);
+        status=MagickMonitorFormatted(TellBlob(image),GetBlobSize(image),
+                                      exception,LoadImagesText,
+                                      image->filename);
         if (status == False)
           break;
       }
@@ -416,8 +426,8 @@ ModuleExport void RegisterTIMImage(void)
 
   entry=SetMagickInfo("TIM");
   entry->decoder=(DecoderHandler) ReadTIMImage;
-  entry->description=AcquireString("PSX TIM");
-  entry->module=AcquireString("TIM");
+  entry->description="PSX TIM";
+  entry->module="TIM";
   (void) RegisterMagickInfo(entry);
 }
 

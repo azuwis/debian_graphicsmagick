@@ -1,5 +1,5 @@
 /*
-% Copyright (C) 2003, 2004 GraphicsMagick Group
+% Copyright (C) 2003 - 2009 GraphicsMagick Group
 % Copyright (C) 2002 ImageMagick Studio
 %
 % This program is covered by multiple licenses, which are described in
@@ -35,16 +35,23 @@
   Include declarations.
 */
 #include "magick/studio.h"
+#include "magick/analyze.h"
 #include "magick/blob.h"
-#include "magick/cache.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
+#include "magick/colormap.h"
 #include "magick/composite.h"
+#include "magick/constitute.h"
+#include "magick/describe.h"
 #include "magick/log.h"
 #include "magick/magick.h"
-#include "magick/shear.h"
-#include "magick/transform.h"
+#include "magick/monitor.h"
+#include "magick/pixel_cache.h"
 #include "magick/resize.h"
+#include "magick/shear.h"
 #include "magick/tempfile.h"
+#include "magick/texture.h"
+#include "magick/transform.h"
 #include "magick/utility.h"
 #include "magick/version.h"
 #if defined(HasSharedMemory)
@@ -52,8 +59,10 @@
    /* Need by some *BSD systems in order to use shmget */
 #  include <machine/param.h>
 # endif /* defined(HAVE_MACHINE_PARAM_H */
-# if __FreeBSD__ >= 5 && defined(_POSIX_C_SOURCE)
+# if defined(__FreeBSD__)
+#  if __FreeBSD__ >= 5 && defined(_POSIX_C_SOURCE)
    typedef unsigned short ushort; /* needed for sys/ipc.h at the moment */
+#  endif
 # endif
 # include <sys/ipc.h>
 # include <sys/shm.h>
@@ -70,20 +79,20 @@
 /*
   X defines.
 */
-#define XBlueGamma(color) ((Quantum) (blue_gamma == 1.0 ? (color) : \
+#define MagickXBlueGamma(color) ((Quantum) (blue_gamma == 1.0 ? (color) : \
   ((pow((double) (color)/MaxRGB,1.0/blue_gamma)*MaxRGB)+0.5)))
-#define XGammaPixel(map,color)  (unsigned long) (map->base_pixel+ \
-  ((ScaleQuantumToShort(XRedGamma((color)->red))*map->red_max/65535L)* \
+#define MagickXGammaPixel(map,color)  (unsigned long) (map->base_pixel+ \
+  ((ScaleQuantumToShort(MagickXRedGamma((color)->red))*map->red_max/65535L)* \
     map->red_mult)+ \
-  ((ScaleQuantumToShort(XGreenGamma((color)->green))*map->green_max/65535L)* \
+  ((ScaleQuantumToShort(MagickXGreenGamma((color)->green))*map->green_max/65535L)* \
     map->green_mult)+ \
-  ((ScaleQuantumToShort(XBlueGamma((color)->blue))*map->blue_max/65535L)* \
+  ((ScaleQuantumToShort(MagickXBlueGamma((color)->blue))*map->blue_max/65535L)* \
     map->blue_mult))
-#define XGreenGamma(color) ((Quantum) (green_gamma == 1.0 ? (color) : \
+#define MagickXGreenGamma(color) ((Quantum) (green_gamma == 1.0 ? (color) : \
   ((pow((double) (color)/MaxRGB,1.0/green_gamma)*MaxRGB)+0.5)))
-#define XRedGamma(color) ((Quantum) (red_gamma == 1.0 ? (color) : \
+#define MagickXRedGamma(color) ((Quantum) (red_gamma == 1.0 ? (color) : \
   ((pow((double) (color)/MaxRGB,1.0/red_gamma)*MaxRGB)+0.5)))
-#define XStandardPixel(map,color)  (unsigned long) (map->base_pixel+ \
+#define MagickXStandardPixel(map,color)  (unsigned long) (map->base_pixel+ \
   (((color)->red*map->red_max/65535L)*map->red_mult)+ \
   (((color)->green*map->green_max/65535L)*map->green_mult)+ \
   (((color)->blue*map->blue_max/65535L)*map->blue_mult))
@@ -98,7 +107,7 @@ static unsigned int
   Method prototypes.
 */
 static char
-  *XVisualClassName(const int);
+  *MagickXVisualClassName(const int);
 
 static double
   blue_gamma = 1.0,
@@ -106,22 +115,23 @@ static double
   red_gamma = 1.0;
 
 static unsigned int
-  XMakePixmap(Display *,const XResourceInfo *,XWindowInfo *);
+  MagickXMakePixmap(Display *,const MagickXResourceInfo *,MagickXWindowInfo *);
 
 static void
-  XMakeImageLSBFirst(const XResourceInfo *,const XWindowInfo *,Image *,
+  MagickXMakeImageLSBFirst(const MagickXResourceInfo *,const MagickXWindowInfo *,Image *,
     XImage *,XImage *),
-  XMakeImageMSBFirst(const XResourceInfo *,const XWindowInfo *,Image *,
+  MagickXMakeImageMSBFirst(const MagickXResourceInfo *,const MagickXWindowInfo *,Image *,
     XImage *,XImage *);
 
 static Window
-  XSelectWindow(Display *,RectangleInfo *);
+  MagickXSelectWindow(Display *,RectangleInfo *);
 
 #if defined(HasSharedMemory)
 /*
   Attach to shared memory.
 */
-static void *GmShmAt(int shmid, void *shmaddr, int shmflg)
+static void *
+MagickShmAt(int shmid, void *shmaddr, int shmflg)
 {
   void *
     address;
@@ -150,7 +160,8 @@ static void *GmShmAt(int shmid, void *shmaddr, int shmflg)
 /*
   Shared memory control operations.
 */
-static int GmShmCtl(int shmid, int cmd, struct shmid_ds *buf)
+static int 
+MagickShmCtl(int shmid, int cmd, struct shmid_ds *buf)
 {
   int status;
   if ((status=shmctl(shmid, cmd, buf)) == -1)
@@ -173,7 +184,8 @@ static int GmShmCtl(int shmid, int cmd, struct shmid_ds *buf)
 /*
   Detatch from shared memory.
 */
-static int GmShmDt(void *shmaddr)
+static int 
+MagickShmDt(void *shmaddr)
 {
   int result;
   if ((result=shmdt(shmaddr)) == -1)
@@ -198,31 +210,32 @@ static int GmShmDt(void *shmaddr)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D e s t r o y X 1 1 R e s o u r c e s                                   %
+%   M a g i c k X D e s t r o y X 1 1 R e s o u r c e s                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  XDestroyX11Resources() destroys all remaining allocations related to X11,
-%  and closes the X11 display. It is intended to be invoked by
+%  MagickXDestroyX11Resources() destroys all remaining allocations related
+%  to X11, and closes the X11 display. It is intended to be invoked by
 %  DestroyMagick().
 %
-%  The format of the XDestroyX11Resources method is:
+%  The format of the MagickXDestroyX11Resources method is:
 %
-%      void XDestroyX11Resources(void)
+%      void MagickXDestroyX11Resources(void)
 %
 %  A description of each parameter follows:
 %
 %
 */
-MagickExport void XDestroyX11Resources(void)
+MagickExport void 
+MagickXDestroyX11Resources(void)
 {
-  XWindows *windows = XSetWindows((XWindows *) ~0);
-  if (windows != (XWindows *) NULL)
+  MagickXWindows *windows = MagickXSetWindows((MagickXWindows *) ~0);
+  if (windows != (MagickXWindows *) NULL)
     {
-      XDestroyXWindows(windows);
-      (void) XSetWindows((XWindows *) NULL);  
+      MagickXDestroyXWindows(windows);
+      (void) MagickXSetWindows((MagickXWindows *) NULL);  
     }
 }
 
@@ -231,25 +244,28 @@ MagickExport void XDestroyX11Resources(void)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D e s t r o y X W i n d o w s                                           %
+%   M a g i c k X D e s t r o y X W i n d o w s                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  XDestroyXWindows() destroys existing allocations in an XWindows structure.
+%  MagickXDestroyXWindows() destroys existing allocations in an MagickXWindows
+%  structure.
 %
-%  The format of the XDestroyXWindows method is:
+%  The format of the MagickXDestroyXWindows method is:
 %
-%      void XDestroyXWindows(XWindows *windows)
+%      void MagickXDestroyXWindows(MagickXWindows *windows)
 %
 %  A description of each parameter follows:
 %
 %
 */
-MagickExport void XDestroyXWindows(XWindows *windows)
+MagickExport void 
+MagickXDestroyXWindows(MagickXWindows *windows)
 {
-  if (windows == (XWindows *) NULL || (windows->display == (Display *) NULL))
+  if (windows == (MagickXWindows *) NULL ||
+      (windows->display == (Display *) NULL))
     return;
   MagickFreeMemory(windows->icon_resources);
 
@@ -257,11 +273,11 @@ MagickExport void XDestroyXWindows(XWindows *windows)
     {
       MagickFreeMemory(windows->icon_pixel->pixels);
       if (windows->icon_pixel->annotate_context != (GC) NULL)
-        XFreeGC(windows->display,windows->icon_pixel->annotate_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->icon_pixel->annotate_context); /* Allocated by XCreateGC */
       if (windows->icon_pixel->widget_context != (GC) NULL)
-        XFreeGC(windows->display,windows->icon_pixel->widget_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->icon_pixel->widget_context); /* Allocated by XCreateGC */
       if (windows->icon_pixel->highlight_context != (GC) NULL)
-        XFreeGC(windows->display,windows->icon_pixel->highlight_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->icon_pixel->highlight_context); /* Allocated by XCreateGC */
       MagickFreeMemory(windows->icon_pixel);
     }
 
@@ -269,67 +285,67 @@ MagickExport void XDestroyXWindows(XWindows *windows)
     {
       MagickFreeMemory(windows->pixel_info->pixels);
       if (windows->pixel_info->annotate_context != (GC) NULL)
-        XFreeGC(windows->display,windows->pixel_info->annotate_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->pixel_info->annotate_context); /* Allocated by XCreateGC */
       if (windows->pixel_info->widget_context != (GC) NULL)
-        XFreeGC(windows->display,windows->pixel_info->widget_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->pixel_info->widget_context); /* Allocated by XCreateGC */
       if (windows->pixel_info->highlight_context != (GC) NULL)
-        XFreeGC(windows->display,windows->pixel_info->highlight_context); /* Allocated by XCreateGC */
+        (void) XFreeGC(windows->display,windows->pixel_info->highlight_context); /* Allocated by XCreateGC */
       MagickFreeMemory(windows->pixel_info);
     }
 
   if (windows->font_info != (XFontStruct *) NULL)
     {
-      XFreeFont(windows->display,windows->font_info); /* Allocated by XLoadQueryFont */
+      (void) XFreeFont(windows->display,windows->font_info); /* Allocated by XLoadQueryFont */
       windows->font_info=(XFontStruct *) NULL;
     }
 
   if (windows->class_hints != (XClassHint *) NULL)
     {
-      XFree(windows->class_hints); /* Allocated by XAllocClassHint */
+      (void) XFree(windows->class_hints); /* Allocated by XAllocClassHint */
       windows->class_hints=(XClassHint *) NULL;
     }
 
   if (windows->manager_hints != (XWMHints *) NULL)
     {
-      XFree(windows->manager_hints); /* Allocated by XAllocWMHints */
+      (void) XFree(windows->manager_hints); /* Allocated by XAllocWMHints */
       windows->manager_hints=(XWMHints *) NULL;
     }
 
   if (windows->map_info != (XStandardColormap *) NULL)
     {
-      XFree(windows->map_info); /* Allocated by XAllocStandardColormap */
+      (void) XFree(windows->map_info); /* Allocated by XAllocStandardColormap */
       windows->map_info=(XStandardColormap *) NULL;
     }
 
   if(windows->icon_map != (XStandardColormap *) NULL)
     {
-      XFree(windows->icon_map); /* Allocated by XAllocStandardColormap */
+      (void) XFree(windows->icon_map); /* Allocated by XAllocStandardColormap */
       windows->icon_map=(XStandardColormap *) NULL;
     }
 
   if (windows->visual_info != (XVisualInfo *) NULL)
     {
-      XFree(windows->visual_info); /* Allocated by XGetVisualInfo */
+      (void) XFree(windows->visual_info); /* Allocated by XGetVisualInfo */
       windows->visual_info=(XVisualInfo *) NULL;
     }
 
   if (windows->icon_visual != (XVisualInfo *) NULL)
     {
-      XFree(windows->icon_visual); /* Allocated by XGetVisualInfo */
+      (void) XFree(windows->icon_visual); /* Allocated by XGetVisualInfo */
       windows->icon_visual=(XVisualInfo *) NULL;
     }
 
-  XDestroyXWindowInfo(windows->display,&windows->context);
-  XDestroyXWindowInfo(windows->display,&windows->backdrop);
-  XDestroyXWindowInfo(windows->display,&windows->icon);
-  XDestroyXWindowInfo(windows->display,&windows->image);
-  XDestroyXWindowInfo(windows->display,&windows->info);
-  XDestroyXWindowInfo(windows->display,&windows->magnify);
-  XDestroyXWindowInfo(windows->display,&windows->pan);
-  XDestroyXWindowInfo(windows->display,&windows->command);
-  XDestroyXWindowInfo(windows->display,&windows->widget);
-  XDestroyXWindowInfo(windows->display,&windows->popup);
-  XDestroyXWindowInfo(windows->display,&windows->group_leader);
+  MagickXDestroyXWindowInfo(windows->display,&windows->context);
+  MagickXDestroyXWindowInfo(windows->display,&windows->backdrop);
+  MagickXDestroyXWindowInfo(windows->display,&windows->icon);
+  MagickXDestroyXWindowInfo(windows->display,&windows->image);
+  MagickXDestroyXWindowInfo(windows->display,&windows->info);
+  MagickXDestroyXWindowInfo(windows->display,&windows->magnify);
+  MagickXDestroyXWindowInfo(windows->display,&windows->pan);
+  MagickXDestroyXWindowInfo(windows->display,&windows->command);
+  MagickXDestroyXWindowInfo(windows->display,&windows->widget);
+  MagickXDestroyXWindowInfo(windows->display,&windows->popup);
+  MagickXDestroyXWindowInfo(windows->display,&windows->group_leader);
   windows->display=(Display *) NULL;
 }
 
@@ -338,26 +354,29 @@ MagickExport void XDestroyXWindows(XWindows *windows)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   XD e s t r o y X W i n d o w I n f o                                      %
+%   M a g i c k X D e s t r o y X W i n d o w I n f o                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  XDestroyXWindowInfo() destroys existing allocations in an XWindowInfo
-%  structure. The XWindowInfo structure itself is not freed.
+%  MagickXDestroyXWindowInfo() destroys existing allocations in an
+%  MagickXWindowInfo structure. The MagickXWindowInfo structure itself is
+%  not freed.
 %
-%  The format of the XDestroyXWindowInfo method is:
+%  The format of the MagickXDestroyXWindowInfo method is:
 %
-%      void XDestroyXWindowInfo(Display *display,XWindowInfo *window)
+%      void MagickXDestroyXWindowInfo(Display *display,
+%                                     MagickXWindowInfo *window)
 %
 %  A description of each parameter follows:
 %
 %    o display: Pointer to an X11 Display structure
 %
-%    o window: Pointer to XWindowInfo structure to destroy.
+%    o window: Pointer to MagickXWindowInfo structure to destroy.
 */
-MagickExport void XDestroyXWindowInfo(Display *display,XWindowInfo *window)
+MagickExport void 
+MagickXDestroyXWindowInfo(Display *display,MagickXWindowInfo *window)
 {
   if (window->mapped != False)
     {
@@ -435,8 +454,8 @@ MagickExport void XDestroyXWindowInfo(Display *display,XWindowInfo *window)
           if (segment_info[0].shmid >= 0)
             {
               if (segment_info[0].shmaddr != NULL)
-                (void) GmShmDt(segment_info[0].shmaddr);
-              (void) GmShmCtl(segment_info[0].shmid,IPC_RMID,0);
+                (void) MagickShmDt(segment_info[0].shmaddr);
+              (void) MagickShmCtl(segment_info[0].shmid,IPC_RMID,0);
               segment_info[0].shmaddr=NULL;
               segment_info[0].shmid=(-1);
             }
@@ -452,17 +471,18 @@ MagickExport void XDestroyXWindowInfo(Display *display,XWindowInfo *window)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   I s T r u e                                                               %
+%   M a g i c k I s T r u e                                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method IsTrue returns True if the reason is "true", "on", "yes" or "1".
+%  Method MagickIsTrue returns True if the reason is "true", "on", "yes"
+%  or "1".
 %
-%  The format of the IsTrue method is:
+%  The format of the MagickIsTrue method is:
 %
-%      unsigned int IsTrue(const char *reason)
+%      unsigned int MagickIsTrue(const char *reason)
 %
 %  A description of each parameter follows:
 %
@@ -472,7 +492,8 @@ MagickExport void XDestroyXWindowInfo(Display *display,XWindowInfo *window)
 %
 %
 */
-MagickExport unsigned int IsTrue(const char *reason)
+MagickExport unsigned int 
+MagickIsTrue(const char *reason)
 {
   if (reason == (char *) NULL)
     return(False);
@@ -492,39 +513,43 @@ MagickExport unsigned int IsTrue(const char *reason)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X A n n o t a t e I m a g e                                               %
+%   M a g i c k X A n n o t a t e I m a g e                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XAnnotateImage annotates the image with text.
+%  Method MagickXAnnotateImage annotates the image with text.
 %
-%  The format of the XAnnotateImage method is:
+%  The format of the MagickXAnnotateImage method is:
 %
-%      unsigned int XAnnotateImage(Display *display,
-%        const XPixelInfo *pixel,XAnnotateInfo *annotate_info,Image *image)
+%      unsigned int MagickXAnnotateImage(Display *display,
+%        const MagickXPixelInfo *pixel,MagickXAnnotateInfo *annotate_info,
+%        Image *image)
 %
 %  A description of each parameter follows:
 %
-%    o status: Method XAnnotateImage returns True if the image is
+%    o status: Method MagickXAnnotateImage returns True if the image is
 %      successfully annotated with text.  False is returned is there is a
 %      memory shortage.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
-%    o annotate_info: Specifies a pointer to a XAnnotateInfo structure.
+%    o annotate_info: Specifies a pointer to a MagickXAnnotateInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
 %
 %
 */
-MagickExport unsigned int XAnnotateImage(Display *display,
-  const XPixelInfo *pixel,XAnnotateInfo *annotate_info,Image *image)
+MagickExport unsigned int 
+MagickXAnnotateImage(Display *display,
+		     const MagickXPixelInfo *pixel,
+		     MagickXAnnotateInfo *annotate_info,
+		     Image *image)
 {
   GC
     annotate_context;
@@ -561,8 +586,8 @@ MagickExport unsigned int XAnnotateImage(Display *display,
     Initialize annotated image.
   */
   assert(display != (Display *) NULL);
-  assert(pixel != (XPixelInfo *) NULL);
-  assert(annotate_info != (XAnnotateInfo *) NULL);
+  assert(pixel != (MagickXPixelInfo *) NULL);
+  assert(annotate_info != (MagickXAnnotateInfo *) NULL);
   assert(image != (Image *) NULL);
   /*
     Initialize annotated pixmap.
@@ -614,7 +639,8 @@ MagickExport unsigned int XAnnotateImage(Display *display,
   x=0;
   y=0;
   (void) XParseGeometry(annotate_info->geometry,&x,&y,&width,&height);
-  annotate_image->background_color=GetOnePixel(image,x,y);
+  (void) AcquireOnePixelByReference(image,&annotate_image->background_color,
+				    x,y,&image->exception);
   annotate_image->matte=annotate_info->stencil == ForegroundStencil;
   for (y=0; y < (long) annotate_image->rows; y++)
   {
@@ -748,36 +774,37 @@ MagickExport unsigned int XAnnotateImage(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X B e s t F o n t                                                         %
+%   M a g i c k X B e s t F o n t                                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XBestFont returns the "best" font.  "Best" is defined as a font
+%  Method MagickXBestFont returns the "best" font.  "Best" is defined as a font
 %  specified in the X resource database or a font such that the text width
 %  displayed with the font does not exceed the specified maximum width.
 %
-%  The format of the XBestFont method is:
+%  The format of the MagickXBestFont method is:
 %
-%      XFontStruct *XBestFont(Display *display,
-%        const XResourceInfo *resource_info,const unsigned int text_font)
+%      XFontStruct *MagickXBestFont(Display *display,
+%        const MagickXResourceInfo *resource_info,const unsigned int text_font)
 %
 %  A description of each parameter follows:
 %
-%    o font: XBestFont returns a pointer to a XFontStruct structure.
+%    o font: MagickXBestFont returns a pointer to a XFontStruct structure.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %    o text_font:  True is font should be mono-spaced (typewriter style).
 %
 %
 */
-
-static char **FontToList(char *font)
+static char **
+MagickFontToList(char *font)
 {
   char
     **fontlist;
@@ -801,7 +828,7 @@ static char **FontToList(char *font)
   for (p=font; *p != '\0'; p++)
     if ((*p == ':') || (*p == ';') || (*p == ','))
       fonts++;
-  fontlist=MagickAllocateMemory(char **,(fonts+1)*sizeof(char *));
+  fontlist=MagickAllocateArray(char **,(fonts+1),sizeof(char *));
   if (fontlist == (char **) NULL)
     {
       MagickError3(ResourceLimitError,MemoryAllocationFailed,
@@ -814,23 +841,24 @@ static char **FontToList(char *font)
     for (q=p; *q != '\0'; q++)
       if ((*q == ':') || (*q == ';') || (*q == ','))
         break;
-    fontlist[i]=MagickAllocateMemory(char *,q-p+1);
+    fontlist[i]=MagickAllocateMemory(char *,(size_t) (q-p+1));
     if (fontlist[i] == (char *) NULL)
       {
         MagickError3(ResourceLimitError,MemoryAllocationFailed,
           UnableToConvertFont);
         return((char **) NULL);
       }
-    (void) strncpy(fontlist[i],p,q-p);
-    fontlist[i][q-p]='\0';
+    (void) strlcpy(fontlist[i],p,q-p+1);
     p=q+1;
   }
   fontlist[i]=(char *) NULL;
   return(fontlist);
 }
 
-MagickExport XFontStruct *XBestFont(Display *display,
-  const XResourceInfo *resource_info,const unsigned int text_font)
+MagickExport XFontStruct *
+MagickXBestFont(Display *display,
+		const MagickXResourceInfo *resource_info,
+		const unsigned int text_font)
 {
   static const char
     *Fonts[]=
@@ -874,7 +902,7 @@ MagickExport XFontStruct *XBestFont(Display *display,
       /*
         Load preferred font specified in the X resource database.
       */
-      fontlist=FontToList(font_name);
+      fontlist=MagickFontToList(font_name);
       if (fontlist != (char **) NULL)
         {
           for (i=0; fontlist[i] != (char *) NULL; i++)
@@ -911,19 +939,21 @@ MagickExport XFontStruct *XBestFont(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X B e s t I c o n S i z e                                                 %
+%   M a g i c k X B e s t I c o n S i z e                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XBestIconSize returns the "best" icon size.  "Best" is defined as
-%  an icon size that maintains the aspect ratio of the image.  If the window
-%  manager has preferred icon sizes, one of the preferred sizes is used.
+%  Method MagickXBestIconSize returns the "best" icon size.  "Best" is
+%  defined as an icon size that maintains the aspect ratio of the image.
+%  If the window manager has preferred icon sizes, one of the preferred
+%  sizes is used.
 %
-%  The format of the XBestIconSize method is:
+%  The format of the MagickXBestIconSize method is:
 %
-%      void XBestIconSize(Display *display,XWindowInfo *window,Image *image)
+%      void MagickXBestIconSize(Display *display,MagickXWindowInfo *window,
+%                               Image *image)
 %
 %  A description of each parameter follows:
 %
@@ -935,7 +965,8 @@ MagickExport XFontStruct *XBestFont(Display *display,
 %
 %
 */
-MagickExport void XBestIconSize(Display *display,XWindowInfo *window,
+MagickExport void
+MagickXBestIconSize(Display *display,MagickXWindowInfo *window,
   Image *image)
 {
   double
@@ -962,7 +993,7 @@ MagickExport void XBestIconSize(Display *display,XWindowInfo *window,
     Determine if the window manager has specified preferred icon sizes.
   */
   assert(display != (Display *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   assert(image != (Image *) NULL);
   window->width=MaxIconSize;
   window->height=MaxIconSize;
@@ -1029,24 +1060,24 @@ MagickExport void XBestIconSize(Display *display,XWindowInfo *window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X B e s t P i x e l                                                       %
+%   M a g i c k X B e s t P i x e l                                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XBestPixel returns a pixel from an array of pixels that is closest
-%  to the requested color.  If the color array is NULL, the colors are obtained
-%  from the X server.
+%  Method MagickXBestPixel returns a pixel from an array of pixels that is
+%  closest to the requested color.  If the color array is NULL, the colors
+%  are obtained from the X server.
 %
-%  The format of the XBestPixel method is:
+%  The format of the MagickXBestPixel method is:
 %
-%      void XBestPixel(Display *display,const Colormap colormap,XColor *colors,
-%        unsigned int number_colors,XColor *color)
+%      void MagickXBestPixel(Display *display,const Colormap colormap,
+%        XColor *colors,unsigned int number_colors,XColor *color)
 %
 %  A description of each parameter follows:
 %
-%    o pixel: XBestPixel returns the pixel value closest to the requested
+%    o pixel: MagickXBestPixel returns the pixel value closest to the requested
 %      color.
 %
 %    o display: Specifies a connection to an X server;  returned from
@@ -1063,8 +1094,9 @@ MagickExport void XBestIconSize(Display *display,XWindowInfo *window,
 %
 %
 */
-MagickExport void XBestPixel(Display *display,const Colormap colormap,
-  XColor *colors,unsigned int number_colors,XColor *color)
+MagickExport void 
+MagickXBestPixel(Display *display,const Colormap colormap,
+		 XColor *colors,unsigned int number_colors,XColor *color)
 {
   double
     min_distance;
@@ -1097,7 +1129,7 @@ MagickExport void XBestPixel(Display *display,const Colormap colormap,
       /*
         Read X server colormap.
       */
-      colors=MagickAllocateMemory(XColor *,number_colors*sizeof(XColor));
+      colors=MagickAllocateArray(XColor *,number_colors,sizeof(XColor));
       if (colors == (XColor *) NULL)
         {
           MagickError3(ResourceLimitError,MemoryAllocationFailed,
@@ -1140,13 +1172,13 @@ MagickExport void XBestPixel(Display *display,const Colormap colormap,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X B e s t V i s u a l I n f o                                             %
+%   M a g i c k X B e s t V i s u a l I n f o                                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XBestVisualInfo returns visual information for a visual that is
+%  Method MagickXBestVisualInfo returns visual information for a visual that is
 %  the "best" the server supports.  "Best" is defined as:
 %
 %    1. Restrict the visual list to those supported by the default screen.
@@ -1161,15 +1193,15 @@ MagickExport void XBestPixel(Display *display,const Colormap colormap,
 %       simultaneous colors.  If more than one visual can display the same
 %       number of simultaneous colors, one is chosen based on a rank.
 %
-%  The format of the XBestVisualInfo method is:
+%  The format of the MagickXBestVisualInfo method is:
 %
-%      XVisualInfo *XBestVisualInfo(Display *display,
-%        XStandardColormap *map_info,XResourceInfo *resource_info)
+%      XVisualInfo *MagickXBestVisualInfo(Display *display,
+%        XStandardColormap *map_info,MagickXResourceInfo *resource_info)
 %
 %  A description of each parameter follows:
 %
-%    o visual_info: XBestVisualInfo returns a pointer to a X11 XVisualInfo
-%      structure.
+%    o visual_info: MagickXBestVisualInfo returns a pointer to a X11
+%      XVisualInfo structure.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
@@ -1177,18 +1209,21 @@ MagickExport void XBestPixel(Display *display,const Colormap colormap,
 %    o map_info: If map_type is specified, this structure is initialized
 %      with info from the Standard Colormap.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %
 */
 #define MaxStandardColormaps  7
-#define XVisualColormapSize(visual_info) Min( (int) (\
-  (visual_info->storage_class == TrueColor) || (visual_info->storage_class == DirectColor) ? \
-   visual_info->red_mask | visual_info->green_mask | visual_info->blue_mask : \
-   visual_info->colormap_size),1 << visual_info->depth)
+#define MagickXVisualColormapSize(visual_info) Min( (int) (\
+  ((visual_info->class == TrueColor) || (visual_info->class == DirectColor)) ? \
+    (int) (visual_info->red_mask | visual_info->green_mask | visual_info->blue_mask) : \
+    visual_info->colormap_size),(1 << visual_info->depth))
 
-MagickExport XVisualInfo *XBestVisualInfo(Display *display,
-  XStandardColormap *map_info,XResourceInfo *resource_info)
+MagickExport XVisualInfo *
+MagickXBestVisualInfo(Display *display,
+		      XStandardColormap *map_info,
+		      MagickXResourceInfo *resource_info)
 {
   char
     *map_type,
@@ -1215,7 +1250,7 @@ MagickExport XVisualInfo *XBestVisualInfo(Display *display,
   */
   assert(display != (Display *) NULL);
   assert(map_info != (XStandardColormap *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
   map_type=resource_info->map_type;
   visual_type=resource_info->visual_type;
   visual_mask=VisualScreenMask;
@@ -1232,37 +1267,37 @@ MagickExport XVisualInfo *XBestVisualInfo(Display *display,
       if (LocaleCompare("staticgray",visual_type) == 0)
         {
           visual_mask|=VisualClassMask;
-          visual_template.storage_class=StaticGray;
+          visual_template.class=StaticGray;
         }
       else
         if (LocaleCompare("grayscale",visual_type) == 0)
           {
             visual_mask|=VisualClassMask;
-            visual_template.storage_class=GrayScale;
+            visual_template.class=GrayScale;
           }
         else
           if (LocaleCompare("staticcolor",visual_type) == 0)
             {
               visual_mask|=VisualClassMask;
-              visual_template.storage_class=StaticColor;
+              visual_template.class=StaticColor;
             }
           else
             if (LocaleCompare("pseudocolor",visual_type) == 0)
               {
                 visual_mask|=VisualClassMask;
-                visual_template.storage_class=PseudoColor;
+                visual_template.class=PseudoColor;
               }
             else
               if (LocaleCompare("truecolor",visual_type) == 0)
                 {
                   visual_mask|=VisualClassMask;
-                  visual_template.storage_class=TrueColor;
+                  visual_template.class=TrueColor;
                 }
               else
                 if (LocaleCompare("directcolor",visual_type) == 0)
                   {
                     visual_mask|=VisualClassMask;
-                    visual_template.storage_class=DirectColor;
+                    visual_template.class=DirectColor;
                   }
                 else
                   if (LocaleCompare("default",visual_type) == 0)
@@ -1302,7 +1337,7 @@ MagickExport XVisualInfo *XBestVisualInfo(Display *display,
       if ((number_visuals == 0) || (visual_list == (XVisualInfo *) NULL))
         return((XVisualInfo *) NULL);
       MagickWarning(XServerWarning,UsingDefaultVisual,
-        XVisualClassName(visual_list->storage_class));
+        MagickXVisualClassName(visual_list->class));
     }
   resource_info->color_recovery=False;
   if ((map_info != (XStandardColormap *) NULL) && (map_type != (char *) NULL))
@@ -1429,11 +1464,11 @@ MagickExport XVisualInfo *XBestVisualInfo(Display *display,
       for (i=1; i < number_visuals; i++)
       {
         p++;
-        if (XVisualColormapSize(p) > XVisualColormapSize(visual_info))
+        if (MagickXVisualColormapSize(p) > MagickXVisualColormapSize(visual_info))
           visual_info=p;
         else
-          if (XVisualColormapSize(p) == XVisualColormapSize(visual_info))
-            if (rank[p->storage_class] > rank[visual_info->storage_class])
+          if (MagickXVisualColormapSize(p) == MagickXVisualColormapSize(visual_info))
+            if (rank[p->class] > rank[visual_info->class])
               visual_info=p;
       }
       visual_template.visualid=XVisualIDFromVisual(visual_info->visual);
@@ -1454,45 +1489,48 @@ MagickExport XVisualInfo *XBestVisualInfo(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X C h e c k R e f r e s h W i n d o w s                                   %
+%   M a g i c k X C h e c k R e f r e s h W i n d o w s                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XCheckRefreshWindows checks the X server for exposure events for
-%  a particular window and updates the area associated withe exposure event.
+%  Method MagickXCheckRefreshWindows checks the X server for exposure events
+%  for a particular window and updates the area associated with the exposure
+%  event.
 %
-%  The format of the XCheckRefreshWindows method is:
+%  The format of the MagickXCheckRefreshWindows method is:
 %
-%      void XCheckRefreshWindows(Display *display,XWindows *windows)
+%      void MagickXCheckRefreshWindows(Display *display,
+%                                      MagickXWindows *windows)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %
 */
-MagickExport void XCheckRefreshWindows(Display *display,XWindows *windows)
+MagickExport void 
+MagickXCheckRefreshWindows(Display *display,MagickXWindows *windows)
 {
   XEvent
     event;
 
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
-  XDelay(display,SuspendTime);
+  assert(windows != (MagickXWindows *) NULL);
+  MagickXDelay(display,SuspendTime);
   while (XCheckTypedWindowEvent(display,windows->command.id,Expose,&event))
-    (void) XCommandWidget(display,windows,(char const **) NULL,&event);
+    (void) MagickXCommandWidget(display,windows,(char const **) NULL,&event);
   while (XCheckTypedWindowEvent(display,windows->image.id,Expose,&event))
-    XRefreshWindow(display,&windows->image,&event);
-  XDelay(display,SuspendTime << 1);
+    MagickXRefreshWindow(display,&windows->image,&event);
+  MagickXDelay(display,SuspendTime << 1);
   while (XCheckTypedWindowEvent(display,windows->command.id,Expose,&event))
-    (void) XCommandWidget(display,windows,(char const **) NULL,&event);
+    (void) MagickXCommandWidget(display,windows,(char const **) NULL,&event);
   while (XCheckTypedWindowEvent(display,windows->image.id,Expose,&event))
-    XRefreshWindow(display,&windows->image,&event);
+    MagickXRefreshWindow(display,&windows->image,&event);
 }
 
 /*
@@ -1500,18 +1538,18 @@ MagickExport void XCheckRefreshWindows(Display *display,XWindows *windows)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X C l i e n t M e s s a g e                                               %
+%   M a g i c k X C l i e n t M e s s a g e                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XClientMessage sends a reason to a window with XSendEvent.  The
+%  Method MagickXClientMessage sends a reason to a window with XSendEvent.  The
 %  reason is initialized with a particular protocol type and atom.
 %
-%  The format of the XClientMessage function is:
+%  The format of the MagickXClientMessage function is:
 %
-%      XClientMessage(display,window,protocol,reason,timestamp)
+%      MagickXClientMessage(display,window,protocol,reason,timestamp)
 %
 %  A description of each parameter follows:
 %
@@ -1528,7 +1566,8 @@ MagickExport void XCheckRefreshWindows(Display *display,XWindows *windows)
 %
 %
 */
-MagickExport void XClientMessage(Display *display,const Window window,
+MagickExport void 
+MagickXClientMessage(Display *display,const Window window,
   const Atom protocol,const Atom reason,const Time timestamp)
 {
   XClientMessageEvent
@@ -1549,7 +1588,7 @@ MagickExport void XClientMessage(Display *display,const Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   X C l i e n t W i n d o w                                                 %
++   M a g i c k X C l i e n t W i n d o w                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
@@ -1576,7 +1615,8 @@ MagickExport void XClientMessage(Display *display,const Window window,
 %
 %
 */
-static Window XClientWindow(Display *display,Window target_window)
+static Window
+MagickXClientWindow(Display *display,Window target_window)
 {
   Atom
     state,
@@ -1605,7 +1645,7 @@ static Window XClientWindow(Display *display,Window target_window)
     (Atom) AnyPropertyType,&type,&format,&number_items,&after,&data);
   if ((status == Success) && (type != (Atom) NULL))
     return(target_window);
-  client_window=XWindowByProperty(display,target_window,state);
+  client_window=MagickXWindowByProperty(display,target_window,state);
   if (client_window == (Window) NULL)
     return(target_window);
   return(client_window);
@@ -1616,35 +1656,38 @@ static Window XClientWindow(Display *display,Window target_window)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X C o n f i g u r e I m a g e C o l o r m a p                             %
+%   M a g i c k X C o n f i g u r e I m a g e C o l o r m a p                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XConfigureImageColormap creates a new X colormap.
+%  Method MagickXConfigureImageColormap creates a new X colormap.
 %
-%  The format of the XConfigureImageColormap method is:
+%  The format of the MagickXConfigureImageColormap method is:
 %
-%      void XConfigureImageColormap(Display *display,
-%        XResourceInfo *resource_info,XWindows *windows,Image *image)
+%      void MagickXConfigureImageColormap(Display *display,
+%        MagickXResourceInfo *resource_info,MagickXWindows *windows,
+%        Image *image)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server; returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
 %
 %
 */
-MagickExport void XConfigureImageColormap(Display *display,
-  XResourceInfo *resource_info,XWindows *windows,Image *image)
+MagickExport void
+MagickXConfigureImageColormap(Display *display,
+			      MagickXResourceInfo *resource_info,
+			      MagickXWindows *windows,Image *image)
 {
   Colormap
     colormap;
@@ -1652,9 +1695,9 @@ MagickExport void XConfigureImageColormap(Display *display,
   /*
     Make standard colormap.
   */
-  XSetCursorState(display,windows,True);
-  XCheckRefreshWindows(display,windows);
-  XMakeStandardColormap(display,windows->visual_info,resource_info,image,
+  MagickXSetCursorState(display,windows,True);
+  MagickXCheckRefreshWindows(display,windows);
+  MagickXMakeStandardColormap(display,windows->visual_info,resource_info,image,
     windows->map_info,windows->pixel_info);
   colormap=windows->map_info->colormap;
   (void) XSetWindowColormap(display,windows->image.id,colormap);
@@ -1664,8 +1707,8 @@ MagickExport void XConfigureImageColormap(Display *display,
     (void) XSetWindowColormap(display,windows->magnify.id,colormap);
   if (windows->pan.mapped)
     (void) XSetWindowColormap(display,windows->pan.id,colormap);
-  XSetCursorState(display,windows,False);
-  XClientMessage(display,windows->image.id,windows->im_protocols,
+  MagickXSetCursorState(display,windows,False);
+  MagickXClientMessage(display,windows->image.id,windows->im_protocols,
     windows->im_update_colormap,CurrentTime);
 }
 
@@ -1674,36 +1717,38 @@ MagickExport void XConfigureImageColormap(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X C o n s t r a i n W i n d o w P o s i t i o n                           %
+%   M a g i c k X C o n s t r a i n W i n d o w P o s i t i o n               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XConstrainWindowPosition assures a window is positioned witin the
-%  X server boundaries.
+%  Method MagickXConstrainWindowPosition assures a window is positioned
+%  within the X server boundaries.
 %
-%  The format of the XConstrainWindowPosition method is:
+%  The format of the MagickXConstrainWindowPosition method is:
 %
-%      void XConstrainWindowPosition(Display *display,XWindowInfo *window_info)
+%      void MagickXConstrainWindowPosition(Display *display,
+%                                          MagickXWindowInfo *window_info)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
 %
-%    o window_info: Specifies a pointer to a XWindowInfo structure.
+%    o window_info: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %
 */
-MagickExport void XConstrainWindowPosition(Display *display,
-  XWindowInfo *window_info)
+MagickExport void
+MagickXConstrainWindowPosition(Display *display,
+			       MagickXWindowInfo *window_info)
 {
   unsigned int
     limit;
 
   assert(display != (Display *) NULL);
-  assert(window_info != (XWindowInfo *) NULL);
+  assert(window_info != (MagickXWindowInfo *) NULL);
   limit=XDisplayWidth(display,window_info->screen)-window_info->width;
   if (window_info->x < 0)
     window_info->x=0;
@@ -1723,18 +1768,18 @@ MagickExport void XConstrainWindowPosition(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D e l a y                                                               %
+%   M a g i c k X D e l a y                                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XDelay suspends program execution for the number of milliseconds
-%  specified.
+%  Method MagickXDelay suspends program execution for the number of
+%  milliseconds specified.
 %
 %  The format of the Delay method is:
 %
-%      void XDelay(Display *display,const unsigned long milliseconds)
+%      void MagickXDelay(Display *display,const unsigned long milliseconds)
 %
 %  A description of each parameter follows:
 %
@@ -1746,22 +1791,15 @@ MagickExport void XConstrainWindowPosition(Display *display,
 %
 %
 */
-MagickExport void XDelay(Display *display,const unsigned long milliseconds)
+MagickExport void
+MagickXDelay(Display *display,const unsigned long milliseconds)
 {
   assert(display != (Display *) NULL);
   (void) XFlush(display);
   if (milliseconds == 0)
     return;
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   Sleep(milliseconds);
-#elif defined(vms)
-  {
-    float
-      timer;
-
-    timer=milliseconds/1000.0;
-    lib$wait(&timer);
-  }
 #elif defined(HAVE_SELECT)
   {
     struct timeval
@@ -1783,26 +1821,27 @@ MagickExport void XDelay(Display *display,const unsigned long milliseconds)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D e s t r o y R e s o u r c e I n f o                                   %
+%   M a g i c k X D e s t r o y R e s o u r c e I n f o                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  XDestroyResourceInfo() frees memory associated with the XResourceInfo
-%  structure.
+%  MagickXDestroyResourceInfo() frees memory associated with the
+%  MagickXResourceInfo structure.
 %
-%  The format of the XDestroyResourceInfo method is:
+%  The format of the MagickXDestroyResourceInfo method is:
 %
-%      void XDestroyResourceInfo(XResourceInfo *resource_info)
+%      void MagickXDestroyResourceInfo(MagickXResourceInfo *resource_info)
 %
 %  A description of each parameter follows:
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
 %
 */
-MagickExport void XDestroyResourceInfo(XResourceInfo *resource_info)
+MagickExport void
+MagickXDestroyResourceInfo(MagickXResourceInfo *resource_info)
 {
   MagickFreeMemory(resource_info->image_geometry);
   if (resource_info->image_info != (ImageInfo *) NULL)
@@ -1817,7 +1856,7 @@ MagickExport void XDestroyResourceInfo(XResourceInfo *resource_info)
     }
   MagickFreeMemory(resource_info->client_name);
   MagickFreeMemory(resource_info->name);
-  memset((void *) resource_info,0,sizeof(XResourceInfo));
+  (void) memset((void *) resource_info,0,sizeof(MagickXResourceInfo));
 }
 
 /*
@@ -1825,18 +1864,18 @@ MagickExport void XDestroyResourceInfo(XResourceInfo *resource_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D e s t r o y W i n d o w C o l o r s                                   %
+%   M a g i c k X D e s t r o y W i n d o w C o l o r s                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XDestroyWindowColors frees X11 color resources previously saved on
-%  a window by XRetainWindowColors or programs like xsetroot.
+%  Method MagickXDestroyWindowColors frees X11 color resources previously
+%  saved on a window by MagickXRetainWindowColors or programs like xsetroot.
 %
-%  The format of the XDestroyWindowColors method is:
+%  The format of the MagickXDestroyWindowColors method is:
 %
-%      void XDestroyWindowColors(Display *display,Window window)
+%      void MagickXDestroyWindowColors(Display *display,Window window)
 %
 %  A description of each parameter follows:
 %
@@ -1847,7 +1886,8 @@ MagickExport void XDestroyResourceInfo(XResourceInfo *resource_info)
 %
 %
 */
-MagickExport void XDestroyWindowColors(Display *display,Window window)
+MagickExport void
+MagickXDestroyWindowColors(Display *display,Window window)
 {
   Atom
     property,
@@ -1892,28 +1932,29 @@ MagickExport void XDestroyWindowColors(Display *display,Window window)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D i s p l a y I m a g e I n f o                                         %
+%   M a g i c k X D i s p l a y I m a g e I n f o                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XDisplayImageInfo displays information about an X image.
+%  Method MagickXDisplayImageInfo displays information about an X image.
 %
-%  The format of the XDisplayImageInfo method is:
+%  The format of the MagickXDisplayImageInfo method is:
 %
-%      void XDisplayImageInfo(Display *display,
-%        const XResourceInfo *resource_info,XWindows *windows,Image *undo_image,
-%        Image *image)
+%      void MagickXDisplayImageInfo(Display *display,
+%        const MagickXResourceInfo *resource_info,MagickXWindows *windows,
+%        Image *undo_image,Image *image)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %    o undo_image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
@@ -1923,9 +1964,11 @@ MagickExport void XDestroyWindowColors(Display *display,Window window)
 %
 %
 */
-MagickExport void XDisplayImageInfo(Display *display,
-  const XResourceInfo *resource_info,XWindows *windows,Image *undo_image,
-  Image *image)
+MagickExport void
+MagickXDisplayImageInfo(Display *display,
+			const MagickXResourceInfo *resource_info,
+			MagickXWindows *windows,Image *undo_image,
+			Image *image)
 {
   char
     filename[MaxTextExtent],
@@ -1954,13 +1997,13 @@ MagickExport void XDisplayImageInfo(Display *display,
     Write info about the X server to a file.
   */
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   assert(image != (Image *) NULL);
   file=AcquireTemporaryFileStream(filename,TextFileIOMode);
   if (file == (FILE *) NULL)
     {
-      XNoticeWidget(display,windows,"Unable to create temporary file",
+      MagickXNoticeWidget(display,windows,"Unable to create temporary file",
         filename);
       return;
     }
@@ -1972,7 +2015,7 @@ MagickExport void XDisplayImageInfo(Display *display,
     Write info about the X image to a file.
   */
   (void) fprintf(file,"X\n  visual: %.1024s\n",
-    XVisualClassName(windows->image.storage_class));
+    MagickXVisualClassName(windows->image.storage_class));
   (void) fprintf(file,"  depth: %d\n",windows->image.ximage->depth);
   if (windows->visual_info->colormap_size != 0)
     (void) fprintf(file,"  colormap size: %d\n",
@@ -2019,13 +2062,13 @@ MagickExport void XDisplayImageInfo(Display *display,
   /*
     Write info about the image to a file.
   */
-  DescribeImage(image,file,True);
+  (void) DescribeImage(image,file,True);
   (void) fclose(file);
   text=(char *) FileToBlob(filename,&length,&image->exception);
-  LiberateTemporaryFile(filename);
+  (void) LiberateTemporaryFile(filename);
   if (text == (char *) NULL)
     {
-      XNoticeWidget(display,windows,"MemoryAllocationFailed",
+      MagickXNoticeWidget(display,windows,"MemoryAllocationFailed",
         "UnableToDisplayImageInfo");
       return;
     }
@@ -2040,7 +2083,7 @@ MagickExport void XDisplayImageInfo(Display *display,
       */
       (void) XWithdrawWindow(display,windows->info.id,windows->info.screen);
       FormatString(title,"Image Info: %.1024s",image->filename);
-      XTextViewWidget(display,resource_info,windows,True,title,
+      MagickXTextViewWidget(display,resource_info,windows,True,title,
         (char const **) textlist);
       for (i=0; textlist[i] != (char *) NULL; i++)
         MagickFreeMemory(textlist[i]);
@@ -2054,7 +2097,7 @@ MagickExport void XDisplayImageInfo(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+     X D i t h e r I m a g e                                                 %
++     M a g i c k X D i t h e r I m a g e                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
@@ -2079,7 +2122,7 @@ MagickExport void XDisplayImageInfo(Display *display,
 %
 %
 */
-static void XDitherImage(Image *image,XImage *ximage)
+static void MagickXDitherImage(Image *image,XImage *ximage)
 {
   static const short int
     dither_red[2][16]=
@@ -2135,10 +2178,10 @@ static void XDitherImage(Image *image,XImage *ximage)
   for (i=0; i < 2; i++)
     for (j=0; j < 16; j++)
     {
-      red_map[i][j]=MagickAllocateMemory(unsigned char *,256*sizeof(unsigned char));
-      green_map[i][j]=MagickAllocateMemory(unsigned char *,
-        256*sizeof(unsigned char));
-      blue_map[i][j]=MagickAllocateMemory(unsigned char *,256*sizeof(unsigned char));
+      red_map[i][j]=MagickAllocateArray(unsigned char *,256,sizeof(unsigned char));
+      green_map[i][j]=MagickAllocateArray(unsigned char *,
+					  256,sizeof(unsigned char));
+      blue_map[i][j]=MagickAllocateArray(unsigned char *,256,sizeof(unsigned char));
       if ((red_map[i][j] == (unsigned char *) NULL) ||
           (green_map[i][j] == (unsigned char *) NULL) ||
           (blue_map[i][j] == (unsigned char *) NULL))
@@ -2223,38 +2266,39 @@ static void XDitherImage(Image *image,XImage *ximage)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X D r a w I m a g e                                                       %
+%   M a g i c k X D r a w I m a g e                                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XDrawImage draws a line on the image.
+%  Method MagickXDrawImage draws a line on the image.
 %
-%  The format of the XDrawImage method is:
+%  The format of the MagickXDrawImage method is:
 %
-%    status=XDrawImage(display,pixel,draw_info,image)
+%    status=MagickXDrawImage(display,pixel,draw_info,image)
 %
 %  A description of each parameter follows:
 %
-%    o status: Method XDrawImage returns True if the image is
+%    o status: Method MagickXDrawImage returns True if the image is
 %      successfully drawd with text.  False is returned is there is a
 %      memory shortage.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
-%    o draw_info: Specifies a pointer to a XDrawInfo structure.
+%    o draw_info: Specifies a pointer to a MagickXDrawInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
 %
 %
 */
-MagickExport unsigned int XDrawImage(Display *display,const XPixelInfo *pixel,
-  XDrawInfo *draw_info,Image *image)
+MagickExport unsigned int
+MagickXDrawImage(Display *display,const MagickXPixelInfo *pixel,
+		 MagickXDrawInfo *draw_info,Image *image)
 {
   GC
     draw_context;
@@ -2291,8 +2335,8 @@ MagickExport unsigned int XDrawImage(Display *display,const XPixelInfo *pixel,
     Initialize drawd image.
   */
   assert(display != (Display *) NULL);
-  assert(pixel != (XPixelInfo *) NULL);
-  assert(draw_info != (XDrawInfo *) NULL);
+  assert(pixel != (MagickXPixelInfo *) NULL);
+  assert(draw_info != (MagickXDrawInfo *) NULL);
   assert(image != (Image *) NULL);
   /*
     Initialize drawd pixmap.
@@ -2423,8 +2467,8 @@ MagickExport unsigned int XDrawImage(Display *display,const XPixelInfo *pixel,
   x=0;
   y=0;
   (void) XParseGeometry(draw_info->geometry,&x,&y,&width,&height);
-  draw_image->background_color=GetOnePixel(image,x,y);
-  SetImageType(draw_image,TrueColorMatteType);
+  (void) AcquireOnePixelByReference(image,&draw_image->background_color,x,y,&image->exception);
+  (void) SetImageType(draw_image,TrueColorMatteType);
   for (y=0; y < (long) draw_image->rows; y++)
   {
     q=SetImagePixels(draw_image,0,y,draw_image->columns,1);
@@ -2570,20 +2614,20 @@ MagickExport unsigned int XDrawImage(Display *display,const XPixelInfo *pixel,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X E r r o r                                                               %
+%   M a g i c k X E r r o r                                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XError ignores BadWindow errors for XQueryTree and
+%  Method MagickXError ignores BadWindow errors for XQueryTree and
 %  XGetWindowAttributes, and ignores BadDrawable errors for XGetGeometry, and
 %  ignores BadValue errors for XQueryColor.  It returns False in those cases.
 %  Otherwise it returns True.
 %
-%  The format of the XError function is:
+%  The format of the MagickXError function is:
 %
-%      XError(display,error)
+%      MagickXError(display,error)
 %
 %  A description of each parameter follows:
 %
@@ -2599,7 +2643,8 @@ MagickExport unsigned int XDrawImage(Display *display,const XPixelInfo *pixel,
 extern "C" {
 #endif
 
-MagickExport int XError(Display *display,XErrorEvent *error)
+MagickExport int
+MagickXError(Display *display,XErrorEvent *error)
 {
   assert(display != (Display *) NULL);
   assert(error != (XErrorEvent *) NULL);
@@ -2638,20 +2683,20 @@ MagickExport int XError(Display *display,XErrorEvent *error)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X F r e e R e s o u r c e s                                               %
+%   M a g i c k X F r e e R e s o u r c e s                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XFreeResources frees X11 resources.
+%  Method MagickXFreeResources frees X11 resources.
 %
-%  The format of the XFreeResources method is:
+%  The format of the MagickXFreeResources method is:
 %
-%      void XFreeResources(Display *display,XVisualInfo *visual_info,
-%        XStandardColormap *map_info,XPixelInfo *pixel,XFontStruct *font_info,
-%        XResourceInfo *resource_info,XWindowInfo *window_info)
-%        resource_info,window_info)
+%      void MagickXFreeResources(Display *display,XVisualInfo *visual_info,
+%         XStandardColormap *map_info,MagickXPixelInfo *pixel,
+%         XFontStruct *font_info,MagickXResourceInfo *resource_info,
+%         MagickXWindowInfo *window_info)
 %
 %  A description of each parameter follows:
 %
@@ -2664,23 +2709,29 @@ MagickExport int XError(Display *display,XErrorEvent *error)
 %    o map_info: If map_type is specified, this structure is initialized
 %      with info from the Standard Colormap.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
 %    o font_info: Specifies a pointer to a XFontStruct structure.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %
 */
-MagickExport void XFreeResources(Display *display,XVisualInfo *visual_info,
-  XStandardColormap *map_info,XPixelInfo *pixel,XFontStruct *font_info,
-  XResourceInfo *resource_info,XWindowInfo *window_info)
+MagickExport void
+MagickXFreeResources(Display *display,
+		     XVisualInfo *visual_info,
+		     XStandardColormap *map_info,
+		     MagickXPixelInfo *pixel,
+		     XFontStruct *font_info,
+		     MagickXResourceInfo *resource_info,
+		     MagickXWindowInfo *window_info)
 {
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  if (window_info != (XWindowInfo *) NULL)
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  if (window_info != (MagickXWindowInfo *) NULL)
     {
       /*
         Free X image.
@@ -2718,7 +2769,7 @@ MagickExport void XFreeResources(Display *display,XVisualInfo *visual_info,
         Free X Standard Colormap.
       */
       if (resource_info->map_type == (char *) NULL)
-        (void) XFreeStandardColormap(display,visual_info,map_info,pixel);
+        (void) MagickXFreeStandardColormap(display,visual_info,map_info,pixel);
       (void) XFree((void *) map_info);
     }
   /*
@@ -2735,19 +2786,19 @@ MagickExport void XFreeResources(Display *display,XVisualInfo *visual_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X F r e e S t a n d a r d C o l o r m a p                                 %
+%   M a g i c k X F r e e S t a n d a r d C o l o r m a p                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XFreeStandardColormap frees an X11 colormap.
+%  Method MagickXFreeStandardColormap frees an X11 colormap.
 %
-%  The format of the XFreeStandardColormap method is:
+%  The format of the MagickXFreeStandardColormap method is:
 %
-%      void XFreeStandardColormap(Display *display,
+%      void MagickXFreeStandardColormap(Display *display,
 %        const XVisualInfo *visual_info,XStandardColormap *map_info,
-%        XPixelInfo *pixel)
+%        MagickXPixelInfo *pixel)
 %
 %  A description of each parameter follows:
 %
@@ -2760,12 +2811,15 @@ MagickExport void XFreeResources(Display *display,XVisualInfo *visual_info,
 %    o map_info: If map_type is specified, this structure is initialized
 %      with info from the Standard Colormap.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
 %
 */
-MagickExport void XFreeStandardColormap(Display *display,
-  const XVisualInfo *visual_info,XStandardColormap *map_info,XPixelInfo *pixel)
+MagickExport void
+MagickXFreeStandardColormap(Display *display,
+			    const XVisualInfo *visual_info,
+			    XStandardColormap *map_info,
+			    MagickXPixelInfo *pixel)
 {
   /*
     Free colormap.
@@ -2779,14 +2833,14 @@ MagickExport void XFreeStandardColormap(Display *display,
       if (map_info->colormap != XDefaultColormap(display,visual_info->screen))
         (void) XFreeColormap(display,map_info->colormap);
       else
-        if (pixel != (XPixelInfo *) NULL)
-          if ((visual_info->storage_class != TrueColor) &&
-              (visual_info->storage_class != DirectColor))
+        if (pixel != (MagickXPixelInfo *) NULL)
+          if ((visual_info->class != TrueColor) &&
+              (visual_info->class != DirectColor))
             (void) XFreeColors(display,map_info->colormap,pixel->pixels,
               (int) pixel->colors,0);
     }
   map_info->colormap=(Colormap) NULL;
-  if (pixel != (XPixelInfo *) NULL)
+  if (pixel != (MagickXPixelInfo *) NULL)
     {
       if (pixel->pixels != (unsigned long *) NULL)
         MagickFreeMemory(pixel->pixels);
@@ -2799,30 +2853,31 @@ MagickExport void XFreeStandardColormap(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t A n n o t a t e I n f o                                           %
+%   M a g i c k X G e t A n n o t a t e I n f o                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetAnnotateInfo initializes the AnnotateInfo structure.
+%  Method MagickXGetAnnotateInfo initializes the AnnotateInfo structure.
 %
-%  The format of the XGetAnnotateInfo method is:
+%  The format of the MagickXGetAnnotateInfo method is:
 %
-%      void XGetAnnotateInfo(XAnnotateInfo *annotate_info)
+%      void MagickXGetAnnotateInfo(MagickXAnnotateInfo *annotate_info)
 %
 %  A description of each parameter follows:
 %
-%    o annotate_info: Specifies a pointer to a XAnnotateInfo structure.
+%    o annotate_info: Specifies a pointer to a MagickXAnnotateInfo structure.
 %
 %
 */
-MagickExport void XGetAnnotateInfo(XAnnotateInfo *annotate_info)
+MagickExport void
+MagickXGetAnnotateInfo(MagickXAnnotateInfo *annotate_info)
 {
   /*
     Initialize annotate structure.
   */
-  assert(annotate_info != (XAnnotateInfo *) NULL);
+  assert(annotate_info != (MagickXAnnotateInfo *) NULL);
   annotate_info->x=0;
   annotate_info->y=0;
   annotate_info->width=0;
@@ -2832,8 +2887,8 @@ MagickExport void XGetAnnotateInfo(XAnnotateInfo *annotate_info)
   annotate_info->font_info=(XFontStruct *) NULL;
   annotate_info->text=(char *) NULL;
   *annotate_info->geometry='\0';
-  annotate_info->previous=(XAnnotateInfo *) NULL;
-  annotate_info->next=(XAnnotateInfo *) NULL;
+  annotate_info->previous=(MagickXAnnotateInfo *) NULL;
+  annotate_info->next=(MagickXAnnotateInfo *) NULL;
   (void) XSupportsLocale();
   (void) XSetLocaleModifiers("");
 }
@@ -2843,18 +2898,18 @@ MagickExport void XGetAnnotateInfo(XAnnotateInfo *annotate_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t M a p I n f o                                                     %
+%   M a g i c k X G e t M a p I n f o                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetMapInfo initializes the XStandardColormap structure.
+%  Method MagickXGetMapInfo initializes the XStandardColormap structure.
 %
 %  The format of the XStandardColormap method is:
 %
-%      void XGetMapInfo(const XVisualInfo *visual_info,const Colormap colormap,
-%        XStandardColormap *map_info)
+%      void MagickXGetMapInfo(const XVisualInfo *visual_info,
+%        const Colormap colormap,XStandardColormap *map_info)
 %
 %  A description of each parameter follows:
 %
@@ -2867,8 +2922,9 @@ MagickExport void XGetAnnotateInfo(XAnnotateInfo *annotate_info)
 %
 %
 */
-MagickExport void XGetMapInfo(const XVisualInfo *visual_info,
-  const Colormap colormap,XStandardColormap *map_info)
+MagickExport void
+MagickXGetMapInfo(const XVisualInfo *visual_info,
+		  const Colormap colormap,XStandardColormap *map_info)
 {
   /*
     Initialize map info.
@@ -2908,17 +2964,17 @@ MagickExport void XGetMapInfo(const XVisualInfo *visual_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t I m a g e I n f o                                                 %
+%   M a g i c k X G e t I m a g e I n f o                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetImportInfo initializes the XImportInfo structure.
+%  Method MagickXGetImportInfo initializes the MagickXImportInfo structure.
 %
-%  The format of the XGetImportInfo method is:
+%  The format of the MagickXGetImportInfo method is:
 %
-%      void XGetImportInfo(XImportInfo *ximage_info)
+%      void MagickXGetImportInfo(MagickXImportInfo *ximage_info)
 %
 %  A description of each parameter follows:
 %
@@ -2926,9 +2982,10 @@ MagickExport void XGetMapInfo(const XVisualInfo *visual_info,
 %
 %
 */
-MagickExport void XGetImportInfo(XImportInfo *ximage_info)
+MagickExport void
+MagickXGetImportInfo(MagickXImportInfo *ximage_info)
 {
-  assert(ximage_info != (XImportInfo *) NULL);
+  assert(ximage_info != (MagickXImportInfo *) NULL);
   ximage_info->frame=False;
   ximage_info->borders=False;
   ximage_info->screen=False;
@@ -2941,20 +2998,20 @@ MagickExport void XGetImportInfo(XImportInfo *ximage_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t P i x e l I n f o                                                 %
+%   M a g i c k X G e t P i x e l P a c k e t                                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetPixelPacket initializes the PixelPacket structure.
+%  Method MagickXGetPixelPacket initializes the PixelPacket structure.
 %
-%  The format of the XGetPixelPacket method is:
+%  The format of the MagickXGetPixelPacket method is:
 %
-%      void XGetPixelPacket(Display *display,const XVisualInfo *visual_info,
-%        const XStandardColormap *map_info,const XResourceInfo *resource_info,
-%        Image *image,XPixelInfo *pixel)
-%        pixel)
+%      void MagickXGetPixelPacket(Display *display,
+%        const XVisualInfo *visual_info,const XStandardColormap *map_info,
+%        const MagickXResourceInfo *resource_info,Image *image,
+%        MagickXPixelInfo *pixel)
 %
 %  A description of each parameter follows:
 %
@@ -2967,18 +3024,22 @@ MagickExport void XGetImportInfo(XImportInfo *ximage_info)
 %    o map_info: If map_type is specified, this structure is initialized
 %      with info from the Standard Colormap.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
 %
 */
-MagickExport void XGetPixelPacket(Display *display,
-  const XVisualInfo *visual_info,const XStandardColormap *map_info,
-  const XResourceInfo *resource_info,Image *image,XPixelInfo *pixel)
+MagickExport void
+MagickXGetPixelPacket(Display *display,
+		      const XVisualInfo *visual_info,
+		      const XStandardColormap *map_info,
+		      const MagickXResourceInfo *resource_info,
+		      Image *image,
+		      MagickXPixelInfo *pixel)
 {
   static const char
     *PenColors[MaxNumberPens]=
@@ -3014,8 +3075,8 @@ MagickExport void XGetPixelPacket(Display *display,
   assert(display != (Display *) NULL);
   assert(visual_info != (XVisualInfo *) NULL);
   assert(map_info != (XStandardColormap *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(pixel != (XPixelInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(pixel != (MagickXPixelInfo *) NULL);
   pixel->colors=0;
   if (image != (Image *) NULL)
     if (image->storage_class == PseudoClass)
@@ -3024,7 +3085,7 @@ MagickExport void XGetPixelPacket(Display *display,
   if (pixel->pixels != (unsigned long *) NULL)
     MagickFreeMemory(pixel->pixels);
   pixel->pixels=
-    MagickAllocateMemory(unsigned long *,packets*sizeof(unsigned long));
+    MagickAllocateArray(unsigned long *,packets,sizeof(unsigned long));
   if (pixel->pixels == (unsigned long *) NULL)
     MagickFatalError(ResourceLimitFatalError,MemoryAllocationFailed,
       MagickMsg(XServerFatalError,UnableToGetPixelInfo));
@@ -3040,7 +3101,7 @@ MagickExport void XGetPixelPacket(Display *display,
     MagickError(XServerError,ColorIsNotKnownToServer,
       resource_info->foreground_color);
   pixel->foreground_color.pixel=
-    XStandardPixel(map_info,&pixel->foreground_color);
+    MagickXStandardPixel(map_info,&pixel->foreground_color);
   pixel->foreground_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set background color.
@@ -3053,7 +3114,7 @@ MagickExport void XGetPixelPacket(Display *display,
     MagickError(XServerError,ColorIsNotKnownToServer,
       resource_info->background_color);
   pixel->background_color.pixel=
-    XStandardPixel(map_info,&pixel->background_color);
+    MagickXStandardPixel(map_info,&pixel->background_color);
   pixel->background_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set border color.
@@ -3065,7 +3126,7 @@ MagickExport void XGetPixelPacket(Display *display,
   if (status == 0)
     MagickError(XServerError,ColorIsNotKnownToServer,
       resource_info->border_color);
-  pixel->border_color.pixel=XStandardPixel(map_info,&pixel->border_color);
+  pixel->border_color.pixel=MagickXStandardPixel(map_info,&pixel->border_color);
   pixel->border_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set matte color.
@@ -3081,7 +3142,7 @@ MagickExport void XGetPixelPacket(Display *display,
       if (status == 0)
         MagickError(XServerError,ColorIsNotKnownToServer,
           resource_info->matte_color);
-      pixel->matte_color.pixel=XStandardPixel(map_info,&pixel->matte_color);
+      pixel->matte_color.pixel=MagickXStandardPixel(map_info,&pixel->matte_color);
       pixel->matte_color.flags=DoRed | DoGreen | DoBlue;
     }
   /*
@@ -3096,7 +3157,7 @@ MagickExport void XGetPixelPacket(Display *display,
   pixel->highlight_color.blue=(unsigned short) (((double)
      pixel->matte_color.blue*ScaleQuantumToShort(HighlightModulate))/65535L+
      (ScaleQuantumToShort((double) MaxRGB-HighlightModulate)));
-  pixel->highlight_color.pixel=XStandardPixel(map_info,&pixel->highlight_color);
+  pixel->highlight_color.pixel=MagickXStandardPixel(map_info,&pixel->highlight_color);
   pixel->highlight_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set shadow color.
@@ -3107,7 +3168,7 @@ MagickExport void XGetPixelPacket(Display *display,
     pixel->matte_color.green*ScaleQuantumToShort(ShadowModulate))/65535L);
   pixel->shadow_color.blue=(unsigned short) (((double)
     pixel->matte_color.blue*ScaleQuantumToShort(ShadowModulate))/65535L);
-  pixel->shadow_color.pixel=XStandardPixel(map_info,&pixel->shadow_color);
+  pixel->shadow_color.pixel=MagickXStandardPixel(map_info,&pixel->shadow_color);
   pixel->shadow_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set depth color.
@@ -3118,7 +3179,7 @@ MagickExport void XGetPixelPacket(Display *display,
     pixel->matte_color.green*ScaleQuantumToShort(DepthModulate))/65535L);
   pixel->depth_color.blue=(unsigned short) (((double)
     pixel->matte_color.blue*ScaleQuantumToShort(DepthModulate))/65535L);
-  pixel->depth_color.pixel=XStandardPixel(map_info,&pixel->depth_color);
+  pixel->depth_color.pixel=MagickXStandardPixel(map_info,&pixel->depth_color);
   pixel->depth_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set trough color.
@@ -3129,7 +3190,7 @@ MagickExport void XGetPixelPacket(Display *display,
     pixel->matte_color.green*ScaleQuantumToShort(TroughModulate))/65535L);
   pixel->trough_color.blue=(unsigned short) (((double)
     pixel->matte_color.blue*ScaleQuantumToShort(TroughModulate))/65535L);
-  pixel->trough_color.pixel=XStandardPixel(map_info,&pixel->trough_color);
+  pixel->trough_color.pixel=MagickXStandardPixel(map_info,&pixel->trough_color);
   pixel->trough_color.flags=DoRed | DoGreen | DoBlue;
   /*
     Set pen color.
@@ -3143,7 +3204,7 @@ MagickExport void XGetPixelPacket(Display *display,
     if (status == 0)
       MagickError(XServerError,ColorIsNotKnownToServer,
         resource_info->pen_colors[i]);
-    pixel->pen_colors[i].pixel=XStandardPixel(map_info,&pixel->pen_colors[i]);
+    pixel->pen_colors[i].pixel=MagickXStandardPixel(map_info,&pixel->pen_colors[i]);
     pixel->pen_colors[i].flags=DoRed | DoGreen | DoBlue;
   }
   pixel->box_color=pixel->background_color;
@@ -3178,7 +3239,7 @@ MagickExport void XGetPixelPacket(Display *display,
           */
           for (i=0; i < (long) image->colors; i++)
             pixel->pixels[i]=
-              XGammaPixel(map_info,image->colormap+i);
+              MagickXGammaPixel(map_info,image->colormap+i);
           for (i=0; i < MaxNumberPens; i++)
             pixel->pixels[image->colors+i]=pixel->pen_colors[i].pixel;
           pixel->colors+=MaxNumberPens;
@@ -3191,26 +3252,26 @@ MagickExport void XGetPixelPacket(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t R e s o u r c e C l a s s                                         %
+%   M a g i c k X G e t R e s o u r c e C l a s s                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetResourceClass queries the X server for the specified resource
-%  name or class.  If the resource name or class is not defined in the
-%  database, the supplied default value is returned.
+%  Method MagickXGetResourceClass queries the X server for the specified
+%  resource name or class.  If the resource name or class is not defined
+%  in the database, the supplied default value is returned.
 %
-%  The format of the XGetResourceClass method is:
+%  The format of the MagickXGetResourceClass method is:
 %
-%      char *XGetResourceClass(XrmDatabase database,const char *client_name,
-%        const char *keyword,char *resource_default)
+%      char *MagickXGetResourceClass(XrmDatabase database,
+%        const char *client_name,const char *keyword,char *resource_default)
 %
 %  A description of each parameter follows:
 %
-%    o value: Method XGetResourceClass returns the resource value associated
-%      with the name or class.  If none is found, the supplied default value is
-%      returned.
+%    o value: Method MagickXGetResourceClass returns the resource value
+%      associated with the name or class.  If none is found, the supplied
+%      default value is returned.
 %
 %    o database: Specifies a resource database; returned from
 %      XrmGetStringDatabase.
@@ -3225,8 +3286,10 @@ MagickExport void XGetPixelPacket(Display *display,
 %
 %
 */
-MagickExport char *XGetResourceClass(XrmDatabase database,
-  const char *client_name,const char *keyword,char *resource_default)
+MagickExport char *
+MagickXGetResourceClass(XrmDatabase database,
+			const char *client_name,const char *keyword,
+			char *resource_default)
 {
   char
     resource_class[MaxTextExtent],
@@ -3288,23 +3351,23 @@ MagickExport char *XGetResourceClass(XrmDatabase database,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t R e s o u r c e D a t a b a s e                                   %
+%   M a g i c k X G e t R e s o u r c e D a t a b a s e                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetResourceDatabase creates a new resource database and
+%  Method MagickXGetResourceDatabase creates a new resource database and
 %  initializes it.
 %
-%  The format of the XGetResourceDatabase method is:
+%  The format of the MagickXGetResourceDatabase method is:
 %
-%      XrmDatabase XGetResourceDatabase(Display *display,
+%      XrmDatabase MagickXGetResourceDatabase(Display *display,
 %        const char *client_name)
 %
 %  A description of each parameter follows:
 %
-%    o database: Method XGetResourceDatabase returns the database after
+%    o database: Method MagickXGetResourceDatabase returns the database after
 %      it is initialized.
 %
 %    o display: Specifies a connection to an X server;  returned from
@@ -3315,8 +3378,9 @@ MagickExport char *XGetResourceClass(XrmDatabase database,
 %
 %
 */
-MagickExport XrmDatabase XGetResourceDatabase(Display *display,
-  const char *client_name)
+MagickExport XrmDatabase
+MagickXGetResourceDatabase(Display *display,
+			   const char *client_name)
 {
   char
     filename[MaxTextExtent];
@@ -3391,18 +3455,18 @@ MagickExport XrmDatabase XGetResourceDatabase(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t R e s o u r c e I n f o                                           %
+%   M a g i c k X G e t R e s o u r c e I n f o                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetResourceInfo initializes the ResourceInfo structure.
+%  Method MagickXGetResourceInfo initializes the ResourceInfo structure.
 %
-%  The format of the XGetResourceInfo method is:
+%  The format of the MagickXGetResourceInfo method is:
 %
-%      void XGetResourceInfo(XrmDatabase database,char *client_name,
-%        XResourceInfo *resource_info)
+%      void MagickXGetResourceInfo(XrmDatabase database,char *client_name,
+%        MagickXResourceInfo *resource_info)
 %
 %  A description of each parameter follows:
 %
@@ -3412,12 +3476,14 @@ MagickExport XrmDatabase XGetResourceDatabase(Display *display,
 %    o client_name:  Specifies the application name used to retrieve
 %      resource info from the X server database.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %
 */
-MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
-  XResourceInfo *resource_info)
+MagickExport void
+MagickXGetResourceInfo(XrmDatabase database,const char *client_name,
+		       MagickXResourceInfo *resource_info)
 {
   char
     *resource_value;
@@ -3425,24 +3491,24 @@ MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
   /*
     Initialize resource info fields.
   */
-  assert(resource_info != (XResourceInfo *) NULL);
-  (void) memset(resource_info,0,sizeof(XResourceInfo));
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  (void) memset(resource_info,0,sizeof(MagickXResourceInfo));
   resource_info->resource_database=database;
   resource_info->image_info=CloneImageInfo((ImageInfo *) NULL);
   resource_info->quantize_info=CloneQuantizeInfo((QuantizeInfo *) NULL);
   resource_info->close_server=True;
   resource_info->client_name=AllocateString(client_name);
-  resource_value=XGetResourceClass(database,client_name,(char *) "backdrop",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "backdrop",
     (char *) "False");
-  resource_info->backdrop=IsTrue(resource_value);
-  resource_info->background_color=XGetResourceInstance(database,client_name,
+  resource_info->backdrop=MagickIsTrue(resource_value);
+  resource_info->background_color=MagickXGetResourceInstance(database,client_name,
     (char *) "background","#d6d6d6d6d6d6");
-  resource_info->border_color=XGetResourceInstance(database,client_name,
+  resource_info->border_color=MagickXGetResourceInstance(database,client_name,
     (char *) "borderColor",BorderColor);
-  resource_value=XGetResourceClass(database,client_name,(char *) "borderWidth",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "borderWidth",
     (char *) "2");
-  resource_info->border_width=atoi(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "colormap",
+  resource_info->border_width=MagickAtoI(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "colormap",
     (char *) "shared");
   resource_info->colormap=UndefinedColormap;
   if (LocaleCompare("private",resource_value) == 0)
@@ -3451,54 +3517,54 @@ MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
     resource_info->colormap=SharedColormap;
   if (resource_info->colormap == UndefinedColormap)
     MagickError(OptionError,UnrecognizedColormapType,resource_value);
-  resource_value=XGetResourceClass(database,client_name,
+  resource_value=MagickXGetResourceClass(database,client_name,
     (char *) "colorRecovery",(char *) "False");
-  resource_info->color_recovery=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "confirmExit",
+  resource_info->color_recovery=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "confirmExit",
     (char *) "False");
-  resource_info->confirm_exit=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "delay",
+  resource_info->confirm_exit=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "delay",
     (char *) "1");
-  resource_info->delay=atoi(resource_value);
-  resource_info->display_gamma=XGetResourceClass(database,client_name,
+  resource_info->delay=MagickAtoI(resource_value);
+  resource_info->display_gamma=MagickXGetResourceClass(database,client_name,
     (char *) "displayGamma",(char *) "2.2");
-  resource_value=XGetResourceClass(database,client_name,
+  resource_value=MagickXGetResourceClass(database,client_name,
     (char *) "displayWarnings",(char *) "True");
-  resource_info->display_warnings=IsTrue(resource_value);
-  resource_info->font=XGetResourceClass(database,client_name,(char *) "font",
+  resource_info->display_warnings=MagickIsTrue(resource_value);
+  resource_info->font=MagickXGetResourceClass(database,client_name,(char *) "font",
     (char *) "-*-helvetica-medium-r-normal--12-*-*-*-*-*-iso8859-1");
-  resource_info->font=XGetResourceClass(database,client_name,
+  resource_info->font=MagickXGetResourceClass(database,client_name,
     (char *) "fontList",resource_info->font);
-  resource_info->font_name[0]=XGetResourceClass(database,client_name,
+  resource_info->font_name[0]=MagickXGetResourceClass(database,client_name,
     (char *) "font1",(char *) "fixed");
-  resource_info->font_name[1]=XGetResourceClass(database,client_name,
+  resource_info->font_name[1]=MagickXGetResourceClass(database,client_name,
     (char *) "font2",(char *) "variable");
-  resource_info->font_name[2]=XGetResourceClass(database,client_name,
+  resource_info->font_name[2]=MagickXGetResourceClass(database,client_name,
     (char *) "font3",(char *) "5x8");
-  resource_info->font_name[3]=XGetResourceClass(database,client_name,
+  resource_info->font_name[3]=MagickXGetResourceClass(database,client_name,
     (char *) "font4",(char *) "6x10");
-  resource_info->font_name[4]=XGetResourceClass(database,client_name,
+  resource_info->font_name[4]=MagickXGetResourceClass(database,client_name,
     (char *) "font5",(char *) "7x13bold");
-  resource_info->font_name[5]=XGetResourceClass(database,client_name,
+  resource_info->font_name[5]=MagickXGetResourceClass(database,client_name,
     (char *) "font6",(char *) "8x13bold");
-  resource_info->font_name[6]=XGetResourceClass(database,client_name,
+  resource_info->font_name[6]=MagickXGetResourceClass(database,client_name,
     (char *) "font7",(char *) "9x15bold");
-  resource_info->font_name[7]=XGetResourceClass(database,client_name,
+  resource_info->font_name[7]=MagickXGetResourceClass(database,client_name,
     (char *) "font8",(char *) "10x20");
-  resource_info->font_name[8]=XGetResourceClass(database,client_name,
+  resource_info->font_name[8]=MagickXGetResourceClass(database,client_name,
     (char *) "font9",(char *) "12x24");
-  resource_info->font_name[9]=XGetResourceClass(database,client_name,
+  resource_info->font_name[9]=MagickXGetResourceClass(database,client_name,
     (char *) "font0",(char *) "fixed");
-  resource_info->font_name[10]=XGetResourceClass(database,client_name,
+  resource_info->font_name[10]=MagickXGetResourceClass(database,client_name,
     (char *) "font0",(char *) "fixed");
-  resource_info->foreground_color=XGetResourceInstance(database,client_name,
+  resource_info->foreground_color=MagickXGetResourceInstance(database,client_name,
     "foreground",ForegroundColor);
-  resource_value=XGetResourceClass(database,client_name,(char *) "gammaCorrect",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "gammaCorrect",
     (char *) "True");
-  resource_info->gamma_correct=IsTrue(resource_value);
-  resource_info->image_geometry=XGetResourceClass(database,client_name,
+  resource_info->gamma_correct=MagickIsTrue(resource_value);
+  resource_info->image_geometry=MagickXGetResourceClass(database,client_name,
     (char *) "geometry",(char *) NULL);
-  resource_value=XGetResourceClass(database,client_name,(char *) "gravity",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "gravity",
     (char *) "Center");
   resource_info->gravity=(-1);
   if (LocaleCompare("Forget",resource_value) == 0)
@@ -3529,77 +3595,77 @@ MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
       resource_info->gravity=CenterGravity;
     }
   (void) getcwd(resource_info->home_directory,MaxTextExtent-1);
-  resource_info->icon_geometry=XGetResourceClass(database,client_name,
+  resource_info->icon_geometry=MagickXGetResourceClass(database,client_name,
     (char *) "iconGeometry",(char *) NULL);
-  resource_value=XGetResourceClass(database,client_name,(char *) "iconic",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "iconic",
     (char *) "False");
-  resource_info->iconic=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "immutable",
+  resource_info->iconic=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "immutable",
     LocaleCompare(client_name,(char *) "PerlMagick") == 0 ? (char *) "True" :
     (char *) "False");
-  resource_info->immutable=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "magnify",
+  resource_info->immutable=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "magnify",
     (char *) "3");
-  resource_info->magnify=atoi(resource_value);
-  resource_info->map_type=XGetResourceClass(database,client_name,(char *) "map",
+  resource_info->magnify=MagickAtoI(resource_value);
+  resource_info->map_type=MagickXGetResourceClass(database,client_name,(char *) "map",
     (char *) NULL);
-  resource_info->matte_color=XGetResourceInstance(database,client_name,
+  resource_info->matte_color=MagickXGetResourceInstance(database,client_name,
     (char *) "mattecolor",(char *) NULL);
-  resource_info->name=XGetResourceClass(database,client_name,(char *) "name",
+  resource_info->name=MagickXGetResourceClass(database,client_name,(char *) "name",
     (char *) NULL);
-  resource_info->pen_colors[0]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[0]=MagickXGetResourceClass(database,client_name,
     (char *) "pen1",(char *) "black");
-  resource_info->pen_colors[1]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[1]=MagickXGetResourceClass(database,client_name,
     (char *) "pen2",(char *) "blue");
-  resource_info->pen_colors[2]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[2]=MagickXGetResourceClass(database,client_name,
     (char *) "pen3",(char *) "cyan");
-  resource_info->pen_colors[3]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[3]=MagickXGetResourceClass(database,client_name,
     (char *) "pen4",(char *) "green");
-  resource_info->pen_colors[4]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[4]=MagickXGetResourceClass(database,client_name,
     (char *) "pen5",(char *) "gray");
-  resource_info->pen_colors[5]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[5]=MagickXGetResourceClass(database,client_name,
     (char *) "pen6",(char *) "red");
-  resource_info->pen_colors[6]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[6]=MagickXGetResourceClass(database,client_name,
     (char *) "pen7",(char *) "magenta");
-  resource_info->pen_colors[7]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[7]=MagickXGetResourceClass(database,client_name,
     (char *) "pen8",(char *) "yellow");
-  resource_info->pen_colors[8]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[8]=MagickXGetResourceClass(database,client_name,
     (char *) "pen9",(char *) "white");
-  resource_info->pen_colors[9]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[9]=MagickXGetResourceClass(database,client_name,
     (char *) "pen0",(char *) "gray");
-  resource_info->pen_colors[10]=XGetResourceClass(database,client_name,
+  resource_info->pen_colors[10]=MagickXGetResourceClass(database,client_name,
     (char *) "pen0",(char *) "gray");
-  resource_value=XGetResourceClass(database,client_name,(char *) "pause",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "pause",
     (char *) "0");
-  resource_info->pause=atoi(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "quantum",
+  resource_info->pause=MagickAtoI(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "quantum",
     (char *) "1");
-  resource_info->quantum=atoi(resource_value);
-  resource_info->text_font=XGetResourceClass(database,client_name,(char *)
+  resource_info->quantum=MagickAtoI(resource_value);
+  resource_info->text_font=MagickXGetResourceClass(database,client_name,(char *)
     "font",(char *) "-*-fixed-medium-r-normal-*-12-*-*-*-*-*-iso8859-1");
-  resource_info->text_font=XGetResourceClass(database,client_name,
+  resource_info->text_font=MagickXGetResourceClass(database,client_name,
     (char *) "textFontList",resource_info->text_font);
-  resource_info->title=XGetResourceClass(database,client_name,(char *) "title",
+  resource_info->title=MagickXGetResourceClass(database,client_name,(char *) "title",
     (char *) NULL);
-  resource_value=XGetResourceClass(database,client_name,(char *) "undoCache",
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "undoCache",
     (char *) "16");
-  resource_info->undo_cache=atol(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "update",
+  resource_info->undo_cache=MagickAtoL(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "update",
     (char *) "False");
-  resource_info->update=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "usePixmap",
+  resource_info->update=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "usePixmap",
     (char *) "False");
-  resource_info->use_pixmap=IsTrue(resource_value);
-  resource_value=XGetResourceClass(database,client_name,(char *) "sharedMemory",
+  resource_info->use_pixmap=MagickIsTrue(resource_value);
+  resource_value=MagickXGetResourceClass(database,client_name,(char *) "sharedMemory",
     (char *) "True");
-  resource_info->use_shared_memory=IsTrue(resource_value);
-  resource_info->visual_type=XGetResourceClass(database,client_name,
+  resource_info->use_shared_memory=MagickIsTrue(resource_value);
+  resource_info->visual_type=MagickXGetResourceClass(database,client_name,
     (char *) "visual",(char *) NULL);
-  resource_info->window_group=XGetResourceClass(database,client_name,
+  resource_info->window_group=MagickXGetResourceClass(database,client_name,
     (char *) "windowGroup",(char *) NULL);
-  resource_info->window_id=XGetResourceClass(database,client_name,
+  resource_info->window_id=MagickXGetResourceClass(database,client_name,
     (char *) "window",(char *) NULL);
-  resource_info->write_filename=XGetResourceClass(database,client_name,
+  resource_info->write_filename=MagickXGetResourceClass(database,client_name,
     (char *) "writeFilename",(char *) NULL);
 }
 
@@ -3608,24 +3674,25 @@ MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t R e s o u r c e I n s t a n c e                                   %
+%   M a g i c k X G e t R e s o u r c e I n s t a n c e                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetResourceInstance queries the X server for the specified
+%  Method MagickXGetResourceInstance queries the X server for the specified
 %  resource name.  If the resource name is not defined in the database, the
 %  supplied default value is returned.
 %
-%  The format of the XGetResourceInstance method is:
+%  The format of the MagickXGetResourceInstance method is:
 %
-%      char *XGetResourceInstance(XrmDatabase database,const char *client_name,
-%        const char *keyword,const char *resource_default)
+%      char *MagickXGetResourceInstance(XrmDatabase database,
+%        const char *client_name,const char *keyword,
+%        const char *resource_default)
 %
 %  A description of each parameter follows:
 %
-%    o value: Method XGetResourceInstance returns the resource value
+%    o value: Method MagickXGetResourceInstance returns the resource value
 %      associated with the name or class.  If none is found, the supplied
 %      default value is returned.
 %
@@ -3642,8 +3709,11 @@ MagickExport void XGetResourceInfo(XrmDatabase database,char *client_name,
 %
 %
 */
-MagickExport char *XGetResourceInstance(XrmDatabase database,
-  const char *client_name,const char *keyword,const char *resource_default)
+MagickExport char *
+MagickXGetResourceInstance(XrmDatabase database,
+			   const char *client_name,
+			   const char *keyword,
+			   const char *resource_default)
 {
   char
     *resource_type,
@@ -3672,22 +3742,23 @@ MagickExport char *XGetResourceInstance(XrmDatabase database,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t S c r e e n D e n s i t y                                         %
+%   M a g i c k X G e t S c r e e n D e n s i t y                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetScreenDensity returns the density of the X server screen in
+%  Method MagickXGetScreenDensity returns the density of the X server screen in
 %  dots-per-inch.
 %
-%  The format of the XGetScreenDensity method is:
+%  The format of the MagickXGetScreenDensity method is:
 %
-%      char *XGetScreenDensity(Display *display)
+%      char *MagickXGetScreenDensity(Display *display)
 %
 %  A description of each parameter follows:
 %
-%    o density: Method XGetScreenDensity returns the density of the X screen
+%    o density: Method MagickXGetScreenDensity returns the density of the X
+%     screen
 %      in dots-per-inch.
 %
 %    o display: Specifies a connection to an X server;  returned from
@@ -3695,7 +3766,8 @@ MagickExport char *XGetResourceInstance(XrmDatabase database,
 %
 %
 */
-MagickExport char *XGetScreenDensity(Display *display)
+MagickExport char *
+MagickXGetScreenDensity(Display *display)
 {
   char
     density[MaxTextExtent];
@@ -3720,7 +3792,7 @@ MagickExport char *XGetScreenDensity(Display *display)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   X G e t S u b w i n d o w                                                 %
++   M a g i c k X G e t S u b w i n d o w                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
@@ -3751,7 +3823,8 @@ MagickExport char *XGetScreenDensity(Display *display)
 %
 %
 */
-static Window XGetSubwindow(Display *display,Window window,int x,int y)
+static Window
+MagickXGetSubwindow(Display *display,Window window,int x,int y)
 {
   Window
     source_window,
@@ -3790,37 +3863,37 @@ static Window XGetSubwindow(Display *display,Window window,int x,int y)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t W i n d o w C o l o r                                             %
+%   M a g i c k X G e t W i n d o w C o l o r                                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetWindowColor returns the color of a pixel interactively chosen
-%  from the X server.
+%  Method MagickXGetWindowColor returns the color of a pixel interactively
+%  chosen from the X server.
 %
-%  The format of the XGetWindowColor method is:
+%  The format of the MagickXGetWindowColor method is:
 %
-%      unsigned int XGetWindowColor(Display *display,XWindows *windows,
-%        char *name)
+%      unsigned int MagickXGetWindowColor(Display *display,
+%        MagickXWindows *windows,char *name)
 %
 %  A description of each parameter follows:
 %
-%    o status: Method XGetWindowColor returns True if the color is obtained
-%      from the X server.  False is returned if any errors occurs.
+%    o status: Method MagickXGetWindowColor returns True if the color is
+%      obtained from the X server.  False is returned if any errors occurs.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %    o name: The name of of the color if found in the X Color Database is
 %      returned in this character string.
 %
 %
 */
-MagickExport unsigned int XGetWindowColor(Display *display,XWindows *windows,
-  char *name)
+MagickExport unsigned int
+MagickXGetWindowColor(Display *display,MagickXWindows *windows,char *name)
 {
   int
     x,
@@ -3856,7 +3929,7 @@ MagickExport unsigned int XGetWindowColor(Display *display,XWindows *windows,
   assert(display != (Display *) NULL);
   assert(name != (char *) NULL);
   *name='\0';
-  target_window=XSelectWindow(display,&crop_info);
+  target_window=MagickXSelectWindow(display,&crop_info);
   root_window=XRootWindow(display,XDefaultScreen(display));
   client_window=target_window;
   if (target_window != root_window)
@@ -3870,7 +3943,7 @@ MagickExport unsigned int XGetWindowColor(Display *display,XWindows *windows,
       status=XGetGeometry(display,target_window,&root_window,&x,&x,&d,&d,&d,&d);
       if (status != 0)
         {
-          client_window=XClientWindow(display,target_window);
+          client_window=MagickXClientWindow(display,target_window);
           target_window=client_window;
         }
     }
@@ -3909,26 +3982,26 @@ MagickExport unsigned int XGetWindowColor(Display *display,XWindows *windows,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   X G e t W i n d o w I m a g e                                             %
++   M a g i c k X G e t W i n d o w I m a g e                                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetWindowImage reads an image from the target X window and returns
-%  it.  XGetWindowImage optionally descends the window hierarchy and overlays
-%  the target image with each child image in an optimized fashion.  Any child
-%  window that have the same visual, colormap, and are contained by its
-%  parent are exempted.
+%  Method MagickXGetWindowImage reads an image from the target X window and
+%  returns it.  MagickXGetWindowImage optionally descends the window
+%  hierarchy and overlays the target image with each child image in an
+%  optimized fashion.  Any child window that have the same visual, colormap,
+%  and are contained by its parent are exempted.
 %
-%  The format of the XGetWindowImage method is:
+%  The format of the MagickXGetWindowImage method is:
 %
-%      Image *XGetWindowImage(Display *display,const Window window,
+%      Image *MagickXGetWindowImage(Display *display,const Window window,
 %        const unsigned int borders,const unsigned int level)
 %
 %  A description of each parameter follows:
 %
-%    o image: Method XGetWindowImage returns a MIFF image if it can be
+%    o image: Method MagickXGetWindowImage returns a MIFF image if it can be
 %      successfully read from the X window.  A null image is returned if
 %      any errors occurs.
 %
@@ -3942,14 +4015,15 @@ MagickExport unsigned int XGetWindowColor(Display *display,XWindows *windows,
 %
 %    o level: Specifies an unsigned integer representing the level of
 %      decent in the window hierarchy.  This value must be zero or one on
-%      the initial call to XGetWindowImage.  A value of zero returns after
-%      one call.  A value of one causes the function to descend the window
-%      hierarchy and overlay the target image with each subwindow image.
+%      the initial call to MagickXGetWindowImage.  A value of zero returns
+%      after one call.  A value of one causes the function to descend the
+%      window hierarchy and overlay the target image with each subwindow image.
 %
 %
 */
-static Image *XGetWindowImage(Display *display,const Window window,
-  const unsigned int borders,const unsigned int level)
+static Image *
+MagickXGetWindowImage(Display *display,const Window window,
+		      const unsigned int borders,const unsigned int level)
 {
   typedef struct _ColormapInfo
   {
@@ -3983,7 +4057,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
   } WindowInfo;
 
   IndexPacket
-    index;
+    index_packet;
 
   int
     display_height,
@@ -4075,10 +4149,10 @@ static Image *XGetWindowImage(Display *display,const Window window,
       */
       max_windows+=1024;
       if (window_info == (WindowInfo *) NULL)
-        window_info=MagickAllocateMemory(WindowInfo *,
-          max_windows*sizeof(WindowInfo));
+        window_info=MagickAllocateArray(WindowInfo *,
+					max_windows,sizeof(WindowInfo));
       else
-        MagickReallocMemory(window_info,max_windows*sizeof(WindowInfo));
+        MagickReallocMemory(WindowInfo *,window_info,max_windows*sizeof(WindowInfo));
     }
   if (window_info == (WindowInfo *) NULL)
     {
@@ -4128,7 +4202,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
       if ((status == True) && (number_children != 0))
         {
           for (i=0; i < (int) number_children; i++)
-            (void) XGetWindowImage(display,children[i],False,level+1);
+            (void) MagickXGetWindowImage(display,children[i],False,level+1);
           (void) XFree((void *) children);
         }
     }
@@ -4229,15 +4303,15 @@ static Image *XGetWindowImage(Display *display,const Window window,
                 /*
                   Get the window colormap.
                 */
-                colors=MagickAllocateMemory(XColor *,number_colors*sizeof(XColor));
+                colors=MagickAllocateArray(XColor *,number_colors,sizeof(XColor));
                 if (colors == (XColor *) NULL)
                   {
                     XDestroyImage(ximage);
                     ximage=(XImage *) NULL;
                     return((Image *) NULL);
                   }
-                if ((window_info[id].visual->storage_class != DirectColor) &&
-                    (window_info[id].visual->storage_class != TrueColor))
+                if ((window_info[id].visual->class != DirectColor) &&
+                    (window_info[id].visual->class != TrueColor))
                   for (i=0; i < (int) number_colors; i++)
                   {
                     colors[i].pixel=i;
@@ -4308,8 +4382,8 @@ static Image *XGetWindowImage(Display *display,const Window window,
         /*
           Convert X image to MIFF format.
         */
-        if ((window_info[id].visual->storage_class != TrueColor) &&
-            (window_info[id].visual->storage_class != DirectColor))
+        if ((window_info[id].visual->class != TrueColor) &&
+            (window_info[id].visual->class != DirectColor))
           composite_image->storage_class=PseudoClass;
         composite_image->columns=ximage->width;
         composite_image->rows=ximage->height;
@@ -4320,7 +4394,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
           {
             register unsigned long
               color,
-              index;
+              colormap_index;
 
             unsigned long
               blue_mask,
@@ -4358,7 +4432,7 @@ static Image *XGetWindowImage(Display *display,const Window window,
               Convert X image to DirectClass packets.
             */
             if ((number_colors != 0) &&
-                (window_info[id].visual->storage_class == DirectColor))
+                (window_info[id].visual->class == DirectColor))
               for (y=0; y < (long) composite_image->rows; y++)
               {
                 q=SetImagePixels(composite_image,0,y,
@@ -4368,12 +4442,12 @@ static Image *XGetWindowImage(Display *display,const Window window,
                 for (x=0; x < (long) composite_image->columns; x++)
                 {
                   pixel=XGetPixel(ximage,x,y);
-                  index=(pixel >> red_shift) & red_mask;
-                  q->red=ScaleShortToQuantum(colors[index].red);
-                  index=(pixel >> green_shift) & green_mask;
-                  q->green=ScaleShortToQuantum(colors[index].green);
-                  index=(pixel >> blue_shift) & blue_mask;
-                  q->blue=ScaleShortToQuantum(colors[index].blue);
+                  colormap_index=(pixel >> red_shift) & red_mask;
+                  q->red=ScaleShortToQuantum(colors[colormap_index].red);
+                  colormap_index=(pixel >> green_shift) & green_mask;
+                  q->green=ScaleShortToQuantum(colors[colormap_index].green);
+                  colormap_index=(pixel >> blue_shift) & blue_mask;
+                  q->blue=ScaleShortToQuantum(colors[colormap_index].blue);
                   q++;
                 }
                 if (!SyncImagePixels(composite_image))
@@ -4431,12 +4505,12 @@ static Image *XGetWindowImage(Display *display,const Window window,
               q=SetImagePixels(composite_image,0,y,composite_image->columns,1);
               if (q == (PixelPacket *) NULL)
                 break;
-              indexes=GetIndexes(composite_image);
+              indexes=AccessMutableIndexes(composite_image);
               for (x=0; x < (long) composite_image->columns; x++)
               {
-                index=(IndexPacket) XGetPixel(ximage,x,y);
-                indexes[x]=index;
-                *q++=composite_image->colormap[index];
+                index_packet=(IndexPacket) XGetPixel(ximage,x,y);
+                indexes[x]=index_packet;
+                *q++=composite_image->colormap[index_packet];
               }
               if (!SyncImagePixels(composite_image))
                 break;
@@ -4501,20 +4575,20 @@ static Image *XGetWindowImage(Display *display,const Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X G e t W i n d o w I n f o                                               %
+%   M a g i c k X G e t W i n d o w I n f o                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XGetWindowInfo initializes the XWindowInfo structure.
+%  Method MagickXGetWindowInfo initializes the MagickXWindowInfo structure.
 %
-%  The format of the XGetWindowInfo method is:
+%  The format of the MagickXGetWindowInfo method is:
 %
-%      void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
-%        XStandardColormap *map_info,XPixelInfo *pixel,XFontStruct *font_info,
-%        XResourceInfo *resource_info,XWindowInfo *window)
-%        resource_info,window)
+%      void MagickXGetWindowInfo(Display *display,XVisualInfo *visual_info,
+%        XStandardColormap *map_info,MagickXPixelInfo *pixel,
+%        XFontStruct *font_info,MagickXResourceInfo *resource_info,
+%        MagickXWindowInfo *window)
 %
 %  A description of each parameter follows:
 %
@@ -4527,17 +4601,23 @@ static Image *XGetWindowImage(Display *display,const Window window,
 %    o map_info: If map_type is specified, this structure is initialized
 %      with info from the Standard Colormap.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
 %    o font_info: Specifies a pointer to a XFontStruct structure.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %
 */
-MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
-  XStandardColormap *map_info,XPixelInfo *pixel,XFontStruct *font_info,
-  XResourceInfo *resource_info,XWindowInfo *window)
+MagickExport void
+MagickXGetWindowInfo(Display *display,
+		     XVisualInfo *visual_info,
+		     XStandardColormap *map_info,
+		     MagickXPixelInfo *pixel,
+		     XFontStruct *font_info,
+		     MagickXResourceInfo *resource_info,
+		     MagickXWindowInfo *window)
 {
   /*
     Initialize window info.
@@ -4545,9 +4625,9 @@ MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
   assert(display != (Display *) NULL);
   assert(visual_info != (XVisualInfo *) NULL);
   assert(map_info != (XStandardColormap *) NULL);
-  assert(pixel != (XPixelInfo *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(pixel != (MagickXPixelInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   if (window->id != (Window) NULL)
     {
       (void) XFreeCursor(display,window->cursor);
@@ -4579,7 +4659,7 @@ MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
           *segment_info;
 
         if (window->segment_info == (void *) NULL)
-          window->segment_info=MagickAllocateMemory(void *,2*sizeof(XShmSegmentInfo));
+          window->segment_info=MagickAllocateArray(void *,2,sizeof(XShmSegmentInfo));
         segment_info=(XShmSegmentInfo *) window->segment_info;
         segment_info[0].shmid=(-1);
         segment_info[0].shmaddr=NULL;
@@ -4594,7 +4674,7 @@ MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
   window->screen=visual_info->screen;
   window->root=XRootWindow(display,visual_info->screen);
   window->visual=visual_info->visual;
-  window->storage_class=visual_info->storage_class;
+  window->storage_class=visual_info->class;
   window->depth=visual_info->depth;
   window->visual_info=visual_info;
   window->map_info=map_info;
@@ -4647,18 +4727,18 @@ MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X H i g h l i g h t E l l i p s e                                         %
+%   M a g i c k X H i g h l i g h t E l l i p s e                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XHighlightEllipse puts a border on the X server around a region
+%  Method MagickXHighlightEllipse puts a border on the X server around a region
 %  defined by highlight_info.
 %
-%  The format of the XHighlightEllipse method is:
+%  The format of the MagickXHighlightEllipse method is:
 %
-%      void XHighlightEllipse(Display *display,Window window,
+%      void MagickXHighlightEllipse(Display *display,Window window,
 %        GC annotate_context,const RectangleInfo *highlight_info)
 %
 %  A description of each parameter follows:
@@ -4675,8 +4755,10 @@ MagickExport void XGetWindowInfo(Display *display,XVisualInfo *visual_info,
 %
 %
 */
-MagickExport void XHighlightEllipse(Display *display,Window window,
-  GC annotate_context,const RectangleInfo *highlight_info)
+MagickExport void
+MagickXHighlightEllipse(Display *display,Window window,
+			GC annotate_context,
+			const RectangleInfo *highlight_info)
 {
   assert(display != (Display *) NULL);
   assert(window != (Window) NULL);
@@ -4697,19 +4779,19 @@ MagickExport void XHighlightEllipse(Display *display,Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X H i g h l i g h t L i n e                                               %
+%   M a g i c k X H i g h l i g h t L i n e                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XHighlightLine puts a border on the X server around a region
+%  Method MagickXHighlightLine puts a border on the X server around a region
 %  defined by highlight_info.
 %
-%  The format of the XHighlightLine method is:
+%  The format of the MagickXHighlightLine method is:
 %
-%      void XHighlightLine(Display *display,Window window,GC annotate_context,
-%        const XSegment *highlight_info)
+%      void MagickXHighlightLine(Display *display,Window window,
+%        GC annotate_context,const XSegment *highlight_info)
 %
 %  A description of each parameter follows:
 %
@@ -4725,8 +4807,9 @@ MagickExport void XHighlightEllipse(Display *display,Window window,
 %
 %
 */
-MagickExport void XHighlightLine(Display *display,Window window,
-  GC annotate_context,const XSegment *highlight_info)
+MagickExport void 
+MagickXHighlightLine(Display *display,Window window,
+		     GC annotate_context,const XSegment *highlight_info)
 {
   assert(display != (Display *) NULL);
   assert(window != (Window) NULL);
@@ -4741,18 +4824,18 @@ MagickExport void XHighlightLine(Display *display,Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X H i g h l i g h t R e c t a n g l e                                     %
+%   M a g i c k X H i g h l i g h t R e c t a n g l e                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XHighlightRectangle puts a border on the X server around a region
-%  defined by highlight_info.
+%  Method MagickXHighlightRectangle puts a border on the X server around a
+%  region defined by highlight_info.
 %
-%  The format of the XHighlightRectangle method is:
+%  The format of the MagickXHighlightRectangle method is:
 %
-%      void XHighlightRectangle(Display *display,Window window,
+%      void MagickXHighlightRectangle(Display *display,Window window,
 %        GC annotate_context,const RectangleInfo *highlight_info)
 %
 %  A description of each parameter follows:
@@ -4769,8 +4852,10 @@ MagickExport void XHighlightLine(Display *display,Window window,
 %
 %
 */
-MagickExport void XHighlightRectangle(Display *display,Window window,
-  GC annotate_context,const RectangleInfo *highlight_info)
+MagickExport void
+MagickXHighlightRectangle(Display *display,Window window,
+			  GC annotate_context,
+			  const RectangleInfo *highlight_info)
 {
   assert(display != (Display *) NULL);
   assert(window != (Window) NULL);
@@ -4791,28 +4876,30 @@ MagickExport void XHighlightRectangle(Display *display,Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X I m p o r t I m a g e                                                   %
+%   M a g i c k X I m p o r t I m a g e                                       %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Procedure XImportImage reads an image from an X window.
+%  Procedure MagickXImportImage reads an image from an X window.
 %
-%  The format of the XImportImage method is:
+%  The format of the MagickXImportImage method is:
 %
-%      Image *XImportImage(const ImageInfo *image_info,XImportInfo *ximage_info)
+%      Image *MagickXImportImage(const ImageInfo *image_info,
+%        MagickXImportInfo *ximage_info)
 %
 %  A description of each parameter follows:
 %
 %    o image_info: The image info..
 %
-%    o ximage_info: Specifies a pointer to an XImportInfo structure.
+%    o ximage_info: Specifies a pointer to an MagickXImportInfo structure.
 %
 %
 */
-MagickExport Image *XImportImage(const ImageInfo *image_info,
-  XImportInfo *ximage_info)
+MagickExport Image *
+MagickXImportImage(const ImageInfo *image_info,
+		   MagickXImportInfo *ximage_info)
 {
   Colormap
     *colormaps;
@@ -4846,7 +4933,7 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
     Open X server connection.
   */
   assert(image_info != (ImageInfo *) NULL);
-  assert(ximage_info != (XImportInfo *) NULL);
+  assert(ximage_info != (MagickXImportInfo *) NULL);
   display=XOpenDisplay(image_info->server_name);
   if (display == (Display *) NULL)
     {
@@ -4857,7 +4944,7 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
   /*
     Set our forgiving error handler.
   */
-  (void) XSetErrorHandler(XError);
+  (void) XSetErrorHandler(MagickXError);
   /*
     Select target window.
   */
@@ -4878,10 +4965,10 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
             Select window by ID or name.
           */
           if (isdigit((int) (*image_info->filename)))
-            target=XWindowByID(display,root,(Window)
+            target=MagickXWindowByID(display,root,(Window)
               strtol(image_info->filename,(char **) NULL,0));
           if (target == (Window) NULL)
-            target=XWindowByName(display,root,image_info->filename);
+            target=MagickXWindowByName(display,root,image_info->filename);
           if (target == (Window) NULL)
             MagickError(XServerError,NoWindowWithSpecifiedIDExists,
               image_info->filename);
@@ -4892,7 +4979,7 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
   */
   prior_target=target;
   if (target == (Window) NULL)
-    target=XSelectWindow(display,&crop_info);
+    target=MagickXSelectWindow(display,&crop_info);
   client=target;   /* obsolete */
   if (target != root)
     {
@@ -4920,13 +5007,13 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
           /*
             Get client window.
           */
-          client=XClientWindow(display,target);
+          client=MagickXClientWindow(display,target);
           if (!ximage_info->frame)
             target=client;
           if (!ximage_info->frame && prior_target)
             target=prior_target;
           (void) XRaiseWindow(display,target);
-          XDelay(display,SuspendTime << 4);
+          MagickXDelay(display,SuspendTime << 4);
         }
     }
   if (ximage_info->screen)
@@ -4994,14 +5081,14 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
     Get image by window id.
   */
   (void) XGrabServer(display);
-  image=XGetWindowImage(display,target,ximage_info->borders,
+  image=MagickXGetWindowImage(display,target,ximage_info->borders,
     ximage_info->descend ? 1 : 0);
   (void) XUngrabServer(display);
   if (image == (Image *) NULL)
     MagickError(XServerError,UnableToReadXWindowImage,image_info->filename);
   else
     {
-      (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+      (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
       if ((crop_info.width != 0) && (crop_info.height != 0))
         {
           Image
@@ -5031,8 +5118,8 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
               /*
                 Initialize image filename.
               */
-              (void) strncpy(image->filename,(char *) window_name.value,
-                (int) window_name.nitems);
+              (void) strlcpy(image->filename,(char *) window_name.value,
+                (int) window_name.nitems+1);
               image->filename[window_name.nitems]='\0';
             }
           (void) XFree((void *) window_name.value);
@@ -5055,60 +5142,63 @@ MagickExport Image *XImportImage(const ImageInfo *image_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X I n i t i a l i z e W i n d o w s                                       %
+%   M a g i c k X I n i t i a l i z e W i n d o w s                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XInitializeWindows initializes the XWindows structure.
+%  Method MagickXInitializeWindows initializes the MagickXWindows structure.
 %
-%  The format of the XInitializeWindows method is:
+%  The format of the MagickXInitializeWindows method is:
 %
-%      XWindows *XInitializeWindows(Display *display,
-%        XResourceInfo *resource_info)
+%      MagickXWindows *MagickXInitializeWindows(Display *display,
+%        MagickXResourceInfo *resource_info)
 %
 %  A description of each parameter follows:
 %
-%    o windows: XInitializeWindows returns a pointer to a XWindows structure.
+%    o windows: MagickXInitializeWindows returns a pointer to a
+%      MagickXWindows structure.
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 */
-MagickExport XWindows *XInitializeWindows(Display *display,
-  XResourceInfo *resource_info)
+MagickExport MagickXWindows *
+MagickXInitializeWindows(Display *display,
+			 MagickXResourceInfo *resource_info)
 {
   Window
     root_window;
 
-  XWindows
+  MagickXWindows
     *windows;
 
   /*
     Allocate windows structure.
   */
-  windows=MagickAllocateMemory(XWindows *,sizeof(XWindows));
-  if (windows == (XWindows *) NULL)
+  windows=MagickAllocateMemory(MagickXWindows *,sizeof(MagickXWindows));
+  if (windows == (MagickXWindows *) NULL)
     {
       MagickError3(ResourceLimitError,MemoryAllocationFailed,
         UnableToCreateXWindow);
-      return((XWindows *) NULL);
+      return((MagickXWindows *) NULL);
     }
-  (void) memset(windows,0,sizeof(XWindows));
-  windows->pixel_info=MagickAllocateMemory(XPixelInfo *,sizeof(XPixelInfo));
-  windows->icon_pixel=MagickAllocateMemory(XPixelInfo *,sizeof(XPixelInfo));
-  windows->icon_resources=MagickAllocateMemory(XResourceInfo *,
-    sizeof(XResourceInfo));
-  if ((windows->pixel_info == (XPixelInfo *) NULL) ||
-      (windows->icon_pixel == (XPixelInfo *) NULL) ||
-      (windows->icon_resources == (XResourceInfo *) NULL))
+  (void) memset(windows,0,sizeof(MagickXWindows));
+  windows->pixel_info=MagickAllocateMemory(MagickXPixelInfo *,sizeof(MagickXPixelInfo));
+  windows->icon_pixel=MagickAllocateMemory(MagickXPixelInfo *,sizeof(MagickXPixelInfo));
+  windows->icon_resources=MagickAllocateMemory(MagickXResourceInfo *,
+    sizeof(MagickXResourceInfo));
+  if ((windows->pixel_info == (MagickXPixelInfo *) NULL) ||
+      (windows->icon_pixel == (MagickXPixelInfo *) NULL) ||
+      (windows->icon_resources == (MagickXResourceInfo *) NULL))
     {
       MagickError3(ResourceLimitError,MemoryAllocationFailed,
         UnableToCreateXWindow);
-      return((XWindows *) NULL);
+      return((MagickXWindows *) NULL);
     }
   /*
     Initialize windows structure.
@@ -5127,7 +5217,7 @@ MagickExport XWindows *XInitializeWindows(Display *display,
   windows->im_retain_colors=XInternAtom(display,"IM_RETAIN_COLORS",False);
   windows->im_exit=XInternAtom(display,"IM_EXIT",False);
   windows->dnd_protocols=XInternAtom(display,"DndProtocol",False);
-#if defined(WIN32)
+#if defined(MSWINDOWS)
   (void) XSynchronize(display,IsWindows95());
 #endif
   if (IsEventLogging())
@@ -5172,13 +5262,13 @@ MagickExport XWindows *XInitializeWindows(Display *display,
       MagickMsg(XServerFatalError,UnableToCreateStandardColormap));
   windows->map_info->colormap=(Colormap) NULL;
   windows->icon_map->colormap=(Colormap) NULL;
-  memset((void *) windows->pixel_info, 0, sizeof(XPixelInfo));
+  (void) memset((void *) windows->pixel_info, 0, sizeof(MagickXPixelInfo));
   windows->pixel_info->pixels=(unsigned long *) NULL;
   windows->pixel_info->annotate_context=(GC) NULL;
   windows->pixel_info->highlight_context=(GC) NULL;
   windows->pixel_info->widget_context=(GC) NULL;
   windows->font_info=(XFontStruct *) NULL;
-  memset((void *) windows->icon_pixel, 0, sizeof(XPixelInfo));
+  (void) memset((void *) windows->icon_pixel, 0, sizeof(MagickXPixelInfo));
   windows->icon_pixel->annotate_context=(GC) NULL;
   windows->icon_pixel->pixels=(unsigned long *) NULL;
   windows->icon_pixel->highlight_context=(GC) NULL;
@@ -5190,9 +5280,9 @@ MagickExport XWindows *XInitializeWindows(Display *display,
   windows->icon_resources->visual_type=(char *) "default";
   windows->icon_resources->colormap=SharedColormap;
   windows->visual_info=
-    XBestVisualInfo(display,windows->map_info,resource_info);
+    MagickXBestVisualInfo(display,windows->map_info,resource_info);
   windows->icon_visual=
-    XBestVisualInfo(display,windows->icon_map,windows->icon_resources);
+    MagickXBestVisualInfo(display,windows->icon_map,windows->icon_resources);
   if ((windows->visual_info == (XVisualInfo *) NULL) ||
       (windows->icon_visual == (XVisualInfo *) NULL))
     MagickFatalError(XServerFatalError,UnableToGetVisual,
@@ -5203,7 +5293,7 @@ MagickExport XWindows *XInitializeWindows(Display *display,
       (void) LogMagickEvent(X11Event,GetMagickModule(),"  visual id: 0x%lx",
         windows->visual_info->visualid);
       (void) LogMagickEvent(X11Event,GetMagickModule(),"  class: %.1024s",
-        XVisualClassName(windows->visual_info->storage_class));
+        MagickXVisualClassName(windows->visual_info->class));
       (void) LogMagickEvent(X11Event,GetMagickModule(),"  depth: %d planes",
         windows->visual_info->depth);
       (void) LogMagickEvent(X11Event,GetMagickModule(),
@@ -5233,11 +5323,11 @@ MagickExport XWindows *XInitializeWindows(Display *display,
   if (resource_info->window_group != (char *) NULL)
     {
       if (isdigit((int) (*resource_info->window_group)))
-        windows->group_leader.id=XWindowByID(display,root_window,(Window)
+        windows->group_leader.id=MagickXWindowByID(display,root_window,(Window)
           strtol((char *) resource_info->window_group,(char **) NULL,0));
       if (windows->group_leader.id == (Window) NULL)
         windows->group_leader.id=
-          XWindowByName(display,root_window,resource_info->window_group);
+          MagickXWindowByName(display,root_window,resource_info->window_group);
     }
   return(windows);
 }
@@ -5247,18 +5337,18 @@ MagickExport XWindows *XInitializeWindows(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e C u r s o r                                                     %
+%   M a g i c k X M a k e C u r s o r                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeCursor creates a crosshairs X11 cursor.
+%  Method MagickXMakeCursor creates a crosshairs X11 cursor.
 %
-%  The format of the XMakeCursor method is:
+%  The format of the MagickXMakeCursor method is:
 %
-%      Cursor XMakeCursor(Display *display,Window window,Colormap colormap,
-%        char *background_color,char *foreground_color)
+%      Cursor MagickXMakeCursor(Display *display,Window window,
+%        Colormap colormap,char *background_color,char *foreground_color)
 %
 %  A description of each parameter follows:
 %
@@ -5277,8 +5367,10 @@ MagickExport XWindows *XInitializeWindows(Display *display,
 %
 %
 */
-MagickExport Cursor XMakeCursor(Display *display,Window window,
-  Colormap colormap,char *background_color,char *foreground_color)
+MagickExport Cursor
+MagickXMakeCursor(Display *display,Window window,
+		  Colormap colormap,char *background_color,
+		  char *foreground_color)
 {
 #define scope_height 17
 #define scope_x_hot 8
@@ -5342,32 +5434,33 @@ MagickExport Cursor XMakeCursor(Display *display,Window window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e I m a g e                                                       %
+%   M a g i c k X M a k e I m a g e                                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeImage creates an X11 image.  If the image size differs from
-%  the X11 image size, the image is first resized.
+%  Method MagickXMakeImage creates an X11 image.  If the image size differs
+%  from the X11 image size, the image is first resized.
 %
-%  The format of the XMakeImage method is:
+%  The format of the MagickXMakeImage method is:
 %
-%      unsigned int XMakeImage(Display *display,
-%        const XResourceInfo *resource_info,XWindowInfo *window,Image *image,
-%        unsigned int width,unsigned int height)
+%      unsigned int MagickXMakeImage(Display *display,
+%        const MagickXResourceInfo *resource_info,MagickXWindowInfo *window,
+%        Image *image,unsigned int width,unsigned int height)
 %
 %  A description of each parameter follows:
 %
-%    o status: Method XMakeImage returns True if the X image is
+%    o status: Method MagickXMakeImage returns True if the X image is
 %      successfully created.  False is returned is there is a memory shortage.
 %
 %    o display: Specifies a connection to an X server; returned from
 %      XOpenDisplay.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
@@ -5380,9 +5473,49 @@ MagickExport Cursor XMakeCursor(Display *display,Window window,
 %
 %
 */
-MagickExport unsigned int XMakeImage(Display *display,
-  const XResourceInfo *resource_info,XWindowInfo *window,Image *image,
-  unsigned int width,unsigned int height)
+static const char *
+MagickXImageFormatToString(int xformat)
+{
+  static const char
+    *formats[] = 
+    {
+      "XYBitmap",
+      "XYPixmap",
+      "ZPixmap"
+    };
+  
+  const char
+    *format = "Unknown";
+
+  if ((size_t) xformat < sizeof(formats)/sizeof(formats[0]))
+    format=formats[xformat];
+
+  return format;
+}
+static const char *
+MagickXByteOrderToString(int xbyte_order)
+{
+  static const char
+    *byte_orders[] =
+    {
+      "LSBFirst",
+      "MSBFirst"
+    };
+  
+  const char
+    *byte_order = "Unknown";
+
+  if ((size_t) xbyte_order < sizeof(byte_orders)/sizeof(byte_orders[0]))
+    byte_order=byte_orders[xbyte_order];
+
+  return byte_order;
+}
+MagickExport unsigned int
+MagickXMakeImage(Display *display,
+		 const MagickXResourceInfo *resource_info,
+		 MagickXWindowInfo *window,
+		 Image *image,
+		 unsigned int width,unsigned int height)
 {
   int
     depth,
@@ -5396,8 +5529,8 @@ MagickExport unsigned int XMakeImage(Display *display,
     *ximage;
 
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   assert(width != 0);
   assert(height != 0);
   if ((window->width == 0) || (window->height == 0))
@@ -5414,6 +5547,10 @@ MagickExport unsigned int XMakeImage(Display *display,
   window->destroy=False;
   if (window->image != (Image *) NULL)
     {
+      MonitorHandler
+	handler=(MonitorHandler) NULL;
+
+      handler=SetMonitorHandler((MonitorHandler) NULL);
       if (window->crop_geometry)
         {
           Image
@@ -5434,7 +5571,7 @@ MagickExport unsigned int XMakeImage(Display *display,
               if (window->image != image)
                 DestroyImage(window->image);
               window->image=crop_image;
-              window->destroy=True;
+              window->destroy=MagickTrue;
             }
         }
       if ((width != (unsigned int) window->image->columns) ||
@@ -5448,8 +5585,8 @@ MagickExport unsigned int XMakeImage(Display *display,
           */
           resize_image=(Image *) NULL;
           if ((window->pixel_info->colors != 0) ||
-              (window->image->rows > XDisplayHeight(display,window->screen)) ||
-              (window->image->columns > XDisplayWidth(display,window->screen)))
+              (window->image->rows > (unsigned long) XDisplayHeight(display,window->screen)) ||
+              (window->image->columns > (unsigned long) XDisplayWidth(display,window->screen)))
             resize_image=SampleImage(window->image,width,height,
               &image->exception);
           else
@@ -5460,11 +5597,52 @@ MagickExport unsigned int XMakeImage(Display *display,
               if (window->image != image)
                 DestroyImage(window->image);
               window->image=resize_image;
-              window->destroy=True;
+              window->destroy=MagickTrue;
             }
         }
+      if ((window->image->matte != MagickFalse) &&
+	  (window->pixel_info->colors == 0)
+	  /* && (window->immutable == MagickFalse) */)
+        {
+          Image
+            *texture;
+
+          /*
+            Tile background with texture according to opacity
+          */
+          strlcpy(resource_info->image_info->filename,"image:checkerboard",
+		  sizeof(resource_info->image_info->filename));
+          texture=ReadImage(resource_info->image_info,&window->image->exception);
+          if (texture != (Image *) NULL)
+            {
+              Image
+                *textured_image;
+
+              textured_image=CloneImage(window->image,0,0,MagickTrue,
+					&window->image->exception);
+              if (textured_image != (Image *) NULL)
+                {
+                  if (TextureImage(textured_image,texture) != MagickFail)
+		    {
+		      if (window->image != image)
+			DestroyImage(window->image);
+		      window->image=textured_image;
+		      window->destroy=MagickTrue;
+		    }
+		  else
+		    {
+		      DestroyImage(textured_image);
+		    }
+                }
+              DestroyImage(texture);
+              texture=(Image *) NULL;
+            }
+          }
       width=(unsigned int) window->image->columns;
+      assert(width == window->image->columns);
       height=(unsigned int) window->image->rows;
+      assert(height == window->image->rows);
+      (void) SetMonitorHandler(handler);
     }
   /*
     Create X image.
@@ -5472,27 +5650,32 @@ MagickExport unsigned int XMakeImage(Display *display,
   ximage=(XImage *) NULL;
   format=(depth == 1) ? XYBitmap : ZPixmap;
 #if defined(HasSharedMemory)
-  window->shared_memory&=XShmQueryExtension(display);
+  window->shared_memory &= XShmQueryExtension(display);
   if (window->shared_memory)
     {
       XShmSegmentInfo
         *segment_info;
 
+      size_t
+	shm_extent;
+
       segment_info=(XShmSegmentInfo *) window->segment_info;
       segment_info[1].shmid=(-1);
       segment_info[1].shmaddr=NULL;
       ximage=XShmCreateImage(display,window->visual,depth,format,(char *) NULL,
-        &segment_info[1],width,height);
-      window->shared_memory&=(ximage != (XImage *) NULL);
+			     &segment_info[1],width,height);
+      window->shared_memory &= (ximage != (XImage *) NULL);
+
+      shm_extent=MagickArraySize(ximage->height,ximage->bytes_per_line);
+      window->shared_memory &= (shm_extent != 0);
 
       if (window->shared_memory)
-        segment_info[1].shmid=shmget(IPC_PRIVATE,(size_t)
-          (ximage->bytes_per_line*ximage->height),IPC_CREAT | 0777);
-      window->shared_memory&=(segment_info[1].shmid >= 0);
+        segment_info[1].shmid=shmget(IPC_PRIVATE,shm_extent,IPC_CREAT | 0777);
+      window->shared_memory &= (segment_info[1].shmid >= 0);
 
       if (window->shared_memory)
-        segment_info[1].shmaddr=(char *) GmShmAt(segment_info[1].shmid,0,0);
-      window->shared_memory&=(segment_info[1].shmaddr != NULL);
+        segment_info[1].shmaddr=(char *) MagickShmAt(segment_info[1].shmid,0,0);
+      window->shared_memory &= (segment_info[1].shmaddr != NULL);
 
       if (!window->shared_memory)
         {
@@ -5505,13 +5688,13 @@ MagickExport unsigned int XMakeImage(Display *display,
 
           if (segment_info[1].shmaddr)
             {
-              (void) GmShmDt(segment_info[1].shmaddr);
+              (void) MagickShmDt(segment_info[1].shmaddr);
               segment_info[1].shmaddr=NULL;
             }
 
           if (segment_info[1].shmid >= 0)
             {
-              (void) GmShmCtl(segment_info[1].shmid,IPC_RMID,0);
+              (void) MagickShmCtl(segment_info[1].shmid,IPC_RMID,0);
               segment_info[1].shmid=(-1);
             }
         }
@@ -5541,7 +5724,7 @@ MagickExport unsigned int XMakeImage(Display *display,
         {
           window->shared_memory=False;
           if (shm_attached)
-            XShmDetach(display,&segment_info[1]);
+            (void) XShmDetach(display,&segment_info[1]);
           if (ximage != (XImage *) NULL)
             {
               ximage->data=NULL;
@@ -5551,8 +5734,8 @@ MagickExport unsigned int XMakeImage(Display *display,
           if (segment_info[1].shmid >= 0)
             {
               if (segment_info[1].shmaddr != NULL)
-                (void) GmShmDt(segment_info[1].shmaddr);
-              (void) GmShmCtl(segment_info[1].shmid,IPC_RMID,0);
+                (void) MagickShmDt(segment_info[1].shmaddr);
+              (void) MagickShmCtl(segment_info[1].shmid,IPC_RMID,0);
               segment_info[1].shmaddr=NULL;
               segment_info[1].shmid=(-1);
             }
@@ -5575,12 +5758,12 @@ MagickExport unsigned int XMakeImage(Display *display,
   if (IsEventLogging())
     {
       (void) LogMagickEvent(X11Event,GetMagickModule(),"XImage:");
-      (void) LogMagickEvent(X11Event,GetMagickModule(),"  width, height: %dx%d",
+      (void) LogMagickEvent(X11Event,GetMagickModule(),"  width x height: %dx%d",
         ximage->width,ximage->height);
-      (void) LogMagickEvent(X11Event,GetMagickModule(),"  format: %d",
-        ximage->format);
-      (void) LogMagickEvent(X11Event,GetMagickModule(),"  byte order: %d",
-        ximage->byte_order);
+      (void) LogMagickEvent(X11Event,GetMagickModule(),"  format: %s",
+			    MagickXImageFormatToString(ximage->format));
+      (void) LogMagickEvent(X11Event,GetMagickModule(),"  byte order: %s",
+			    MagickXByteOrderToString(ximage->byte_order));
       (void) LogMagickEvent(X11Event,GetMagickModule(),
         "  bitmap unit, bit order, pad: %d %d %d",ximage->bitmap_unit,
         ximage->bitmap_bit_order,ximage->bitmap_pad);
@@ -5597,11 +5780,13 @@ MagickExport unsigned int XMakeImage(Display *display,
   if (!window->shared_memory)
     {
       if (ximage->format == XYBitmap)
-        ximage->data=MagickAllocateMemory(char *,
-          ximage->bytes_per_line*ximage->height*ximage->depth);
+        ximage->data=
+	  MagickAllocateArray(char *,
+			      MagickArraySize(ximage->height,ximage->bytes_per_line),
+			      ximage->depth);
       else
-        ximage->data=MagickAllocateMemory(char *,
-          ximage->bytes_per_line*ximage->height);
+        ximage->data=
+	  MagickAllocateArray(char *,ximage->height,ximage->bytes_per_line);
     }
   if (ximage->data == (char *) NULL)
     {
@@ -5632,8 +5817,8 @@ MagickExport unsigned int XMakeImage(Display *display,
               (void) XShmDetach(display,&segment_info[0]);
               (void) XSync(display,False);
               if (segment_info[0].shmaddr != NULL)
-                (void) GmShmDt(segment_info[0].shmaddr);
-              (void) GmShmCtl(segment_info[0].shmid,IPC_RMID,0);
+                (void) MagickShmDt(segment_info[0].shmaddr);
+              (void) MagickShmCtl(segment_info[0].shmid,IPC_RMID,0);
               segment_info[0].shmaddr=NULL;
               segment_info[0].shmid=(-1);
               window->ximage->data=(char *) NULL;
@@ -5677,8 +5862,9 @@ MagickExport unsigned int XMakeImage(Display *display,
             /*
               Allocate matte image pixel data.
             */
-            length=matte_image->bytes_per_line*
-              matte_image->height*matte_image->depth;
+            length=MagickArraySize(MagickArraySize(matte_image->bytes_per_line,
+						   matte_image->height),
+				   matte_image->depth);
             matte_image->data=MagickAllocateMemory(char *,length);
             if (matte_image->data == (char *) NULL)
               {
@@ -5714,10 +5900,10 @@ MagickExport unsigned int XMakeImage(Display *display,
     {
       if ((ximage->byte_order == LSBFirst) || ((ximage->format == XYBitmap) &&
           (ximage->bitmap_bit_order == LSBFirst)))
-        XMakeImageLSBFirst(resource_info,window,window->image,ximage,
+        MagickXMakeImageLSBFirst(resource_info,window,window->image,ximage,
           matte_image);
       else
-        XMakeImageMSBFirst(resource_info,window,window->image,ximage,
+        MagickXMakeImageMSBFirst(resource_info,window,window->image,ximage,
           matte_image);
     }
   if (window->matte_image != (XImage *) NULL)
@@ -5751,7 +5937,7 @@ MagickExport unsigned int XMakeImage(Display *display,
 #endif
         }
       }
-  (void) XMakePixmap(display,resource_info,window);
+  (void) MagickXMakePixmap(display,resource_info,window);
   /*
     Restore cursor.
   */
@@ -5764,27 +5950,27 @@ MagickExport unsigned int XMakeImage(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   X M a k e I m a g e L S B F i r s t                                       %
++   M a g i c k X M a k e I m a g e L S B F i r s t                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeImageLSBFirst initializes the pixel data of an X11 Image.
+%  Method MagickXMakeImageLSBFirst initializes the pixel data of an X11 Image.
 %  The X image pixels are copied in least-significant bit and byte first
 %  order.  The server's scanline pad is respected.  Rather than using one or
 %  two general cases, many special cases are found here to help speed up the
 %  image conversion.
 %
-%  The format of the XMakeImageLSBFirst method is:
+%  The format of the MagickXMakeImageLSBFirst method is:
 %
-%      void XMakeMagnifyImage(Display *display,XWindows *windows)
+%      void MagickXMakeMagnifyImage(Display *display,MagickXWindows *windows)
 %
 %  A description of each parameter follows:
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo structure.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
@@ -5796,13 +5982,15 @@ MagickExport unsigned int XMakeImage(Display *display,
 %      XCreateImage.
 %
 */
-static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
-  const XWindowInfo *window,Image *image,XImage *ximage,XImage *matte_image)
+static void
+MagickXMakeImageLSBFirst(const MagickXResourceInfo *resource_info,
+			 const MagickXWindowInfo *window,Image *image,
+			 XImage *ximage,XImage *matte_image)
 {
   int
     y;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register int
@@ -5828,8 +6016,8 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
   XStandardColormap
     *map_info;
 
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   assert(image != (Image *) NULL);
   scanline_pad=ximage->bytes_per_line-
     ((ximage->width*ximage->bits_per_pixel) >> 3);
@@ -5862,7 +6050,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
         p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
         if (p == (const PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessImmutableIndexes(image);
         bit=0;
         byte=0;
         for (x=0; x < (long) image->columns; x++)
@@ -5902,7 +6090,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             nibble=0;
             for (x=0; x < (long) image->columns; x++)
             {
@@ -5953,7 +6141,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             nibble=0;
             for (x=0; x < (long) image->columns; x++)
             {
@@ -5988,7 +6176,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
           if (resource_info->color_recovery &&
               resource_info->quantize_info->dither)
             {
-              XDitherImage(image,ximage);
+              MagickXDitherImage(image,ximage);
               break;
             }
           for (y=0; y < (long) image->rows; y++)
@@ -5996,7 +6184,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             for (x=0; x < (long) image->columns; x++)
             {
               pixel=pixels[indexes[x]];
@@ -6026,7 +6214,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             for (x=0; x < (long) image->columns; x++)
             {
               pixel=pixels[indexes[x]];
@@ -6062,7 +6250,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
               break;
             for (x=0; x < (long) image->columns; x++)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               pixel&=0xf;
               switch (nibble)
               {
@@ -6114,7 +6302,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
             nibble=0;
             for (x=0; x < (long) image->columns; x++)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               pixel&=0xf;
               switch (nibble)
               {
@@ -6147,7 +6335,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
           if (resource_info->color_recovery &&
               resource_info->quantize_info->dither)
             {
-              XDitherImage(image,ximage);
+              MagickXDitherImage(image,ximage);
               break;
             }
           for (y=0; y < (long) image->rows; y++)
@@ -6157,7 +6345,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
               break;
             for (x=0; x < (long) image->columns; x++)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               *q++=(unsigned char) pixel;
               p++;
             }
@@ -6189,9 +6377,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                     */
                     for (x=(long) image->columns; x > 0; x--)
                     {
-                      *q++=ScaleQuantumToChar(XBlueGamma(p->blue));
-                      *q++=ScaleQuantumToChar(XGreenGamma(p->green));
-                      *q++=ScaleQuantumToChar(XRedGamma(p->red));
+                      *q++=ScaleQuantumToChar(MagickXBlueGamma(p->blue));
+                      *q++=ScaleQuantumToChar(MagickXGreenGamma(p->green));
+                      *q++=ScaleQuantumToChar(MagickXRedGamma(p->red));
                       *q++=0;
                       p++;
                     }
@@ -6230,9 +6418,9 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                       */
                       for (x=(long) image->columns; x > 0; x--)
                       {
-                        *q++=ScaleQuantumToChar(XRedGamma(p->red));
-                        *q++=ScaleQuantumToChar(XGreenGamma(p->green));
-                        *q++=ScaleQuantumToChar(XBlueGamma(p->blue));
+                        *q++=ScaleQuantumToChar(MagickXRedGamma(p->red));
+                        *q++=ScaleQuantumToChar(MagickXGreenGamma(p->green));
+                        *q++=ScaleQuantumToChar(MagickXBlueGamma(p->blue));
                         *q++=0;
                         p++;
                       }
@@ -6271,7 +6459,7 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
                     break;
                   for (x=0; x < (long) image->columns; x++)
                   {
-                    pixel=XGammaPixel(map_info,p);
+                    pixel=MagickXGammaPixel(map_info,p);
                     for (k=0; k < (int) bytes_per_pixel; k++)
                     {
                       channel[k]=(unsigned char) pixel;
@@ -6328,27 +6516,28 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-+   X M a k e I m a g e M S B F i r s t                                       %
++   M a g i c k X M a k e I m a g e M S B F i r s t                           %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeImageMSBFirst initializes the pixel data of an X11 Image.
+%  Method MagickXMakeImageMSBFirst initializes the pixel data of an X11 Image.
 %  The X image pixels are copied in most-significant bit and byte first order.
 %  The server's scanline pad is also respected. Rather than using one or two
 %  general cases, many special cases are found here to help speed up the image
 %  conversion.
 %
-%  The format of the XMakeImageMSBFirst method is:
+%  The format of the MagickXMakeImageMSBFirst method is:
 %
-%      XMakeImageMSBFirst(resource_info,window,image,ximage,matte_image)
+%      MagickXMakeImageMSBFirst(resource_info,window,image,ximage,matte_image)
 %
 %  A description of each parameter follows:
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
@@ -6361,13 +6550,15 @@ static void XMakeImageLSBFirst(const XResourceInfo *resource_info,
 %
 %
 */
-static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
-  const XWindowInfo *window,Image *image,XImage *ximage,XImage *matte_image)
+static void
+MagickXMakeImageMSBFirst(const MagickXResourceInfo *resource_info,
+			 const MagickXWindowInfo *window,Image *image,
+			 XImage *ximage,XImage *matte_image)
 {
   int
     y;
 
-  register IndexPacket
+  register const IndexPacket
     *indexes;
 
   register int
@@ -6393,8 +6584,8 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
   XStandardColormap
     *map_info;
 
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   assert(image != (Image *) NULL);
   scanline_pad=ximage->bytes_per_line-
     ((ximage->width*ximage->bits_per_pixel) >> 3);
@@ -6427,7 +6618,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
         p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
         if (p == (const PixelPacket *) NULL)
           break;
-        indexes=GetIndexes(image);
+        indexes=AccessImmutableIndexes(image);
         bit=0;
         byte=0;
         for (x=(long) image->columns; x > 0; x--)
@@ -6467,7 +6658,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             nibble=0;
             for (x=(long) image->columns; x > 0; x--)
             {
@@ -6518,7 +6709,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             nibble=0;
             for (x=(long) image->columns; x > 0; x--)
             {
@@ -6553,7 +6744,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
           if (resource_info->color_recovery &&
               resource_info->quantize_info->dither)
             {
-              XDitherImage(image,ximage);
+              MagickXDitherImage(image,ximage);
               break;
             }
           for (y=0; y < (long) image->rows; y++)
@@ -6561,7 +6752,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             for (x=(long) image->columns; x > 0; x--)
               *q++=(unsigned char) (pixels[*indexes++]);
             q+=scanline_pad;
@@ -6588,7 +6779,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             p=AcquireImagePixels(image,0,y,image->columns,1,&image->exception);
             if (p == (const PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessImmutableIndexes(image);
             for (x=(long) image->columns; x > 0; x--)
             {
               pixel=pixels[*indexes++];
@@ -6624,7 +6815,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             nibble=0;
             for (x=(long) image->columns; x > 0; x--)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               pixel&=0xf;
               switch (nibble)
               {
@@ -6676,7 +6867,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
             nibble=0;
             for (x=(long) image->columns; x > 0; x--)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               pixel&=0xf;
               switch (nibble)
               {
@@ -6709,7 +6900,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
           if (resource_info->color_recovery &&
               resource_info->quantize_info->dither)
             {
-              XDitherImage(image,ximage);
+              MagickXDitherImage(image,ximage);
               break;
             }
           for (y=0; y < (long) image->rows; y++)
@@ -6719,7 +6910,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
               break;
             for (x=(long) image->columns; x > 0; x--)
             {
-              pixel=XGammaPixel(map_info,p);
+              pixel=MagickXGammaPixel(map_info,p);
               *q++=(unsigned char) pixel;
               p++;
             }
@@ -6752,9 +6943,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                     for (x=(long) image->columns; x > 0; x--)
                     {
                       *q++=0;
-                      *q++=ScaleQuantumToChar(XRedGamma(p->red));
-                      *q++=ScaleQuantumToChar(XGreenGamma(p->green));
-                      *q++=ScaleQuantumToChar(XBlueGamma(p->blue));
+                      *q++=ScaleQuantumToChar(MagickXRedGamma(p->red));
+                      *q++=ScaleQuantumToChar(MagickXGreenGamma(p->green));
+                      *q++=ScaleQuantumToChar(MagickXBlueGamma(p->blue));
                       p++;
                     }
                     continue;
@@ -6793,9 +6984,9 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                       for (x=(long) image->columns; x > 0; x--)
                       {
                         *q++=0;
-                        *q++=ScaleQuantumToChar(XBlueGamma(p->blue));
-                        *q++=ScaleQuantumToChar(XGreenGamma(p->green));
-                        *q++=ScaleQuantumToChar(XRedGamma(p->red));
+                        *q++=ScaleQuantumToChar(MagickXBlueGamma(p->blue));
+                        *q++=ScaleQuantumToChar(MagickXGreenGamma(p->green));
+                        *q++=ScaleQuantumToChar(MagickXRedGamma(p->red));
                         p++;
                       }
                       continue;
@@ -6833,7 +7024,7 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
                     break;
                   for (x=(long) image->columns; x > 0; x--)
                   {
-                    pixel=XGammaPixel(map_info,p);
+                    pixel=MagickXGammaPixel(map_info,p);
                     for (k=bytes_per_pixel-1; k >= 0; k--)
                     {
                       channel[k]=(unsigned char) pixel;
@@ -6890,28 +7081,30 @@ static void XMakeImageMSBFirst(const XResourceInfo *resource_info,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e M a g n i f y I m a g e                                         %
+%   M a g i c k X M a k e M a g n i f y I m a g e                             %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeMagnifyImage magnifies a region of an X image and displays it.
+%  Method MagickXMakeMagnifyImage magnifies a region of an X image and
+%  displays it.
 %
-%  The format of the XMakeMagnifyImage method is:
+%  The format of the MagickXMakeMagnifyImage method is:
 %
-%      XMakeMagnifyImage(display,windows)
+%      MagickXMakeMagnifyImage(display,windows)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %
 */
-MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
+MagickExport void 
+MagickXMakeMagnifyImage(Display *display,MagickXWindows *windows)
 {
   char
     tuple[MaxTextExtent];
@@ -6941,7 +7134,7 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
   static unsigned int
     previous_magnify = 0;
 
-  static XWindowInfo
+  static MagickXWindowInfo
     magnify_window;
 
   unsigned int
@@ -6960,7 +7153,7 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
     Check boundary conditions.
   */
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   magnify=1;
   for (n=1; n < (long) windows->magnify.data; n++)
     magnify<<=1;
@@ -7032,7 +7225,7 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
       register unsigned int
         plane;
 
-      XPixelInfo
+      MagickXPixelInfo
         *pixel_info;
 
       pixel_info=windows->magnify.pixel_info;
@@ -7299,7 +7492,8 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
   /*
     Show center pixel color.
   */
-  color=GetOnePixel(windows->image.image,windows->magnify.x,windows->magnify.y);
+  (void) AcquireOnePixelByReference(windows->image.image,&color,windows->magnify.x,
+                        windows->magnify.y,&windows->image.image->exception);
   GetColorTuple(&color,windows->image.image->depth,windows->image.image->matte,
     False,tuple);
   FormatString(text," %+d%+d  %.1024s ",windows->magnify.x,windows->magnify.y,
@@ -7320,7 +7514,7 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
   magnify_window=windows->magnify;
   magnify_window.x=0;
   magnify_window.y=0;
-  XRefreshWindow(display,&magnify_window,(XEvent *) NULL);
+  MagickXRefreshWindow(display,&magnify_window,(XEvent *) NULL);
 }
 
 /*
@@ -7328,44 +7522,47 @@ MagickExport void XMakeMagnifyImage(Display *display,XWindows *windows)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e P i x m a p                                                     %
+%   M a g i c k X M a k e P i x m a p                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakePixmap creates an X11 pixmap.
+%  Method MagickXMakePixmap creates an X11 pixmap.
 %
-%  The format of the XMakePixmap method is:
+%  The format of the MagickXMakePixmap method is:
 %
-%      void XMakeStandardColormap(Display *display,XVisualInfo *visual_info,
-%        XResourceInfo *resource_info,Image *image,XStandardColormap *map_info,
-%        XPixelInfo *pixel)
+%      unsigned int MagickXMakePixmap(Display *display,
+%                                     const MagickXResourceInfo *resource_info,
+%                                     MagickXWindowInfo *window)
 %
 %  A description of each parameter follows:
 %
-%    o status: Method XMakePixmap returns True if the X pixmap is
+%    o status: Method MagickXMakePixmap returns True if the X pixmap is
 %      successfully created.  False is returned is there is a memory shortage.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %    o display: Specifies a connection to an X server; returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %
 */
-static unsigned int XMakePixmap(Display *display,
-  const XResourceInfo *resource_info,XWindowInfo *window)
+static unsigned int
+MagickXMakePixmap(Display *display,
+		  const MagickXResourceInfo *resource_info,
+		  MagickXWindowInfo *window)
 {
   unsigned int
     height,
     width;
 
   assert(display != (Display *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(window != (XWindowInfo  *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(window != (MagickXWindowInfo  *) NULL);
   if (window->pixmap != (Pixmap) NULL)
     {
       /*
@@ -7426,17 +7623,17 @@ static unsigned int XMakePixmap(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e S t a n d a r d C o l o r m a p                                 %
+%   M a g i c k X M a k e S t a n d a r d C o l o r m a p                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeStandardColormap creates an X11 Standard Colormap.
+%  Method MagickXMakeStandardColormap creates an X11 Standard Colormap.
 %
-%  The format of the XMakeStandardColormap method is:
+%  The format of the MagickXMakeStandardColormap method is:
 %
-%      XMakeStandardColormap(display,visual_info,resource_info,image,
+%      MagickXMakeStandardColormap(display,visual_info,resource_info,image,
 %        map_info,pixel)
 %
 %  A description of each parameter follows:
@@ -7447,7 +7644,8 @@ static unsigned int XMakePixmap(Display *display,
 %    o visual_info: Specifies a pointer to a X11 XVisualInfo structure;
 %      returned from XGetVisualInfo.
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %    o image: Specifies a pointer to an Image structure;  returned from
 %      ReadImage.
@@ -7455,7 +7653,7 @@ static unsigned int XMakePixmap(Display *display,
 %    o map_info: If a Standard Colormap type is specified, this structure is
 %      initialized with info from the Standard Colormap.
 %
-%    o pixel: Specifies a pointer to a XPixelInfo structure.
+%    o pixel: Specifies a pointer to a MagickXPixelInfo structure.
 %
 %
 */
@@ -7490,9 +7688,13 @@ static int PopularityCompare(const void *x,const void *y)
 }
 #endif
 
-MagickExport void XMakeStandardColormap(Display *display,
-  XVisualInfo *visual_info,XResourceInfo *resource_info,Image *image,
-  XStandardColormap *map_info,XPixelInfo *pixel)
+MagickExport void
+MagickXMakeStandardColormap(Display *display,
+			    XVisualInfo *visual_info,
+			    MagickXResourceInfo *resource_info,
+			    Image *image,
+			    XStandardColormap *map_info,
+			    MagickXPixelInfo *pixel)
 {
   Colormap
     colormap;
@@ -7524,21 +7726,21 @@ MagickExport void XMakeStandardColormap(Display *display,
   assert(display != (Display *) NULL);
   assert(visual_info != (XVisualInfo *) NULL);
   assert(map_info != (XStandardColormap *) NULL);
-  assert(resource_info != (XResourceInfo *) NULL);
-  assert(pixel != (XPixelInfo *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  assert(pixel != (MagickXPixelInfo *) NULL);
   if (resource_info->map_type != (char *) NULL)
     {
       /*
         Standard Colormap is already defined (i.e. xstdcmap).
       */
-      XGetPixelPacket(display,visual_info,map_info,resource_info,image,
+      MagickXGetPixelPacket(display,visual_info,map_info,resource_info,image,
         pixel);
       number_colors=(unsigned int) (map_info->base_pixel+
         (map_info->red_max+1)*(map_info->green_max+1)*(map_info->blue_max+1));
       if ((map_info->red_max*map_info->green_max*map_info->blue_max) != 0)
         if (!image->matte && !resource_info->color_recovery &&
             resource_info->quantize_info->dither &&
-            ((int) number_colors < MaxColormapSize))
+            (number_colors < MaxColormapSize))
           {
             Image
               *map_image;
@@ -7579,9 +7781,9 @@ MagickExport void XMakeStandardColormap(Display *display,
                 (void) SyncImagePixels(map_image);
                 (void) MapImage(image,map_image,True);
               }
-            XGetPixelPacket(display,visual_info,map_info,resource_info,image,
+            MagickXGetPixelPacket(display,visual_info,map_info,resource_info,image,
               pixel);
-            SetImageType(image,TrueColorType);
+            (void) SetImageType(image,TrueColorType);
             DestroyImage(map_image);
           }
       if (IsEventLogging())
@@ -7598,8 +7800,8 @@ MagickExport void XMakeStandardColormap(Display *display,
         }
       return;
     }
-  if ((visual_info->storage_class != DirectColor) &&
-      (visual_info->storage_class != TrueColor))
+  if ((visual_info->class != DirectColor) &&
+      (visual_info->class != TrueColor))
     if ((image->storage_class == DirectClass) ||
         ((int) image->colors > visual_info->colormap_size))
       {
@@ -7616,11 +7818,11 @@ MagickExport void XMakeStandardColormap(Display *display,
   /*
     Free previous and create new colormap.
   */
-  (void) XFreeStandardColormap(display,visual_info,map_info,pixel);
+  (void) MagickXFreeStandardColormap(display,visual_info,map_info,pixel);
   colormap=XDefaultColormap(display,visual_info->screen);
   if (visual_info->visual != XDefaultVisual(display,visual_info->screen))
     colormap=XCreateColormap(display,XRootWindow(display,visual_info->screen),
-      visual_info->visual,visual_info->storage_class == DirectColor ?
+      visual_info->visual,visual_info->class == DirectColor ?
       AllocAll : AllocNone);
   if (colormap == (Colormap) NULL)
     MagickFatalError3(ResourceLimitError,MemoryAllocationFailed,
@@ -7628,12 +7830,12 @@ MagickExport void XMakeStandardColormap(Display *display,
   /*
     Initialize the map and pixel info structures.
   */
-  XGetMapInfo(visual_info,colormap,map_info);
-  XGetPixelPacket(display,visual_info,map_info,resource_info,image,pixel);
+  MagickXGetMapInfo(visual_info,colormap,map_info);
+  MagickXGetPixelPacket(display,visual_info,map_info,resource_info,image,pixel);
   /*
     Allocating colors in server colormap is based on visual class.
   */
-  switch (visual_info->storage_class)
+  switch (visual_info->class)
   {
     case StaticGray:
     case StaticColor:
@@ -7642,8 +7844,8 @@ MagickExport void XMakeStandardColormap(Display *display,
         Define Standard Colormap for StaticGray or StaticColor visual.
       */
       number_colors=image->colors;
-      colors=MagickAllocateMemory(XColor *,
-        visual_info->colormap_size*sizeof(XColor));
+      colors=MagickAllocateArray(XColor *,
+				 visual_info->colormap_size,sizeof(XColor));
       if (colors == (XColor *) NULL)
         MagickFatalError3(ResourceLimitError,MemoryAllocationFailed,
           UnableToCreateColormap);
@@ -7651,10 +7853,10 @@ MagickExport void XMakeStandardColormap(Display *display,
       color.flags=DoRed | DoGreen | DoBlue;
       for (i=0; i < (long) image->colors; i++)
       {
-        color.red=ScaleQuantumToShort(XRedGamma(image->colormap[i].red));
-        color.green=ScaleQuantumToShort(XGreenGamma(image->colormap[i].green));
-        color.blue=ScaleQuantumToShort(XBlueGamma(image->colormap[i].blue));
-        if (visual_info->storage_class != StaticColor)
+        color.red=ScaleQuantumToShort(MagickXRedGamma(image->colormap[i].red));
+        color.green=ScaleQuantumToShort(MagickXGreenGamma(image->colormap[i].green));
+        color.blue=ScaleQuantumToShort(MagickXBlueGamma(image->colormap[i].blue));
+        if (visual_info->class != StaticColor)
           {
             gray_value=(unsigned short) PixelIntensity(&color);
             color.red=gray_value;
@@ -7682,8 +7884,8 @@ MagickExport void XMakeStandardColormap(Display *display,
         Define Standard Colormap for GrayScale or PseudoColor visual.
       */
       number_colors=image->colors;
-      colors=MagickAllocateMemory(XColor *,
-        visual_info->colormap_size*sizeof(XColor));
+      colors=MagickAllocateArray(XColor *,
+				 visual_info->colormap_size,sizeof(XColor));
       if (colors == (XColor *) NULL)
         MagickFatalError3(ResourceLimitFatalError,MemoryAllocationFailed,
           UnableToCreateColormap);
@@ -7720,7 +7922,7 @@ MagickExport void XMakeStandardColormap(Display *display,
             x;
 
           unsigned short
-            index;
+            colormap_index;
 
           XColor
             *server_colors;
@@ -7728,8 +7930,8 @@ MagickExport void XMakeStandardColormap(Display *display,
           /*
             Define Standard colormap for shared GrayScale or PseudoColor visual.
           */
-          diversity=MagickAllocateMemory(DiversityPacket *,
-            image->colors*sizeof(DiversityPacket));
+          diversity=MagickAllocateArray(DiversityPacket *,
+					image->colors,sizeof(DiversityPacket));
           if (diversity == (DiversityPacket *) NULL)
             MagickFatalError3(ResourceLimitFatalError,MemoryAllocationFailed,
               UnableToCreateColormap);
@@ -7746,7 +7948,7 @@ MagickExport void XMakeStandardColormap(Display *display,
             q=GetImagePixels(image,0,y,image->columns,1);
             if (q == (PixelPacket *) NULL)
               break;
-            indexes=GetIndexes(image);
+            indexes=AccessMutableIndexes(image);
             for (x=0; x < (long) image->columns; x++)
               diversity[indexes[x]].count++;
           }
@@ -7767,14 +7969,14 @@ MagickExport void XMakeStandardColormap(Display *display,
           color.flags=DoRed | DoGreen | DoBlue;
           for (i=0; i < (long) image->colors; i++)
           {
-            index=diversity[i].index;
+            colormap_index=diversity[i].index;
             color.red=
-              ScaleQuantumToShort(XRedGamma(image->colormap[index].red));
+              ScaleQuantumToShort(MagickXRedGamma(image->colormap[colormap_index].red));
             color.green=
-              ScaleQuantumToShort(XGreenGamma(image->colormap[index].green));
+              ScaleQuantumToShort(MagickXGreenGamma(image->colormap[colormap_index].green));
             color.blue=
-              ScaleQuantumToShort(XBlueGamma(image->colormap[index].blue));
-            if (visual_info->storage_class != PseudoColor)
+              ScaleQuantumToShort(MagickXBlueGamma(image->colormap[colormap_index].blue));
+            if (visual_info->class != PseudoColor)
               {
                 gray_value=(unsigned short) PixelIntensity(&color);
                 color.red=gray_value;
@@ -7784,14 +7986,15 @@ MagickExport void XMakeStandardColormap(Display *display,
             status=XAllocColor(display,colormap,&color);
             if (status == 0)
               break;
-            pixel->pixels[index]=color.pixel;
+            pixel->pixels[colormap_index]=color.pixel;
             *p++=color;
           }
           /*
             Read X server colormap.
           */
-          server_colors=MagickAllocateMemory(XColor *,
-            visual_info->colormap_size*sizeof(XColor));
+          server_colors=MagickAllocateArray(XColor *,
+					    visual_info->colormap_size,
+					    sizeof(XColor));
           if (server_colors == (XColor *) NULL)
             MagickFatalError3(ResourceLimitFatalError,MemoryAllocationFailed,
               UnableToCreateColormap);
@@ -7804,23 +8007,23 @@ MagickExport void XMakeStandardColormap(Display *display,
           */
           for (; i < (long) image->colors; i++)
           {
-            index=diversity[i].index;
+            colormap_index=diversity[i].index;
             color.red=
-              ScaleQuantumToShort(XRedGamma(image->colormap[index].red));
+              ScaleQuantumToShort(MagickXRedGamma(image->colormap[colormap_index].red));
             color.green=
-              ScaleQuantumToShort(XGreenGamma(image->colormap[index].green));
+              ScaleQuantumToShort(MagickXGreenGamma(image->colormap[colormap_index].green));
             color.blue=
-              ScaleQuantumToShort(XBlueGamma(image->colormap[index].blue));
-            if (visual_info->storage_class != PseudoColor)
+              ScaleQuantumToShort(MagickXBlueGamma(image->colormap[colormap_index].blue));
+            if (visual_info->class != PseudoColor)
               {
                 gray_value=(unsigned short) PixelIntensity(&color);
                 color.red=gray_value;
                 color.green=gray_value;
                 color.blue=gray_value;
               }
-            XBestPixel(display,colormap,server_colors,(unsigned int)
+            MagickXBestPixel(display,colormap,server_colors,(unsigned int)
               visual_info->colormap_size,&color);
-            pixel->pixels[index]=color.pixel;
+            pixel->pixels[colormap_index]=color.pixel;
             *p++=color;
           }
           if ((int) image->colors < visual_info->colormap_size)
@@ -7893,10 +8096,10 @@ MagickExport void XMakeStandardColormap(Display *display,
       color.flags=DoRed | DoGreen | DoBlue;
       for (i=0; i < (long) image->colors; i++)
       {
-        color.red=ScaleQuantumToShort(XRedGamma(image->colormap[i].red));
-        color.green=ScaleQuantumToShort(XGreenGamma(image->colormap[i].green));
-        color.blue=ScaleQuantumToShort(XBlueGamma(image->colormap[i].blue));
-        if (visual_info->storage_class != PseudoColor)
+        color.red=ScaleQuantumToShort(MagickXRedGamma(image->colormap[i].red));
+        color.green=ScaleQuantumToShort(MagickXGreenGamma(image->colormap[i].green));
+        color.blue=ScaleQuantumToShort(MagickXBlueGamma(image->colormap[i].blue));
+        if (visual_info->class != PseudoColor)
           {
             gray_value=(unsigned short) PixelIntensity(&color);
             color.red=gray_value;
@@ -7931,7 +8134,7 @@ MagickExport void XMakeStandardColormap(Display *display,
       /*
         Allocate color array.
       */
-      colors=MagickAllocateMemory(XColor *,number_colors*sizeof(XColor));
+      colors=MagickAllocateArray(XColor *,number_colors,sizeof(XColor));
       if (colors == (XColor *) NULL)
         MagickFatalError3(ResourceLimitFatalError,MemoryAllocationFailed,
           UnableToCreateColormap);
@@ -7949,7 +8152,7 @@ MagickExport void XMakeStandardColormap(Display *display,
               ((65535L*(i % map_info->green_mult))/map_info->blue_max));
           color.green=color.blue;
           color.red=color.blue;
-          color.pixel=XStandardPixel(map_info,&color);
+          color.pixel=MagickXStandardPixel(map_info,&color);
           *p++=color;
         }
       else
@@ -7968,10 +8171,10 @@ MagickExport void XMakeStandardColormap(Display *display,
           if (map_info->blue_max != 0)
             color.blue=(unsigned short) ((unsigned long)
               ((65535L*(i % map_info->green_mult))/map_info->blue_max));
-          color.pixel=XStandardPixel(map_info,&color);
+          color.pixel=MagickXStandardPixel(map_info,&color);
           *p++=color;
         }
-      if ((visual_info->storage_class == DirectColor) &&
+      if ((visual_info->class == DirectColor) &&
           (colormap != XDefaultColormap(display,visual_info->screen)))
         (void) XStoreColors(display,colormap,colors,(int) number_colors);
       else
@@ -7980,15 +8183,15 @@ MagickExport void XMakeStandardColormap(Display *display,
       break;
     }
   }
-  if ((visual_info->storage_class != DirectColor) &&
-      (visual_info->storage_class != TrueColor))
+  if ((visual_info->class != DirectColor) &&
+      (visual_info->class != TrueColor))
     {
       /*
         Set foreground, background, border, etc. pixels.
       */
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->foreground_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->background_color);
       if (pixel->background_color.pixel == pixel->foreground_color.pixel)
         {
@@ -8000,24 +8203,24 @@ MagickExport void XMakeStandardColormap(Display *display,
             (~pixel->foreground_color.green);
           pixel->background_color.blue=
             (~pixel->foreground_color.blue);
-          XBestPixel(display,colormap,colors,(int) number_colors,
+          MagickXBestPixel(display,colormap,colors,(int) number_colors,
             &pixel->background_color);
         }
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->border_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->matte_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->highlight_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->shadow_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->depth_color);
-      XBestPixel(display,colormap,colors,(int) number_colors,
+      MagickXBestPixel(display,colormap,colors,(int) number_colors,
         &pixel->trough_color);
       for (i=0; i < MaxNumberPens; i++)
       {
-        XBestPixel(display,colormap,colors,(int) number_colors,
+        MagickXBestPixel(display,colormap,colors,(int) number_colors,
           &pixel->pen_colors[i]);
         pixel->pixels[image->colors+i]=pixel->pen_colors[i].pixel;
       }
@@ -8043,19 +8246,19 @@ MagickExport void XMakeStandardColormap(Display *display,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X M a k e W i n d o w                                                     %
+%   M a g i c k X M a k e W i n d o w                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMakeWindow creates an X11 window.
+%  Method MagickXMakeWindow creates an X11 window.
 %
-%  The format of the XMakeWindow method is:
+%  The format of the MagickXMakeWindow method is:
 %
-%      void XMakeWindow(Display *display,Window parent,char **argv,int argc,
-%        XClassHint *class_hint,XWMHints *manager_hints,
-%        XWindowInfo *window_info)
+%      void MagickXMakeWindow(Display *display,Window parent,char **argv,
+%        int argc,XClassHint *class_hint,XWMHints *manager_hints,
+%        MagickXWindowInfo *window_info)
 %
 %  A description of each parameter follows:
 %
@@ -8072,13 +8275,14 @@ MagickExport void XMakeStandardColormap(Display *display,
 %
 %    o manager_hints: Specifies a pointer to a X11 XWMHints structure.
 %
-%    o window_info: Specifies a pointer to a X11 XWindowInfo structure.
+%    o window_info: Specifies a pointer to a X11 MagickXWindowInfo structure.
 %
 %
 */
-MagickExport void XMakeWindow(Display *display,Window parent,char **argv,
-  int argc,XClassHint *class_hint,XWMHints *manager_hints,
-  XWindowInfo *window_info)
+MagickExport void
+MagickXMakeWindow(Display *display,Window parent,char **argv,
+		  int argc,XClassHint *class_hint,XWMHints *manager_hints,
+		  MagickXWindowInfo *window_info)
 {
 #define MinWindowSize  64
 
@@ -8100,7 +8304,7 @@ MagickExport void XMakeWindow(Display *display,Window parent,char **argv,
     Set window info hints.
   */
   assert(display != (Display *) NULL);
-  assert(window_info != (XWindowInfo *) NULL);
+  assert(window_info != (MagickXWindowInfo *) NULL);
   size_hints=XAllocSizeHints();
   if (size_hints == (XSizeHints *) NULL)
     MagickFatalError(ResourceLimitFatalError,MemoryAllocationFailed,
@@ -8156,7 +8360,7 @@ MagickExport void XMakeWindow(Display *display,Window parent,char **argv,
       */
       FormatString(default_geometry,"%dx%d",size_hints->width,
         size_hints->height);
-      (void) strncpy(geometry,window_info->geometry,MaxTextExtent-1);
+      (void) strlcpy(geometry,window_info->geometry,MaxTextExtent);
       p=geometry;
       while (strlen(p) != 0)
       {
@@ -8295,19 +8499,20 @@ MagickExport void XMakeWindow(Display *display,Window parent,char **argv,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X P r o g r e s s M o n i t o r                                           %
+%   M a g i c k X P r o g r e s s M o n i t o r                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XMagickMonitor displays the progress a task is making in
+%  Method MagickXMagickMonitor displays the progress a task is making in
 %  completing a task.
 %
-%  The format of the XMagickMonitor method is:
+%  The format of the MagickXMagickMonitor method is:
 %
-%      void XMagickMonitor(const char *task,const magick_int64_t quantum,
-%        const magick_uint64_t span,ExceptionInfo *exception)
+%      unsigned int MagickXMagickMonitor(const char *task,
+%        const magick_int64_t quantum,const magick_uint64_t span,
+%        ExceptionInfo *exception)
 %
 %  A description of each parameter follows:
 %
@@ -8321,17 +8526,18 @@ MagickExport void XMakeWindow(Display *display,Window parent,char **argv,
 %    o exception: Return any errors or warnings in this structure.
 %
 */
-MagickExport unsigned int XMagickMonitor(const char *task,
-  const magick_int64_t quantum,const magick_uint64_t span,
-  ExceptionInfo *exception)
+MagickExport unsigned int
+MagickXMagickMonitor(const char *task,
+		     const magick_int64_t quantum,const magick_uint64_t span,
+		     ExceptionInfo *ARGUNUSED(exception))
 {
-  XWindows
+  MagickXWindows
     *windows;
 
-  windows=XSetWindows((XWindows *) ~0);
-  if (windows == (XWindows *) NULL)
+  windows=MagickXSetWindows((MagickXWindows *) ~0);
+  if (windows == (MagickXWindows *) NULL)
     return(True);
-  XMonitorWidget(windows->display,windows,task,quantum,span);
+  MagickXMonitorWidget(windows->display,windows,task,quantum,span);
   return(True);
 }
 
@@ -8340,22 +8546,22 @@ MagickExport unsigned int XMagickMonitor(const char *task,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X Q u e r y C o l o r D a t a b a s e                                     %
+%   M a g i c k X Q u e r y C o l o r D a t a b a s e                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XQueryColorDatabase looks up a RGB values for a color given in the
-%  target string.
+%  Method MagickXQueryColorDatabase looks up a RGB values for a color given
+%  in the target string.
 %
-%  The format of the XQueryColorDatabase method is:
+%  The format of the MagickXQueryColorDatabase method is:
 %
-%      unsigned int XQueryColorDatabase(const char *target,XColor *color)
+%      unsigned int MagickXQueryColorDatabase(const char *target,XColor *color)
 %
 %  A description of each parameter follows:
 %
-%    o status:  Method XQueryColorDatabase returns True if the RGB values
+%    o status:  Method MagickXQueryColorDatabase returns True if the RGB values
 %      of the target color is defined, otherwise False is returned.
 %
 %    o target: Specifies the color to lookup in the X color database.
@@ -8365,7 +8571,8 @@ MagickExport unsigned int XMagickMonitor(const char *task,
 %
 %
 */
-MagickExport unsigned int XQueryColorDatabase(const char *target,XColor *color)
+MagickExport unsigned int
+MagickXQueryColorDatabase(const char *target,XColor *color)
 {
   Colormap
     colormap;
@@ -8418,17 +8625,19 @@ MagickExport unsigned int XQueryColorDatabase(const char *target,XColor *color)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X Q u e r y P o s i t i o n                                               %
+%   M a g i c k X Q u e r y P o s i t i o n                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XQueryPosition gets the pointer coordinates relative to a window.
+%  Method MagickXQueryPosition gets the pointer coordinates relative to a
+%  window.
 %
-%  The format of the XQueryPosition method is:
+%  The format of the MagickXQueryPosition method is:
 %
-%      void XQueryPosition(Display *display,const Window window,int *x,int *y)
+%      void MagickXQueryPosition(Display *display,const Window window,
+%                                int *x,int *y)
 %
 %  A description of each parameter follows:
 %
@@ -8445,7 +8654,8 @@ MagickExport unsigned int XQueryColorDatabase(const char *target,XColor *color)
 %
 %
 */
-MagickExport void XQueryPosition(Display *display,const Window window,int *x,int *y)
+MagickExport void 
+MagickXQueryPosition(Display *display,const Window window,int *x,int *y)
 {
   int
     x_root,
@@ -8470,33 +8680,34 @@ MagickExport void XQueryPosition(Display *display,const Window window,int *x,int
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X R e f r e s h W i n d o w                                               %
+%   M a g i c k X R e f r e s h W i n d o w                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XRefreshWindow refreshes an image in a X window.
+%  Method MagickXRefreshWindow refreshes an image in a X window.
 %
-%  The format of the XRefreshWindow method is:
+%  The format of the MagickXRefreshWindow method is:
 %
-%      void XRefreshWindow(Display *display,const XWindowInfo *window,
-%        const XEvent *event)
+%      void MagickXRefreshWindow(Display *display,
+%        const MagickXWindowInfo *window,const XEvent *event)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %    o event: Specifies a pointer to a XEvent structure.  If it is NULL,
 %      the entire image is refreshed.
 %
 %
 */
-MagickExport void XRefreshWindow(Display *display,const XWindowInfo *window,
-  const XEvent *event)
+MagickExport void
+MagickXRefreshWindow(Display *display,const MagickXWindowInfo *window,
+		     const XEvent *event)
 {
   int
     x,
@@ -8507,7 +8718,7 @@ MagickExport void XRefreshWindow(Display *display,const XWindowInfo *window,
     width;
 
   assert(display != (Display *) NULL);
-  assert(window != (XWindowInfo *) NULL);
+  assert(window != (MagickXWindowInfo *) NULL);
   if (window->ximage == (XImage *) NULL)
     return;
   if (event != (XEvent *) NULL)
@@ -8575,18 +8786,18 @@ MagickExport void XRefreshWindow(Display *display,const XWindowInfo *window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X R e m o t e C o m m a n d                                               %
+%   M a g i c k X R e m o t e C o m m a n d                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  XRemoteCommand() forces a remote display(1) to display the specified
+%  MagickXRemoteCommand() forces a remote display(1) to display the specified
 %  image filename.
 %
-%  The format of the XRemoteCommand method is:
+%  The format of the MagickXRemoteCommand method is:
 %
-%      unsigned int XRemoteCommand(Display *display,const char *window,
+%      unsigned int MagickXRemoteCommand(Display *display,const char *window,
 %        const char *filename)
 %
 %  A description of each parameter follows:
@@ -8600,8 +8811,9 @@ MagickExport void XRefreshWindow(Display *display,const XWindowInfo *window,
 %
 %
 */
-MagickExport unsigned int XRemoteCommand(Display *display,const char *window,
-  const char *filename)
+MagickExport unsigned int
+MagickXRemoteCommand(Display *display,const char *window,
+		     const char *filename)
 {
   Atom
     remote_atom;
@@ -8627,13 +8839,13 @@ MagickExport unsigned int XRemoteCommand(Display *display,const char *window,
         Search window hierarchy and identify any clients by name or ID.
       */
       if (isdigit((int) (*window)))
-        remote_window=XWindowByID(display,root_window,(Window)
+        remote_window=MagickXWindowByID(display,root_window,(Window)
           strtol((char *) window,(char **) NULL,0));
       if (remote_window == (Window) NULL)
-        remote_window=XWindowByName(display,root_window,window);
+        remote_window=MagickXWindowByName(display,root_window,window);
     }
   if (remote_window == (Window) NULL)
-    remote_window=XWindowByProperty(display,root_window,remote_atom);
+    remote_window=MagickXWindowByProperty(display,root_window,remote_atom);
   if (remote_window == (Window) NULL)
     {
       MagickError(XServerError,UnableToConnectToRemoteDisplay,(char *) NULL);
@@ -8654,29 +8866,30 @@ MagickExport unsigned int XRemoteCommand(Display *display,const char *window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X R e t a i n W i n d o w C o l o r s                                     %
+%   M a g i c k X R e t a i n W i n d o w C o l o r s                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XRetainWindowColors sets X11 color resources on a window.  This
-%  preserves the colors associated with an image displayed on the window.
+%  Method MagickXRetainWindowColors sets X11 color resources on a window.
+%  This preserves the colors associated with an image displayed on the window.
 %
-%  The format of the XRetainWindowColors method is:
+%  The format of the MagickXRetainWindowColors method is:
 %
-%      void XRetainWindowColors(Display *display,const Window window)
+%      void MagickXRetainWindowColors(Display *display,const Window window)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server; returned from
 %      XOpenDisplay.
 %
-%    o window: Specifies a pointer to a XWindowInfo structure.
+%    o window: Specifies a pointer to a MagickXWindowInfo structure.
 %
 %
 */
-MagickExport void XRetainWindowColors(Display *display,const Window window)
+MagickExport void
+MagickXRetainWindowColors(Display *display,const Window window)
 {
   Atom
     property;
@@ -8711,23 +8924,23 @@ MagickExport void XRetainWindowColors(Display *display,const Window window)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X S e l e c t W i n d o w                                                 %
+%   M a g i c k X S e l e c t W i n d o w                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XSelectWindow allows a user to select a window using the mouse.  If
-%  the mouse moves, a cropping rectangle is drawn and the extents of the
-%  rectangle is returned in the crop_info structure.
+%  Method MagickXSelectWindow allows a user to select a window using the
+%  mouse.  If the mouse moves, a cropping rectangle is drawn and the extents
+%  of the rectangle is returned in the crop_info structure.
 %
-%  The format of the XSelectWindow function is:
+%  The format of the MagickXSelectWindow function is:
 %
-%      target_window=XSelectWindow(display,crop_info)
+%      target_window=MagickXSelectWindow(display,crop_info)
 %
 %  A description of each parameter follows:
 %
-%    o window: XSelectWindow returns the window id.
+%    o window: MagickXSelectWindow returns the window id.
 %
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
@@ -8737,7 +8950,8 @@ MagickExport void XRetainWindowColors(Display *display,const Window window)
 %
 %
 */
-static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
+static Window
+MagickXSelectWindow(Display *display,RectangleInfo *crop_info)
 {
 #define MinimumCropArea  (unsigned int) 9
 
@@ -8782,7 +8996,7 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
   /*
     Grab the pointer using target cursor.
   */
-  target_cursor=XMakeCursor(display,root_window,XDefaultColormap(display,
+  target_cursor=MagickXMakeCursor(display,root_window,XDefaultColormap(display,
     XDefaultScreen(display)),(char *) "white",(char *) "black");
   status=XGrabPointer(display,root_window,False,(unsigned int)
     (ButtonPressMask | ButtonReleaseMask | ButtonMotionMask),GrabModeSync,
@@ -8821,7 +9035,7 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
     {
       case ButtonPress:
       {
-        target_window=XGetSubwindow(display,event.xbutton.subwindow,
+        target_window=MagickXGetSubwindow(display,event.xbutton.subwindow,
           event.xbutton.x,event.xbutton.y);
         if (target_window == (Window) NULL)
           target_window=root_window;
@@ -8888,17 +9102,18 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X S i g n a l H a n d l e r                                               %
+%   M a g i c k X S i g n a l H a n d l e r                                   %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XSignalHandler is called if the program execution is interrupted.
+%  Method MagickXSignalHandler is called if the program execution is
+%  interrupted.
 %
-%  The format of the XSignalHandler method is:
+%  The format of the MagickXSignalHandler method is:
 %
-%      void XSetCursorState(Display *display,XWindows *windows,
+%      void MagickXSetCursorState(Display *display,MagickXWindows *windows,
 %        const unsigned int state)
 %
 %
@@ -8908,7 +9123,8 @@ static Window XSelectWindow(Display *display,RectangleInfo *crop_info)
 extern "C" {
 #endif
 
-MagickExport void XSignalHandler(int status)
+MagickExport void
+MagickXSignalHandler(int status)
 {
   DestroyMagick();
   Exit(status);
@@ -8923,36 +9139,38 @@ MagickExport void XSignalHandler(int status)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X S e t C u r s o r S t a t e                                             %
+%   M a g i c k X S e t C u r s o r S t a t e                                 %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XSetCursorState sets the cursor state to busy, otherwise the
+%  Method MagickXSetCursorState sets the cursor state to busy, otherwise the
 %  cursor are reset to their default.
 %
-%  The format of the XXSetCursorState method is:
+%  The format of the XMagickXSetCursorState method is:
 %
-%      XSetCursorState(display,windows,state)
+%      MagickXSetCursorState(display,windows,state)
 %
 %  A description of each parameter follows:
 %
 %    o display: Specifies a connection to an X server;  returned from
 %      XOpenDisplay.
 %
-%    o windows: Specifies a pointer to a XWindows structure.
+%    o windows: Specifies a pointer to a MagickXWindows structure.
 %
 %    o state: An unsigned integer greater than 0 sets the cursor state
 %      to busy, otherwise the cursor are reset to their default.
 %
 %
 */
-MagickExport void XSetCursorState(Display *display,XWindows *windows,
-  const unsigned int state)
+MagickExport void
+MagickXSetCursorState(Display *display,
+		      MagickXWindows *windows,
+		      const unsigned int state)
 {
   assert(display != (Display *) NULL);
-  assert(windows != (XWindows *) NULL);
+  assert(windows != (MagickXWindows *) NULL);
   if (state)
     {
       (void) XDefineCursor(display,windows->image.id,
@@ -8980,33 +9198,34 @@ MagickExport void XSetCursorState(Display *display,XWindows *windows,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X S e t W i n d o w s                                                     %
+%   M a g i c k X S e t W i n d o w s                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XSetWindows sets the X windows structure if the windows info
+%  Method MagickXSetWindows sets the X windows structure if the windows info
 %  is specified.  Otherwise the current windows structure is returned.
 %
-%  The format of the XSetWindows method is:
+%  The format of the MagickXSetWindows method is:
 %
-%      XWindows *XSetWindows(XWindows *windows_info)
+%      MagickXWindows *MagickXSetWindows(MagickXWindows *windows_info)
 %
 %  A description of each parameter follows:
 %
-%    o windows: Method XSetWindows returns a pointer to the XWindows
-%      structure.
+%    o windows: Method MagickXSetWindows returns a pointer to the
+%      MagickXWindows structure.
 %
 %    o windows_info: Initialize the Windows structure with this information.
 %
 */
-MagickExport XWindows *XSetWindows(XWindows *windows_info)
+MagickExport MagickXWindows *
+MagickXSetWindows(MagickXWindows *windows_info)
 {
-  static XWindows
-    *windows = (XWindows *) NULL;
+  static MagickXWindows
+    *windows = (MagickXWindows *) NULL;
 
-  if (windows_info != (XWindows *) ~0)
+  if (windows_info != (MagickXWindows *) ~0)
     {
       MagickFreeMemory(windows);
       windows=windows_info;
@@ -9018,31 +9237,35 @@ MagickExport XWindows *XSetWindows(XWindows *windows_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X U s e r P r e f e r e n c e s                                           %
+%   M a g i c k X U s e r P r e f e r e n c e s                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XUserPreferences saves the preferences in a configuration file in
-%  the users' home directory.
+%  Method MagickXUserPreferences saves the preferences in a configuration
+%  file in the users' home directory.
 %
-%  The format of the XUserPreferences method is:
+%  The format of the MagickXUserPreferences method is:
 %
-%      void XUserPreferences(XResourceInfo *resource_info)
+%      void MagickXUserPreferences(MagickXResourceInfo *resource_info)
 %
 %  A description of each parameter follows:
 %
-%    o resource_info: Specifies a pointer to a X11 XResourceInfo structure.
+%    o resource_info: Specifies a pointer to a X11 MagickXResourceInfo
+%      structure.
 %
 %
 */
-MagickExport void XUserPreferences(XResourceInfo *resource_info)
+MagickExport void
+MagickXUserPreferences(MagickXResourceInfo *resource_info)
 {
 #if defined(PreferencesDefaults)
+  const char
+    *client_name;
+
   char
     cache[MaxTextExtent],
-    *client_name,
     filename[MaxTextExtent],
     specifier[MaxTextExtent];
 
@@ -9055,32 +9278,32 @@ MagickExport void XUserPreferences(XResourceInfo *resource_info)
   /*
     Save user preferences to the client configuration file.
   */
-  assert(resource_info != (XResourceInfo *) NULL);
-  client_name=SetClientName((char *) NULL);
+  assert(resource_info != (MagickXResourceInfo *) NULL);
+  client_name=GetClientName();
   preferences_database=XrmGetStringDatabase("");
   FormatString(specifier,"%.1024s.backdrop",client_name);
-  value=resource_info->backdrop ? "True" : "False";
+  value=MagickBoolToString(resource_info->backdrop);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.colormap",client_name);
   value=resource_info->colormap == SharedColormap ? "Shared" : "Private";
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.confirmExit",client_name);
-  value=resource_info->confirm_exit ? "True" : "False";
+  value=MagickBoolToString(resource_info->confirm_exit);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.displayWarnings",client_name);
-  value=resource_info->display_warnings ? "True" : "False";
+  value=MagickBoolToString(resource_info->display_warnings);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.dither",client_name);
-  value=resource_info->quantize_info->dither ? "True" : "False";
+  value=MagickBoolToString(resource_info->quantize_info->dither);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.gammaCorrect",client_name);
-  value=resource_info->gamma_correct ? "True" : "False";
+  value=MagickBoolToString(resource_info->gamma_correct);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(specifier,"%.1024s.undoCache",client_name);
   FormatString(cache,"%lu",resource_info->undo_cache);
   XrmPutStringResource(&preferences_database,specifier,cache);
   FormatString(specifier,"%.1024s.usePixmap",client_name);
-  value=resource_info->use_pixmap ? "True" : "False";
+  value=MagickBoolToString(resource_info->use_pixmap);
   XrmPutStringResource(&preferences_database,specifier,(char *) value);
   FormatString(filename,"%.1024s%.1024src",PreferencesDefaults,client_name);
   ExpandFilename(filename);
@@ -9093,29 +9316,30 @@ MagickExport void XUserPreferences(XResourceInfo *resource_info)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X V i s u a l C l a s s N a m e                                           %
+%   M a g i c k X V i s u a l C l a s s N a m e                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XVisualClassName returns the visual class name as a character
+%  Method MagickXVisualClassName returns the visual class name as a character
 %  string.
 %
-%  The format of the XVisualClassName method is:
+%  The format of the MagickXVisualClassName method is:
 %
-%      char *XVisualClassName(const int visual_class)
+%      char *MagickXVisualClassName(const int visual_class)
 %
 %  A description of each parameter follows:
 %
-%    o visual_type: XVisualClassName returns the visual class as a character
-%      string.
+%    o visual_type: MagickXVisualClassName returns the visual class as a
+%      character string.
 %
 %    o class: Specifies the visual class.
 %
 %
 */
-static char *XVisualClassName(const int visual_class)
+static char *
+MagickXVisualClassName(const int visual_class)
 {
   switch (visual_class)
   {
@@ -9134,17 +9358,17 @@ static char *XVisualClassName(const int visual_class)
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X W a r n i n g                                                           %
+%   M a g i c k X W a r n i n g                                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XWarning displays a warning reason in a Notice widget.
+%  Method MagickXWarning displays a warning reason in a Notice widget.
 %
-%  The format of the XWarning method is:
+%  The format of the MagickXWarning method is:
 %
-%      void XWarning(const unsigned int warning,const char *reason,
+%      void MagickXWarning(const unsigned int warning,const char *reason,
 %        const char *description)
 %
 %  A description of each parameter follows:
@@ -9158,21 +9382,22 @@ static char *XVisualClassName(const int visual_class)
 %
 %
 */
-MagickExport void XWarning(const ExceptionType warning,const char *reason,
-  const char *description)
+MagickExport void
+MagickXWarning(const ExceptionType ARGUNUSED(warning),
+	       const char *reason,const char *description)
 {
   char
     text[MaxTextExtent];
 
-  XWindows
+  MagickXWindows
     *windows;
 
   if (reason == (char *) NULL)
     return;
-  (void) strncpy(text,reason,MaxTextExtent-1);
-  (void) strcat(text,":");
-  windows=XSetWindows((XWindows *) ~0);
-  XNoticeWidget(windows->display,windows,text,(char *) description);
+  (void) strlcpy(text,reason,MaxTextExtent);
+  (void) strlcat(text,":",MaxTextExtent);
+  windows=MagickXSetWindows((MagickXWindows *) ~0);
+  MagickXNoticeWidget(windows->display,windows,text,(char *) description);
 }
 
 /*
@@ -9180,24 +9405,24 @@ MagickExport void XWarning(const ExceptionType warning,const char *reason,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X W i n d o w B y I D                                                     %
+%   M a g i c k X W i n d o w B y I D                                         %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XWindowByID locates a child window with a given ID.  If not window
-%  with the given name is found, 0 is returned.   Only the window specified
-%  and its subwindows are searched.
+%  Method MagickXWindowByID locates a child window with a given ID.  If not
+%  window with the given name is found, 0 is returned.   Only the window
+%  specified and its subwindows are searched.
 %
-%  The format of the XWindowByID function is:
+%  The format of the MagickXWindowByID function is:
 %
-%      child=XWindowByID(display,window,id)
+%      child=MagickXWindowByID(display,window,id)
 %
 %  A description of each parameter follows:
 %
-%    o child: XWindowByID returns the window with the specified
-%      id.  If no windows are found, XWindowByID returns 0.
+%    o child: MagickXWindowByID returns the window with the specified
+%      id.  If no windows are found, MagickXWindowByID returns 0.
 %
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
@@ -9206,8 +9431,9 @@ MagickExport void XWarning(const ExceptionType warning,const char *reason,
 %
 %
 */
-MagickExport Window XWindowByID(Display *display,const Window root_window,
-  const unsigned long id)
+MagickExport Window
+MagickXWindowByID(Display *display,const Window root_window,
+		  const unsigned long id)
 {
   RectangleInfo
     rectangle_info;
@@ -9226,7 +9452,7 @@ MagickExport Window XWindowByID(Display *display,const Window root_window,
   assert(display != (Display *) NULL);
   assert(root_window != (Window) NULL);
   if (id == 0)
-    return(XSelectWindow(display,&rectangle_info));
+    return(MagickXSelectWindow(display,&rectangle_info));
   if (root_window == id)
     return(id);
   if (!XQueryTree(display,root_window,&child,&child,&children,&number_children))
@@ -9237,7 +9463,7 @@ MagickExport Window XWindowByID(Display *display,const Window root_window,
     /*
       Search each child and their children.
     */
-    window=XWindowByID(display,children[i],id);
+    window=MagickXWindowByID(display,children[i],id);
     if (window != (Window) NULL)
       break;
   }
@@ -9251,24 +9477,24 @@ MagickExport Window XWindowByID(Display *display,const Window root_window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X W i n d o w B y N a m e                                                 %
+%   M a g i c k X W i n d o w B y N a m e                                     %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XWindowByName locates a window with a given name on a display.
+%  Method MagickXWindowByName locates a window with a given name on a display.
 %  If no window with the given name is found, 0 is returned. If more than
 %  one window has the given name, the first one is returned.  Only root and
 %  its children are searched.
 %
-%  The format of the XWindowByName function is:
+%  The format of the MagickXWindowByName function is:
 %
-%      window=XWindowByName(display,root_window,name)
+%      window=MagickXWindowByName(display,root_window,name)
 %
 %  A description of each parameter follows:
 %
-%    o window: XWindowByName returns the window id.
+%    o window: MagickXWindowByName returns the window id.
 %
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
@@ -9279,8 +9505,9 @@ MagickExport Window XWindowByID(Display *display,const Window root_window,
 %
 %
 */
-MagickExport Window XWindowByName(Display *display,const Window root_window,
-  const char *name)
+MagickExport Window
+MagickXWindowByName(Display *display,const Window root_window,
+		    const char *name)
 {
   register int
     i;
@@ -9310,7 +9537,7 @@ MagickExport Window XWindowByName(Display *display,const Window root_window,
     /*
       Search each child and their children.
     */
-    window=XWindowByName(display,children[i],name);
+    window=MagickXWindowByName(display,children[i],name);
     if (window != (Window) NULL)
       break;
   }
@@ -9324,25 +9551,25 @@ MagickExport Window XWindowByName(Display *display,const Window root_window,
 %                                                                             %
 %                                                                             %
 %                                                                             %
-%   X W i n d o w B y P r o p e r y                                           %
+%   M a g i c k X W i n d o w B y P r o p e r y                               %
 %                                                                             %
 %                                                                             %
 %                                                                             %
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
-%  Method XWindowByProperty locates a child window with a given property.
+%  Method MagickXWindowByProperty locates a child window with a given property.
 %  If no window with the given name is found, 0 is returned.  If more than
 %  one window has the given property, the first one is returned.  Only the
 %  window specified and its subwindows are searched.
 %
-%  The format of the XWindowByProperty function is:
+%  The format of the MagickXWindowByProperty function is:
 %
-%      child=XWindowByProperty(display,window,property)
+%      child=MagickXWindowByProperty(display,window,property)
 %
 %  A description of each parameter follows:
 %
-%    o child: XWindowByProperty returns the window id with the specified
-%      property.  If no windows are found, XWindowByProperty returns 0.
+%    o child: MagickXWindowByProperty returns the window id with the specified
+%      property.  If no windows are found, MagickXWindowByProperty returns 0.
 %
 %    o display: Specifies a pointer to the Display structure;  returned from
 %      XOpenDisplay.
@@ -9351,8 +9578,9 @@ MagickExport Window XWindowByName(Display *display,const Window root_window,
 %
 %
 */
-MagickExport Window XWindowByProperty(Display *display,const Window window,
-  const Atom property)
+MagickExport Window
+MagickXWindowByProperty(Display *display,const Window window,
+			const Atom property)
 {
   Atom
     type;
@@ -9396,7 +9624,7 @@ MagickExport Window XWindowByProperty(Display *display,const Window window,
       child=children[i];
   }
   for (i=0; (i < number_children) && (child == (Window) NULL); i++)
-    child=XWindowByProperty(display,children[i],property);
+    child=MagickXWindowByProperty(display,children[i],property);
   if (children != (Window *) NULL)
     (void) XFree((void *) children);
   return(child);

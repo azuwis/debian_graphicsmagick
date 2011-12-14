@@ -38,6 +38,8 @@
 #include "magick/studio.h"
 #include "magick/blob.h"
 #include "magick/color.h"
+#include "magick/color_lookup.h"
+#include "magick/colormap.h"
 #include "magick/magick.h"
 #include "magick/utility.h"
 
@@ -101,7 +103,7 @@ static Image *ReadNULLImage(const ImageInfo *image_info,
     image->columns=1;
   if (image->rows == 0)
     image->rows=1;
-  (void) strncpy(image->filename,image_info->filename,MaxTextExtent-1);
+  (void) strlcpy(image->filename,image_info->filename,MaxTextExtent);
   status=QueryColorDatabase((char *) image_info->filename,
     &image->background_color,exception);
   if (status == False)
@@ -112,7 +114,14 @@ static Image *ReadNULLImage(const ImageInfo *image_info,
   if (!AllocateImageColormap(image,1))
     ThrowReaderException(ResourceLimitError,MemoryAllocationFailed,image);
   image->colormap[0]=image->background_color;
-  SetImage(image,OpaqueOpacity);
+  status=SetImage(image,OpaqueOpacity);
+  if (status == MagickFail)
+    {
+      CopyException(exception,&image->exception);
+      DestroyImage(image);
+      image=(Image *) NULL;
+    }
+
   return(image);
 }
 
@@ -148,8 +157,10 @@ ModuleExport void RegisterNULLImage(void)
   entry->decoder=(DecoderHandler) ReadNULLImage;
   entry->encoder=(EncoderHandler) WriteNULLImage;
   entry->adjoin=False;
-  entry->description=AcquireString("Constant image of uniform color");
-  entry->module=AcquireString("NULL");
+  entry->description="Constant image of uniform color";
+  entry->module="NULL";
+  entry->coder_class=PrimaryCoderClass;
+  entry->extension_treatment=IgnoreExtensionTreatment;
   (void) RegisterMagickInfo(entry);
 }
 
